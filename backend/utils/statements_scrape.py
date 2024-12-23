@@ -354,12 +354,16 @@ class StatementsDataScraper:
                 if sector in financial_statements:
                     # Filter out NSD entries that are already in the financial statements for the sector
                     filtered_df = df[~df['nsd'].isin(financial_statements[sector]['nsd'])]
-                    if not filtered_df.empty:
-                        scrape_target.append(filtered_df)
+                else:
+                    # Include all NSD entries for sectors not in financial statements
+                    filtered_df = df
 
-            if not filtered_df.empty:
+                if not filtered_df.empty:
+                    scrape_target.append(filtered_df)
+
+            try:
                 scrape_targets = pd.concat(scrape_target)
-            else:
+            except Exception as e:
                 scrape_targets = pd.DataFrame(columns=settings.statements_columns)
 
             # Custom sorting to place empty fields last
@@ -406,6 +410,7 @@ class StatementsDataScraper:
 
             # Construct the URL for the NSD entry
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
+            system.test_internet()
             self.driver.get(url)
 
             # Define all statements to be scraped
@@ -535,6 +540,9 @@ class StatementsDataScraper:
             self.close_scraper()
 
     def main(self, thread=False):
+
+        self.close_scraper()
+        
         # Identify the scrape targets
         scrape_targets = self.identify_scrape_targets()
         total_items = len(scrape_targets)
@@ -547,6 +555,8 @@ class StatementsDataScraper:
             else:
                 # Run sequentially
                 self.main_sequential(scrape_targets)  # Pass only scrape_targets
+
+        return True
 
     def run_scraper_with_new_instance(self, scrape_targets, batch_number):
         """

@@ -5,15 +5,23 @@ db_folder_short = 'data'
 db_path = 'backend/data/b3.db'
 backup_name = 'backup'
 max_workers = 10
+bin_folder = 'bin'
 
 # batches
 batch_size = 50  # Batch size for data processing
 max_workers = 8
 big_batch_size = int(40000 / max_workers)
+chunk_size = 50000
 
 # Selenium settings
 wait_time = 2  # Wait time for Selenium operations
 driver = driver_wait = None  # Placeholders for Selenium driver and wait objects
+registry_paths = [
+    r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
+    r'reg query "HKEY_LOCAL_MACHINE\Software\Google\Chrome\BLBeacon" /v version',
+    r'reg query "HKEY_LOCAL_MACHINE\Software\WOW6432Node\Google\Chrome\BLBeacon" /v version'
+]
+
 
 # Requests
 USER_AGENTS = [

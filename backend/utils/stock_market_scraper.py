@@ -63,6 +63,7 @@ class StockMarketScraper:
                 sector = table[0]  
                 already_done = ['CONSUMO_NAO_CICLICO', 'FINANCEIRO']
                 already_done = ['COMUNICACOES', 'BENS_INDUSTRIAIS', 'CONSTRUCAO_E_TRANSPORTE', 'CONSUMO_CICLICO', ]
+                already_done = []
                 if sector not in already_done:
                     try:
                         # Load the data from the table into a DataFrame

@@ -88,7 +88,6 @@ class NSDScraper:
             new_nsds = list(range(max_nsd + 1, max_nsd + estimated_new_nsds + 1))
             missing_nsds = self.get_missing_nsds()
             nsd_range = new_nsds + missing_nsds
-            nsd_range = new_nsds + missing_nsds
 
             return nsd_range
         except Exception as e:
@@ -165,6 +164,7 @@ class NSDScraper:
         try:
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
             headers = system.header_random()  # Use the random headers from the system module
+            system.test_internet()
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             html = response.text
@@ -303,7 +303,7 @@ class NSDScraper:
         except Exception as e:
             system.log_error(f"Error saving data to database: {e}")
 
-    def scrape_nsd(self):
+    def main(self):
         """
         The main method to scrape NSD data, parse it, and save it to the database.
         """

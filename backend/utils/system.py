@@ -15,6 +15,7 @@ import pyautogui
 import time
 import random
 import sqlite3
+import subprocess
 
 from utils import settings
 
@@ -252,7 +253,7 @@ def escape_keywords(keywords):
 
 def print_info(index, size, start_time=time.time(), extra_info=[]):
     """
-    Prints the provided information along with the progress, elapsed time, and remaining time.
+    Prints the provided information along with the progress, elapsed time, estimated remaining time, and total estimated time.
 
     Parameters:
     - index (int): The current index of the item being processed.
@@ -263,26 +264,34 @@ def print_info(index, size, start_time=time.time(), extra_info=[]):
     completed_items = index + 1
     remaining_items = size - completed_items
     percentage_completed = completed_items / size
-    
+
     elapsed_time = time.time() - start_time
     avg_time_per_item = elapsed_time / completed_items
     remaining_time = remaining_items * avg_time_per_item
-    
+    total_estimated_time = elapsed_time + remaining_time
+
+    # Format elapsed time
     elapsed_hours, elapsed_remainder = divmod(int(elapsed_time), 3600)
     elapsed_minutes, elapsed_seconds = divmod(elapsed_remainder, 60)
-    elapsed_time_formatted = f'{int(elapsed_hours)}h {int(elapsed_minutes):02}m {int(elapsed_seconds):02}s'
+    elapsed_time_formatted = f"{int(elapsed_hours)}h {int(elapsed_minutes):02}m {int(elapsed_seconds):02}s"
 
+    # Format remaining time
     remaining_hours, remaining_remainder = divmod(int(remaining_time), 3600)
     remaining_minutes, remaining_seconds = divmod(remaining_remainder, 60)
-    remaining_time_formatted = f'{int(remaining_hours)}h {int(remaining_minutes):02}m {int(remaining_seconds):02}s'
-    
+    remaining_time_formatted = f"{int(remaining_hours)}h {int(remaining_minutes):02}m {int(remaining_seconds):02}s"
+
+    # Format total estimated time
+    total_hours, total_remainder = divmod(int(total_estimated_time), 3600)
+    total_minutes, total_seconds = divmod(total_remainder, 60)
+    total_time_formatted = f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
+
+    # Prepare progress string
     progress = (
-        f'{percentage_completed:.2%} '
-        f'{completed_items}+{remaining_items}, '
-        f'{avg_time_per_item:.6f}s per item, '
-        f'Time: {elapsed_time_formatted} + {remaining_time_formatted}'
+        f"{percentage_completed:.2%} ({completed_items}+{remaining_items}), "
+        f"{avg_time_per_item:.4f}s per item, "
+        f"{total_time_formatted} = {elapsed_time_formatted} + {remaining_time_formatted}"
     )
-    
+
     extra_info_str = " ".join(map(str, extra_info))
     print(f"{progress} {extra_info_str}")
     winbeep()
@@ -341,6 +350,30 @@ def header_random():
     }
 
     return headers
+
+def test_internet(host="8.8.8.8"):
+    """
+    Test internet connection by pinging a specified host. Retries if no connection is detected.
+    
+    Parameters:
+        host (str): The host to ping (default: Google's public DNS server 8.8.8.8).
+    """
+    wait_time = settings.wait_time
+    
+    while True:
+        try:
+            result = subprocess.run(
+                ["ping", "-n", "1", host],  # Use "-n" for Windows; "-c" would be used on Unix systems.
+                stdout=subprocess.DEVNULL,  # Suppress standard output.
+                stderr=subprocess.DEVNULL   # Suppress error output.
+            )
+            if result.returncode == 0:
+                break
+            else:
+                print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
+        except Exception as e:
+            print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
+        time.sleep(wait_time)
 
 def db_optimize(db_path=settings.db_path):
     """

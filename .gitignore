@@ -118,3 +118,7 @@ bin/
 *.jar
 *.war
 
+backend/casadosaber.ipynb
+backend/casadosaber.py
+backend/casadosaber2.py
+backend/soblec.py

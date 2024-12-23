@@ -40,8 +40,8 @@ class MathTransformation:
 
             dfs = {}
             total_lines = 0
+            print(f'loading {files}...')
             start_time = time.time()  # Initialize start time for progress tracking
-            print(files)
 
             # Iterate through each table (sector) and process the data
             for i, table in enumerate(tables):
@@ -70,6 +70,8 @@ class MathTransformation:
                 extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
                 system.print_info(i, len(tables), start_time, extra_info)
 
+                # print('break load')
+                # break
             return dfs
 
         except Exception as e:
@@ -117,9 +119,10 @@ class MathTransformation:
         new_entries_column = 'version'  # Define the column that will be used to identify the latest version of entries
 
         filtered_results = {}  # Initialize an empty dictionary to store the filtered results
-        start_time = time.time()  # Record the start time to measure processing time for each sector
         total_sectors = len(dict_new)  # Determine the total number of sectors to process
         total_lines = 0  # Initialize a counter to keep track of the total number of new lines identified
+        print('getting new entries...')
+        start_time = time.time()  # Record the start time to measure processing time for each sector
 
         try:
             # Iterate over each sector and its associated DataFrame in the new data dictionary
@@ -376,7 +379,7 @@ class MathTransformation:
             dict_transformed = {}
             total_lines = 0
 
-            print('transform')
+            print('transforming statements...')
             start_time = time.time()  # Record start time for progress tracking
             # Iterate over each sector in the filtered dictionary
             for i, (sector, df) in enumerate(dict_filtered.items()):
@@ -420,6 +423,9 @@ class MathTransformation:
             system.log_error(f"Error during mathematical transformations: {e}")
             return {}
 
+    def process_chunk(chunk):
+        return [tuple(row) for row in chunk.to_numpy()]
+
     def save_to_db(self, data_dict):
         """
         Save the transformed data to the SQLite database, creating or replacing tables as necessary.
@@ -428,13 +434,15 @@ class MathTransformation:
         Args:
             data_dict (dict): Dictionary containing DataFrames of transformed data for each sector.
         """
+        chunk_size = settings.chunk_size
+        
         try:
             # Construct the database path
             db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.db")
 
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
-
+                print('saving...')
                 start_time = time.time()
                 total_lines = 0
                 for i, (sector, df) in enumerate(data_dict.items()):
@@ -494,9 +502,22 @@ class MathTransformation:
                     data_to_insert = list(df.itertuples(index=False, name=None))
 
                     # Execute batch insert
-                    cursor.executemany(insert_sql, data_to_insert)
+                    total_chunks = len(range(0, len(data_to_insert), chunk_size))
+                    total_lines = len(data_to_insert)
+                    print('saving in parts...')
+                    start_time = time.time()  # Record the start time for progress tracking
+                    for c, start in enumerate(range(0, len(data_to_insert), chunk_size)):
+                        # Process the chunk
+                        chunk = data_to_insert[start:start + chunk_size]
+                        cursor.executemany(insert_sql, chunk)
+                        conn.commit()  # Commit after each chunk
 
-                    conn.commit()  # Commit the transaction to save changes
+                        # Update progress info
+                        processed_lines = (c + 1) * chunk_size
+                        extra_info = [f'{sector} {i+1}/{len(data_dict)}: part {c + 1}/{total_chunks}']
+                        system.print_info(c, total_chunks, start_time, extra_info)
+                    # cursor.executemany(insert_sql, data_to_insert)
+                    # conn.commit()  # Commit the transaction to save changes
 
                     total_lines += len(df)
                     extra_info = [f'{sector}: {len(df)}, {total_lines} lines']
@@ -574,6 +595,8 @@ class MathTransformation:
             self.main_thread(dict_filtered, dict_math)
         else:
             self.main_sequential(dict_filtered, dict_math)
+
+        return True
 
 if __name__ == "__main__":
     transformer = MathTransformation()

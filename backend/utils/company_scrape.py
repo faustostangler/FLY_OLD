@@ -31,6 +31,7 @@ class CompanyScraper:
             nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
             next_page_xpath = '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
 
+            system.test_internet()
             self.driver.get(settings.companies_url)
             system.choose(select_page_xpath, self.driver, self.driver_wait)
 
@@ -158,6 +159,7 @@ class CompanyScraper:
 
         for i, (company_name, info) in enumerate(companies_to_process.items()):
             try:
+                system.test_internet()
                 self.driver.get(settings.company_url)
                 search_field_xpath = '//*[@id="keyword"]'
                 nav_tab_content_xpath = '//*[@id="nav-tabContent"]'
@@ -298,7 +300,7 @@ class CompanyScraper:
 
         self.save_to_db(batch_to_save)
 
-    def run(self):
+    def main(self):
         existing_companies, new_companies = self.get_company_info()
 
         total_companies = len(new_companies)

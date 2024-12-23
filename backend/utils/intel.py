@@ -3564,33 +3564,33 @@ indicators_21 = [
 # 22.14 - Preço/Fluxo de Caixa Operacional (P/OCF) ON # 99.3 / (06.01 / 21.00.01)
 # 22.15 - Preço/Fluxo de Caixa Operacional (P/OCF) PN # 99.4 / (06.01 / 21.00.02)
 indicators_22 = [
-    # Taxa de Crescimento do Lucro por Ação (LPA) Total
-    {
-        'account': '22.01',
-        'description': 'Taxa de Crescimento do LPA Total',
-        'formula': Division(
-            Subtraction('21.01', '21.01(-1)'),  # LPA Total atual menos LPA Total do período anterior
-            '21.01(-1)'  # LPA Total do período anterior
-        )
-    },
-    # Taxa de Crescimento do LPA ON
-    {
-        'account': '22.02',
-        'description': 'Taxa de Crescimento do LPA ON',
-        'formula': Division(
-            Subtraction('21.02', '21.02(-1)'),  # LPA ON atual menos LPA ON do período anterior
-            '21.02(-1)'  # LPA ON do período anterior
-        )
-    },
-    # Taxa de Crescimento do LPA PN
-    {
-        'account': '22.03',
-        'description': 'Taxa de Crescimento do LPA PN',
-        'formula': Division(
-            Subtraction('21.03', '21.03(-1)'),  # LPA PN atual menos LPA PN do período anterior
-            '21.03(-1)'  # LPA PN do período anterior
-        )
-    },
+    # # Taxa de Crescimento do Lucro por Ação (LPA) Total
+    # {
+    #     'account': '22.01',
+    #     'description': 'Taxa de Crescimento do LPA Total',
+    #     'formula': Division(
+    #         Subtraction('21.01', '21.01(-1)'),  # LPA Total atual menos LPA Total do período anterior
+    #         '21.01(-1)'  # LPA Total do período anterior
+    #     )
+    # },
+    # # Taxa de Crescimento do LPA ON
+    # {
+    #     'account': '22.02',
+    #     'description': 'Taxa de Crescimento do LPA ON',
+    #     'formula': Division(
+    #         Subtraction('21.02', '21.02(-1)'),  # LPA ON atual menos LPA ON do período anterior
+    #         '21.02(-1)'  # LPA ON do período anterior
+    #     )
+    # },
+    # # Taxa de Crescimento do LPA PN
+    # {
+    #     'account': '22.03',
+    #     'description': 'Taxa de Crescimento do LPA PN',
+    #     'formula': Division(
+    #         Subtraction('21.03', '21.03(-1)'),  # LPA PN atual menos LPA PN do período anterior
+    #         '21.03(-1)'  # LPA PN do período anterior
+    #     )
+    # },
     # Índice PEG Total (Preço/Lucro ajustado pelo crescimento)
     {
         'account': '22.04',
@@ -3764,30 +3764,30 @@ indicators_23 = [
             '21.15'   # Dividendos por Ação PN
         )
     },
-    # Retorno Total para o Acionista (TSR) ON
-    {
-        'account': '23.07',
-        'description': 'Retorno Total para o Acionista (TSR) ON',
-        'formula': Addition(
-            Division(
-                Subtraction('99.3', '99.3(-1)'),  # Variação do Preço da Ação ON
-                '99.3(-1)'
-            ),
-            '21.17'  # Dividend Yield ON
-        )
-    },
-    # Retorno Total para o Acionista (TSR) PN
-    {
-        'account': '23.08',
-        'description': 'Retorno Total para o Acionista (TSR) PN',
-        'formula': Addition(
-            Division(
-                Subtraction('99.4', '99.4(-1)'),  # Variação do Preço da Ação PN
-                '99.4(-1)'
-            ),
-            '21.18'  # Dividend Yield PN
-        )
-    },
+    # # Retorno Total para o Acionista (TSR) ON
+    # {
+    #     'account': '23.07',
+    #     'description': 'Retorno Total para o Acionista (TSR) ON',
+    #     'formula': Addition(
+    #         Division(
+    #             Subtraction('99.3', '99.3(-1)'),  # Variação do Preço da Ação ON
+    #             '99.3(-1)'
+    #         ),
+    #         '21.17'  # Dividend Yield ON
+    #     )
+    # },
+    # # Retorno Total para o Acionista (TSR) PN
+    # {
+    #     'account': '23.08',
+    #     'description': 'Retorno Total para o Acionista (TSR) PN',
+    #     'formula': Addition(
+    #         Division(
+    #             Subtraction('99.4', '99.4(-1)'),  # Variação do Preço da Ação PN
+    #             '99.4(-1)'
+    #         ),
+    #         '21.18'  # Dividend Yield PN
+    #     )
+    # },
 ]
 
 # 24.01 - Múltiplo EV/EBIT Total # 21.22 / 03.05

@@ -58,6 +58,7 @@ def get_chromedriver_url(version):
     url_error_msg = f'Error obtaining ChromeDriver for version {version}'
 
     try:
+        system.test_internet()
         response = requests.get(chromedriver_url_template)
         if response.status_code == 200:
             return chromedriver_url_template
@@ -86,6 +87,7 @@ def download_and_extract_chromedriver(url, dest_folder):
     download_error_msg = 'Failed to download or extract ChromeDriver: {e}'
 
     try:
+        system.test_internet()
         response = requests.get(url)
         zip_path = dest_folder / zip_filename
 
