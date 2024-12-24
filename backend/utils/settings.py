@@ -1,9 +1,26 @@
-# System-wide settings
+import os
+
+# Define base directory
+base_dir = os.path.abspath(os.path.dirname(__file__))
+
+# Database configurations
 db_name = 'b3.db'  # Database name
-db_folder = 'backend/data'
 db_folder_short = 'data'
-db_path = 'backend/data/b3.db'
+backend_folder_short = 'backend'
+bin_folder_short = 'bin'
 backup_name = 'backup'
+db_folder = os.path.join(base_dir, backend_folder_short, db_folder_short)
+bin_folder = os.path.join(db_folder, bin_folder_short)
+db_path = os.path.join(db_folder, db_name)
+
+# Create the db_folder directory if it does not exist
+if not os.path.exists(db_folder):
+    os.makedirs(db_folder)
+
+# Create the bin_folder directory if it does not exist
+if not os.path.exists(bin_folder):
+    os.makedirs(bin_folder)
+
 max_workers = 10
 bin_folder = 'bin'
 

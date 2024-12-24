@@ -15,7 +15,14 @@ class FinancialDataPlotter:
 
         Load all tables from an SQLite database into a single DataFrame.
         """
-        db_path = os.path.join(settings.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}")
+        # Adjust base_dir to move up from "utils" to "backend"
+        backend_dir = os.path.dirname(settings.base_dir)
+
+        # Construct the db_name with the 'standard' suffix
+        db_name = os.path.splitext(os.path.basename(settings.db_path))[0] + ' ' + settings.statements_standard + "." + settings.db_path.split('.')[-1]
+
+        # Construct the final db_path in the "data" folder under "backend"
+        db_path = os.path.join(backend_dir, settings.db_folder_short, db_name)
 
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
