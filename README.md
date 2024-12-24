@@ -39,8 +39,8 @@ Finance Ledger Yearly (FLY) is a comprehensive financial data app designed to au
 Configure system-wide settings in `settings.py`:
 
 - `batch_size`: Batch size for data processing
-- `db_name`: Database name (default is `b3.db`)
-- `db_folder`: Folder where the database is stored
+- `db_filepath`: Database name (default is `b3.db`)
+- `data_folder`: Folder where the database is stored
 - `wait_time`: Wait time for Selenium operations
 - `companies_url`: URL for the B3 companies search page
 - `company_url`: URL for the B3 company detail page

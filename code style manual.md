@@ -128,12 +128,12 @@ This manual outlines coding style guidelines to ensure consistency, readability,
 
 - **Example**:
   ```python
-  def connect_to_database(db_name: str) -> sqlite3.Connection:
+  def connect_to_database(db_filepath: str) -> sqlite3.Connection:
       """
       Connects to the specified SQLite database.
 
       Parameters:
-      - db_name (str): The name of the database file.
+      - db_filepath (str): The name of the database file.
 
       Returns:
       sqlite3.Connection: A connection object to the database.

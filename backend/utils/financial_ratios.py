@@ -1,5 +1,6 @@
 import time
 import os
+import shutil
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -15,12 +16,12 @@ class FinancialRatios:
         Initialize the FinancialRatios class with the provided financial data.
         """
         try:
-            self.db_folder = settings.db_folder
-            self.db_name = settings.db_name
+            self.data_folder = settings.data_folder
+            self.db_filepath = settings.db_filepath
         except Exception as e:
             system.log_error(f"Error initializing FinancialRatios: {e}")
 
-    def load_data(self, files):
+    def load_data(self):
         """
         Load financial data from the database and process it into DataFrames.
         
@@ -31,8 +32,12 @@ class FinancialRatios:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Construct the database path
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.markets_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            # Load db
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
@@ -42,7 +47,7 @@ class FinancialRatios:
             dfs = {}
             total_lines = 0
             start_time = time.time()  # Initialize start time for progress tracking
-            print(files)
+            print(settings.markets_file)
 
             # Iterate through each table (sector) and process the data
             for i, table in enumerate(tables):
@@ -67,11 +72,11 @@ class FinancialRatios:
                     total_lines += len(df)  # Update the total number of processed lines
 
                     # Display progress
-                    extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
+                    extra_info = [f'{sector} {len(df)} of {total_lines} items']
                     system.print_info(i, len(tables), start_time, extra_info)
 
-                    # print('break')
-                    # break
+                    print('break loading market')
+                    break
 
                 except Exception as e:
                     system.log_error(f"Error processing table {table}: {e}")
@@ -94,10 +99,18 @@ class FinancialRatios:
         """
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.indicators_fle}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.indicators_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.indicators_file} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
 
             # Use 'with' to manage the database connection context
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
                 table_name = sector.upper().replace(' ', '_')  # Create a table name from sector name
@@ -183,7 +196,7 @@ class FinancialRatios:
 
                 # Commit the transaction
                 conn.commit()
-                print(f'{sector} saved to {db_path}')
+                print(f'{sector} saved to {specific_db_path}')
             return df
                     
         except Exception as e:
@@ -402,26 +415,26 @@ class FinancialRatios:
         """
         dfs = {}
         try:
-            dict_df = self.load_data(settings.markets_file)
+            dict_df = self.load_data()
 
             # Define the dictionary with the indicator names and their corresponding values
             indicators = {
                 'Relações Entre Ativos e Passivos': intel.indicators_11,
-                'Patrimônio': intel.indicators_11b,
-                'Dívida': intel.indicators_12,
-                'Resultados Fundamentalistas 1': intel.indicators_13,
-                'Resultados Fundamentalistas 2': intel.indicators_14,
-                'Resultados Fundamentalistas 3': intel.indicators_15,
-                'Resultados Fundamentalistas 4': intel.indicators_16,
-                'Fluxo de Caixa': intel.indicators_17,
-                'Valor Agregado': intel.indicators_18,
-                'Preço e Lucro por Ação': intel.indicators_21,
-                'Crescimento e PEG': intel.indicators_22,
-                'Dividendos e TSR': intel.indicators_23,
-                'Múltiplos de Valuation': intel.indicators_24,
-                'Fluxo de Caixa Livre e P/FC': intel.indicators_25
+                # 'Patrimônio': intel.indicators_11b,
+                # 'Dívida': intel.indicators_12,
+                # 'Resultados Fundamentalistas 1': intel.indicators_13,
+                # 'Resultados Fundamentalistas 2': intel.indicators_14,
+                # 'Resultados Fundamentalistas 3': intel.indicators_15,
+                # 'Resultados Fundamentalistas 4': intel.indicators_16,
+                # 'Fluxo de Caixa': intel.indicators_17,
+                # 'Valor Agregado': intel.indicators_18,
+                # 'Preço e Lucro por Ação': intel.indicators_21,
+                # 'Crescimento e PEG': intel.indicators_22,
+                # 'Dividendos e TSR': intel.indicators_23,
+                # 'Múltiplos de Valuation': intel.indicators_24,
+                # 'Fluxo de Caixa Livre e P/FC': intel.indicators_25
             }
-
+            print('selected indicators only')
             start_time = time.time()
             for i, (sector, df) in enumerate(dict_df.items()):
                 df = self.adjust_dfs_types(df)

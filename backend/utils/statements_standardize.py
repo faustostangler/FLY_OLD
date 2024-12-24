@@ -1,4 +1,5 @@
 import os
+import shutil
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -18,12 +19,12 @@ class StandardizedReport:
         Initialize the StandardizedReport class with settings from the utils module.
         
         Attributes:
-            db_folder (str): The folder path where the database is stored.
-            db_name (str): The name of the database file.
+            data_folder (str): The folder path where the database is stored.
+            db_filepath (str): The name of the database file.
         """
         try:
-            self.db_folder = settings.db_folder
-            self.db_name = settings.db_name
+            self.data_folder = settings.data_folder
+            self.db_filepath = settings.db_filepath
         except Exception as e:
             system.log_error(f"Error initializing StandardizedReport: {e}")
 
@@ -38,8 +39,11 @@ class StandardizedReport:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Load db
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
@@ -260,13 +264,13 @@ class StandardizedReport:
 
             standardization_sections = {
                 'Composição do Capital': intel.section_0_criteria, 
-                'Balanço Patrimonial Ativo': intel.section_1_criteria,
-                'Balanço Patrimonial Passivo': intel.section_2_criteria,
+                # 'Balanço Patrimonial Ativo': intel.section_1_criteria,
+                # 'Balanço Patrimonial Passivo': intel.section_2_criteria,
                 'Demonstração do Resultado': intel.section_3_criteria,
-                'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
-                'Demonstração de Valor Adiconado': intel.section_7_criteria,
+                # 'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
+                # 'Demonstração de Valor Adiconado': intel.section_7_criteria,
             }
-            print('standardizing sections...')
+            print('standardizing sections..., with criteria restrictions')
             start_time = time.time()
             total_sections = len(standardization_sections)
 
@@ -383,9 +387,17 @@ class StandardizedReport:
 
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_standard}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
 
-            with sqlite3.connect(db_path) as conn:
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
+
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
                 start_time = time.time()

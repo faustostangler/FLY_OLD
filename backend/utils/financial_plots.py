@@ -18,13 +18,13 @@ class FinancialDataPlotter:
         # Adjust base_dir to move up from "utils" to "backend"
         backend_dir = os.path.dirname(settings.base_dir)
 
-        # Construct the db_name with the 'standard' suffix
-        db_name = os.path.splitext(os.path.basename(settings.db_path))[0] + ' ' + settings.statements_standard + "." + settings.db_path.split('.')[-1]
+        # Construct the db_filepath with the 'standard' suffix
+        db_filepath = os.path.splitext(os.path.basename(settings.db_filepath))[0] + ' ' + settings.statements_standard + "." + settings.db_filepath.split('.')[-1]
 
-        # Construct the final db_path in the "data" folder under "backend"
-        db_path = os.path.join(backend_dir, settings.db_folder_short, db_name)
+        # Construct the final db_filepath in the "data" folder under "backend"
+        db_filepath = os.path.join(backend_dir, settings.data_folder_short, db_filepath)
 
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_filepath)
         cursor = conn.cursor()
 
         # Fetch all table names

@@ -1,25 +1,27 @@
 import os
 
-# Define base directory
-base_dir = os.path.abspath(os.path.dirname(__file__))
+# Define the base directory (root of the project)
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# Database configurations
-db_name = 'b3.db'  # Database name
-db_folder_short = 'data'
-backend_folder_short = 'backend'
-bin_folder_short = 'bin'
+# Folder and file configuration
+backend_folder = os.path.join(base_dir, "backend")
+data_folder = os.path.join(backend_folder, "data")
+bin_folder = os.path.join(backend_folder, "bin")
+utils_folder = os.path.join(backend_folder, "utils")
+
+# Create necessary directories if they don't exist
+os.makedirs(backend_folder, exist_ok=True)
+os.makedirs(data_folder, exist_ok=True)
+os.makedirs(bin_folder, exist_ok=True)
+os.makedirs(utils_folder, exist_ok=True)
+
+# Main database name
+db_name = "b3.db"
 backup_name = 'backup'
-db_folder = os.path.join(base_dir, backend_folder_short, db_folder_short)
-bin_folder = os.path.join(db_folder, bin_folder_short)
-db_path = os.path.join(db_folder, db_name)
 
-# Create the db_folder directory if it does not exist
-if not os.path.exists(db_folder):
-    os.makedirs(db_folder)
-
-# Create the bin_folder directory if it does not exist
-if not os.path.exists(bin_folder):
-    os.makedirs(bin_folder)
+# Dynamic database names
+db_filepath = os.path.join(data_folder, db_name)
+backup_db = f"{db_name.split('.')[0]} {backup_name}.{db_name.split('.')[-1]}"
 
 max_workers = 10
 bin_folder = 'bin'
@@ -116,7 +118,7 @@ statements_file = 'statements'
 statements_types = ["DEMONSTRACOES FINANCEIRAS PADRONIZADAS", "INFORMACOES TRIMESTRAIS"]
 financial_statements_columns = ['account', 'description', 'value']  # Assuming these are the financial/statements columns
 statements_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'frame'] + financial_statements_columns
-statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'account', 'description']
+statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'account', 'description', 'type', ]
 year_end_accounts = ['3', '4']
 cumulative_quarter_accounts = ['6', '7']
 
@@ -130,7 +132,7 @@ statements_standard = 'standard'
 markets_file = 'markets'
 
 # ratios
-indicators_fle = 'indicators'
+indicators_file = 'indicators'
 
 
 # Descriptions and accounts

@@ -1,4 +1,5 @@
 import os
+import shutil
 import re
 import numpy as np
 import pandas as pd
@@ -18,13 +19,13 @@ class StockMarketScraper:
         Initialize the StockMarketScraper class by setting up database folder and name.
         
         Attributes:
-            db_folder (str): Path to the database folder.
-            db_name (str): Name of the database.
+            data_folder (str): Path to the database folder.
+            db_filepath (str): Name of the database.
         """
         try:
             # Set database folder and name from settings
-            self.db_folder = settings.db_folder  # Path to the database folder
-            self.db_name = settings.db_name  # Name of the database
+            self.data_folder = settings.data_folder  # Path to the database folder
+            self.db_filepath = settings.db_filepath  # Name of the database
             self.print_lock = Lock()
 
         except Exception as e:
@@ -41,9 +42,11 @@ class StockMarketScraper:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data.
         """
         try:
-            # Construct the database file path based on the provided file name
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Construct the database path
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names, ignoring internal SQLite tables
@@ -89,8 +92,8 @@ class StockMarketScraper:
                         extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
                         system.print_info(i, len(tables), start_time, extra_info)
 
-                        # print('break')
-                        # break
+                        print('break loading standard data')
+                        break
 
                     except Exception as e:
                         system.log_error(f"Error processing table {table}: {e}")
@@ -111,9 +114,8 @@ class StockMarketScraper:
         """
         company_data = {}
         try:
-            # Construct the database file path
-            db_file = os.path.join(self.db_folder, settings.db_name)
-            conn = sqlite3.connect(db_file)
+            # load db
+            conn = sqlite3.connect(settings.db_filepath)
             cursor = conn.cursor()
 
             # Query company table data
@@ -142,10 +144,18 @@ class StockMarketScraper:
         """
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.markets_file}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.markets_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.markets_file} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
 
             # Use 'with' to manage the database connection context
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
                 table_name = sector.upper().replace(' ', '_')  # Create a table name from sector name
@@ -231,7 +241,7 @@ class StockMarketScraper:
 
                 # Commit the transaction
                 conn.commit()
-                print(f'{sector} saved to {db_path}')
+                print(f'{sector} saved to {specific_db_path}')
             return df
                     
         except Exception as e:
@@ -547,7 +557,7 @@ class StockMarketScraper:
                 dict_of_df_statements[sector] = df_final[settings.statements_columns]
 
                 extra_info = [sector]
-                system.print_info(i, len(statements_data))
+                system.print_info(i, len(statements_data), start_time, extra_info)
 
             return dict_of_df_statements
 

@@ -375,16 +375,16 @@ def test_internet(host="8.8.8.8"):
             print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
         time.sleep(wait_time)
 
-def db_optimize(db_path=settings.db_path):
+def db_optimize(db_filepath=settings.db_filepath):
     """
     Optimize the SQLite database by running VACUUM, ANALYZE, and REINDEX.
 
     Parameters:
-    db_path (str): The file path to the SQLite database.
+    db_filepath (str): The file path to the SQLite database.
     """
     try:
         # Connect to the database
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_filepath)
         cursor = conn.cursor()
 
         # Run VACUUM to reduce file size and defragment the database
@@ -400,7 +400,7 @@ def db_optimize(db_path=settings.db_path):
         conn.commit()
         conn.close()
 
-        print(f"Database optimization completed successfully ({db_path}).")
+        print(f"Database optimization completed successfully ({db_filepath}).")
 
     except sqlite3.Error as e:
         print(f"An error occurred during database optimization: {e}")

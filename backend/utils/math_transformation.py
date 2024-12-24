@@ -1,5 +1,6 @@
 import time
 import os
+import shutil
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -16,8 +17,8 @@ class MathTransformation:
 
     def __init__(self):
         """Initialize the MathTransformation with settings."""
-        self.db_folder = settings.db_folder
-        self.db_name = settings.db_name
+        self.data_folder = settings.data_folder
+        self.db_filepath = settings.db_filepath
 
     def load_data(self, files):
         """
@@ -30,8 +31,11 @@ class MathTransformation:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Load db
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
@@ -438,9 +442,18 @@ class MathTransformation:
         
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
 
-            with sqlite3.connect(db_path) as conn:
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
+
+            # Load db
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
                 print('saving...')
                 start_time = time.time()
@@ -528,6 +541,8 @@ class MathTransformation:
         except Exception as e:
             system.log_error(f"Error saving transformed data to database: {e}")
 
+        return data_dict
+
     def process_and_save(self, dict_filtered, batch_index=0):
         """
         Process and save data for a batch of sectors.
@@ -539,7 +554,7 @@ class MathTransformation:
         dict_transformed = self.mathmagic(dict_filtered, batch_index)
 
         # Save the transformed data to the database
-        self.save_to_db(dict_transformed)
+        dict_transformed = self.save_to_db(dict_transformed)
 
     def main_thread(self, dict_filtered, dict_math):
         """
