@@ -20,8 +20,6 @@ class CompanyScraper:
     def __init__(self):
         """Initialize the scraper with settings and WebDriver."""
         self.driver, self.driver_wait = selenium_driver.initialize_driver()
-        self.db_folder = settings.db_folder
-        self.db_name = settings.db_name
 
     @cached(cache)
     def get_raw_code(self):
@@ -31,6 +29,7 @@ class CompanyScraper:
             nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
             next_page_xpath = '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
 
+            system.test_internet()
             self.driver.get(settings.companies_url)
             system.choose(select_page_xpath, self.driver, self.driver_wait)
 
@@ -50,7 +49,7 @@ class CompanyScraper:
                     system.click(next_page_xpath, self.driver_wait)
 
                 extra_info = [f'page {page + 1}']
-                system.print_info(i, extra_info, start_time, total_pages + 1)
+                system.print_info(i, total_pages + 1, start_time, extra_info)
 
         except Exception as e:
             system.log_error(e)
@@ -158,6 +157,7 @@ class CompanyScraper:
 
         for i, (company_name, info) in enumerate(companies_to_process.items()):
             try:
+                system.test_internet()
                 self.driver.get(settings.company_url)
                 search_field_xpath = '//*[@id="keyword"]'
                 nav_tab_content_xpath = '//*[@id="nav-tabContent"]'
@@ -196,7 +196,7 @@ class CompanyScraper:
 
             all_company_info[company_name] = info
             extra_info = [info['ticker'], info['cvm_code'], company_name]
-            system.print_info(i, extra_info, start_time, total_companies_to_process)
+            system.print_info(i, total_companies_to_process, start_time, extra_info)
 
             all_data.append({'company_name': company_name, **info})
 
@@ -209,7 +209,7 @@ class CompanyScraper:
     def load_existing_data(self):
         existing_data = {}
         try:
-            conn = sqlite3.connect(settings.db_path)
+            conn = sqlite3.connect(settings.db_filepath)
             cursor = conn.cursor()
 
             cursor.execute(f"SELECT * FROM {settings.company_table}")
@@ -226,14 +226,14 @@ class CompanyScraper:
 
     def save_to_db(self, data):
         try:
-            os.makedirs(settings.db_folder, exist_ok=True)
+            os.makedirs(settings.data_folder, exist_ok=True)
 
-            backup_name = f"{os.path.splitext(settings.db_name)[0]} {settings.backup_name}.db"
-            backup_path = os.path.join(settings.db_folder, backup_name)
-            if os.path.exists(settings.db_path):
-                shutil.copy2(settings.db_path, backup_path)
+            backup_name = f"{os.path.splitext(settings.db_filepath)[0]} {settings.backup_name}.db"
+            backup_path = os.path.join(settings.data_folder, backup_name)
+            if os.path.exists(settings.db_filepath):
+                shutil.copyfile(settings.db_filepath, backup_path)
 
-            conn = sqlite3.connect(settings.db_path)
+            conn = sqlite3.connect(settings.db_filepath)
             cursor = conn.cursor()
 
             cursor.execute('''CREATE TABLE IF NOT EXISTS company_info (
@@ -287,7 +287,7 @@ class CompanyScraper:
         batch_to_save = []
 
         for info in new_data_batch:
-            company_name = info['company_name']
+            company_name = info['trading_name']
             if company_name in existing_data:
                 existing_info = existing_data[company_name]
                 changes = {key: info[key] for key in info if info[key] != existing_info.get(key)}
@@ -298,7 +298,7 @@ class CompanyScraper:
 
         self.save_to_db(batch_to_save)
 
-    def run(self):
+    def main(self):
         existing_companies, new_companies = self.get_company_info()
 
         total_companies = len(new_companies)
@@ -310,7 +310,7 @@ class CompanyScraper:
             self.update_and_save_batch(existing_companies, [info for _, info in batch])
             all_company_info.extend(batch)
 
-        system.db_optimize(self.db_name)
+        system.db_optimize(settings.db_filepath)
 
         return all_company_info
 

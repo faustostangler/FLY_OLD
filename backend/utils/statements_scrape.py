@@ -23,8 +23,6 @@ class StatementsDataScraper:
     def __init__(self):
         """Initialize the scraper with settings and WebDriver."""
         self.driver, self.driver_wait = selenium_driver.initialize_driver()
-        self.db_folder = settings.db_folder
-        self.db_name = settings.db_name
 
     def load_nsd_list(self):
         """
@@ -34,14 +32,13 @@ class StatementsDataScraper:
         DataFrame: A DataFrame containing the filtered NSD data.
         """
         try:
-            db_path = os.path.join(self.db_folder, settings.db_name)  # Full path to b3.db
             query = """
                 SELECT *
                 FROM nsd
                 WHERE nsd_type IN ({})
             """.format(','.join('?' for _ in settings.statements_types))
 
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 nsd_data = pd.read_sql_query(query, conn, params=settings.statements_types)
 
             return nsd_data.drop_duplicates()
@@ -51,16 +48,17 @@ class StatementsDataScraper:
 
     def load_financial_statements(self):
         """
-        Load existing financial statements from all .db files in the db_folder.
+        Load existing financial statements from all .db files in the data_folder.
 
         Returns:
         dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = f"{settings.db_path.replace('.db', '')} {settings.statements_file}.db"
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
 
             # Connect to the SQLite database
-            conn = sqlite3.connect(db_file)
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Query to get all table names, excluding internal SQLite tables like sqlite_stat1
@@ -77,10 +75,10 @@ class StatementsDataScraper:
                 df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
                 financial_statements[sector] = df  # Store the DataFrame with the sector as the key
                 df.to_csv(f'{sector}.csv')
-                # Use system.print_info to display progress
+                # Display progress
                 total_lines += len(df)
                 extra_info = [f'{len(df)} lines in', sector, f'{total_lines} total lines']
-                system.print_info(i, extra_info, start_time, total_files)
+                system.print_info(i, total_files, start_time, extra_info)
 
             return financial_statements
 
@@ -90,8 +88,7 @@ class StatementsDataScraper:
 
     def load_company_info(self):
         try:
-            db_path = os.path.join(self.db_folder, settings.db_name)  # Full path to b3.db
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 query = "SELECT * FROM company_info"
                 company_info_df = pd.read_sql_query(query, conn)
             return company_info_df
@@ -255,12 +252,12 @@ class StatementsDataScraper:
         """
 
         try:
-            # Define the base database name using settings
-            db_name_base = f"{self.db_name.split('.')[0]} {settings.statements_file}" 
-
             # Construct the full path for the main database and its backup
-            db_path = os.path.join(self.db_folder, f"{db_name_base}.db")
-            backup_path = os.path.join(self.db_folder, f"{db_name_base} {settings.backup_name}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_file} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
 
             # Create a sector table name with underscores instead of spaces
             table_name = setor.strip().replace(' ', '_') if setor.strip() else '_'
@@ -302,11 +299,13 @@ class StatementsDataScraper:
             """
 
             # Create a backup if the database already exists
-            if os.path.exists(db_path):
-                shutil.copy2(db_path, backup_path)
+            print(specific_db_path)
+            print(backup_db_path)
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
 
             # Connect to the main database
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(specific_db_path) as conn:
                 # Create the table with the composite primary key if it doesn't exist
                 conn.execute(create_table_sql)
                 conn.commit()
@@ -318,7 +317,7 @@ class StatementsDataScraper:
                 conn.commit()
 
             print('Partial save completed...')
-            return db_path
+            return df
 
         except Exception as e:
             system.log_error(f"Error saving data for sector {setor}: {e}")
@@ -354,12 +353,16 @@ class StatementsDataScraper:
                 if sector in financial_statements:
                     # Filter out NSD entries that are already in the financial statements for the sector
                     filtered_df = df[~df['nsd'].isin(financial_statements[sector]['nsd'])]
-                    if not filtered_df.empty:
-                        scrape_target.append(filtered_df)
+                else:
+                    # Include all NSD entries for sectors not in financial statements
+                    filtered_df = df
 
-            if not filtered_df.empty:
+                if not filtered_df.empty:
+                    scrape_target.append(filtered_df)
+
+            try:
                 scrape_targets = pd.concat(scrape_target)
-            else:
+            except Exception as e:
                 scrape_targets = pd.DataFrame(columns=settings.statements_columns)
 
             # Custom sorting to place empty fields last
@@ -406,6 +409,7 @@ class StatementsDataScraper:
 
             # Construct the URL for the NSD entry
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
+            system.test_internet()
             self.driver.get(url)
 
             # Define all statements to be scraped
@@ -461,7 +465,7 @@ class StatementsDataScraper:
                     try:
                         # Print progress information
                         extra_info = [batch_number, row['nsd'], row['company_name'], pd.to_datetime(row['quarter'], dayfirst=False, errors='coerce').strftime('%Y-%m-%d')]
-                        system.print_info(processed_items, extra_info, start_time, total_items)
+                        system.print_info(processed_items, total_items, start_time, extra_info)
 
                         # Process each company-quarter data using the refactored function
                         company_quarter_data = self.process_company_quarter_data(row)
@@ -473,10 +477,10 @@ class StatementsDataScraper:
                                 batch_df = pd.concat(all_data, ignore_index=True)
                                 # Reorder columns and sort
                                 batch_df = batch_df[settings.statements_columns].sort_values(by=settings.statements_order)
-                                db_path = self.save_to_db(batch_df, sector)
+                                db_filepath = self.save_to_db(batch_df, sector)
                                 all_data.clear()  # Clear the list after saving
                                 # Optimize the database after saving
-                                # system.db_optimize(db_path)
+                                # system.db_optimize(db_filepath)
 
                     except Exception as e:
                         # Log any errors encountered during processing of individual rows
@@ -488,8 +492,8 @@ class StatementsDataScraper:
                 if all_data:  # Make sure there is data to save
                     batch_df = pd.concat(all_data, ignore_index=True)
                     batch_df = batch_df[settings.statements_columns].sort_values(by=settings.statements_order)
-                    db_path = self.save_to_db(batch_df, sector)
-                    # system.db_optimize(db_path)
+                    db_filepath = self.save_to_db(batch_df, sector)
+                    # system.db_optimize(db_filepath)
 
             return scrape_targets
 
@@ -535,6 +539,9 @@ class StatementsDataScraper:
             self.close_scraper()
 
     def main(self, thread=False):
+
+        self.close_scraper()
+        
         # Identify the scrape targets
         scrape_targets = self.identify_scrape_targets()
         total_items = len(scrape_targets)
@@ -547,6 +554,8 @@ class StatementsDataScraper:
             else:
                 # Run sequentially
                 self.main_sequential(scrape_targets)  # Pass only scrape_targets
+
+        return True
 
     def run_scraper_with_new_instance(self, scrape_targets, batch_number):
         """

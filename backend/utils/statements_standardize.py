@@ -1,4 +1,5 @@
 import os
+import shutil
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -18,12 +19,12 @@ class StandardizedReport:
         Initialize the StandardizedReport class with settings from the utils module.
         
         Attributes:
-            db_folder (str): The folder path where the database is stored.
-            db_name (str): The name of the database file.
+            data_folder (str): The folder path where the database is stored.
+            db_filepath (str): The name of the database file.
         """
         try:
-            self.db_folder = settings.db_folder
-            self.db_name = settings.db_name
+            self.data_folder = settings.data_folder
+            self.db_filepath = settings.db_filepath
         except Exception as e:
             system.log_error(f"Error initializing StandardizedReport: {e}")
 
@@ -38,8 +39,11 @@ class StandardizedReport:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Load db
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
@@ -48,8 +52,8 @@ class StandardizedReport:
 
             dfs = {}
             total_lines = 0
+            print(f'loading {files}...')
             start_time = time.time()  # Initialize start time for progress tracking
-            print(files)
 
             # Iterate through each table (sector) and process the data
             for i, table in enumerate(tables):
@@ -75,12 +79,12 @@ class StandardizedReport:
                     dfs[sector] = df  # Store the DataFrame with the sector as the key
                     total_lines += len(df)  # Update the total number of processed lines
 
-                    # Display progress using system.print_info
+                    # Display progress
                     extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
-                    system.print_info(i, extra_info, start_time, len(tables))  # Removed the total_files argument
+                    system.print_info(i, len(tables), start_time, extra_info)
 
-                    # print('break')
-                    # break
+                    print('break load math')
+                    break
 
                 except Exception as e:
                     system.log_error(f"Error processing table {table}: {e}")
@@ -134,101 +138,94 @@ class StandardizedReport:
         Returns:
             pd.DataFrame: The modified DataFrame.
         """
-        target = criteria['target']
-        filters = criteria['filter']
-        sub_criteria = criteria.get('sub_criteria', [])
-        
-        # Initialize the parent criteria info list if not provided
-        if parent_criteria_info is None:
-            parent_criteria_info = []
-
-        # Initialize the mask for the entire DataFrame or use the parent mask
-        base_mask = pd.Series([True] * len(df)) if parent_mask is None else parent_mask.copy()
-        mask = base_mask.copy()
-
-        # Append the current criteria to the parent criteria info
-        parent_criteria_info.append({'target': target, 'filters': filters})
-
-        crits = []
-
-        # Define a dictionary to map filter conditions to functions
-        condition_map = {
-            'equals': lambda col, val: col == val.lower(),
-            'not_equals': lambda col, val: col != val.lower(),
-            # 'startswith': lambda col, val: col.str.startswith(tuple(map(str.lower, val))),
-            'startswith': lambda col, val: col.astype(str).str.startswith(val),
-            'not_startswith': lambda col, val: ~col.str.startswith(tuple(map(str.lower, val))),
-            'endswith': lambda col, val: col.str.endswith(tuple(map(str.lower, val))),
-            'not_endswith': lambda col, val: ~col.str.endswith(tuple(map(str.lower, val))),
-            'contains_all': lambda col, val: col.apply(lambda x: all(term in x.lower() for term in val) if pd.notna(x) else False),
-            'contains_any': lambda col, val: col.str.contains('|'.join(map(re.escape, val)), case=False, na=False),
-            'contains_none': lambda col, val: ~col.str.contains('|'.join(map(re.escape, val)), case=False, na=False),
-            'not_contains': lambda col, val: col.apply(lambda x: not all(term in x.lower() for term in val) if pd.notna(x) else True),
-            'not_contains_any': lambda col, val: col.apply(lambda x: all(term not in x.lower() for term in val) if pd.notna(x) else True),
-            'level': lambda col, val: (col.str.count(r'\.') + 1) == int(val)  # Merged level filter for exact levels
-        }
-
-        # Apply each filter to the mask
-        for filter_column, filter_condition, filter_value in filters:
-            crits.append([filter_column, filter_condition, filter_value])
-
-            # Convert filter values to lists for conditions that need lists
-            if filter_condition in ['contains_any', 'contains_none', 'contains_all', 'not_contains_all']:
-                if not isinstance(filter_value, list):
-                    filter_value = [filter_value]
-
-            # df_column_lower = df[filter_column].str.lower() if df[filter_column].dtype == 'O' else df[filter_column]
-            df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
-
-            # Apply the filter condition using the mapping
-            if filter_condition in condition_map:
-                condition_mask = condition_map[filter_condition](df_column_lower, filter_value)
-                mask &= condition_mask
-            else:
-                raise ValueError(f"Unknown filter condition: {filter_condition}")
-
-        # Ensure 'account_standard', 'description_standard', 'standard_criteria', and 'items_match' columns exist
-        if 'account_standard' not in df.columns:
-            df['account_standard'] = ''
-        if 'description_standard' not in df.columns:
-            df['description_standard'] = ''
-        if 'standard_criteria' not in df.columns:
-            df['standard_criteria'] = ''
-        if 'items_match' not in df.columns:
-            df['items_match'] = ''
-
-        # Apply the target modifications to the DataFrame for the current mask
-        account, description = target.split(' - ')
-        df.loc[mask, 'account_standard'] = account
-        df.loc[mask, 'description_standard'] = description
-        df.loc[mask, 'standard_criteria'] = ' | '.join([f"{c[0]} {c[1]} {c[2]}" for c in crits])  # Add criteria details
-        
-        # Capture "contém itens como" (items that match the mask)
-        items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']} - {row['description']}", axis=1).tolist()
-        df.loc[mask, 'items_match'] = ', '.join(items_example)
-
-        print(sector, section_name, f"{account} - {description}")
-        # print('Criteria Path:')
-        # for parent in parent_criteria_info:
-
-        #     print(f"  {parent['target']}")
-        #     for filt in parent['filters']:
-        #         print(f"    {filt}")
+        try:
+            target = criteria['target']
+            filters = criteria['filter']
+            sub_criteria = criteria.get('sub_criteria', [])
             
-        # print('Contém itens como:')
-        # for item in items_example:
-        #     print(f"    {item}")
+            # Initialize the parent criteria info list if not provided
+            if parent_criteria_info is None:
+                parent_criteria_info = []
 
-        # print('\n\n')
+            # Initialize the mask for the entire DataFrame or use the parent mask
+            df = df.reset_index(drop=True)  # Reset df index for correct df and mask alignment
+            base_mask = pd.Series([True] * len(df)) if parent_mask is None else parent_mask.copy()
+            mask = base_mask.copy()
 
-        # Recursively apply subcriteria using a new refined mask
-        for sub in sub_criteria:
-            # Create a new mask for sub-criteria by filtering the df with 'startswith' of the current filtered results
-            sub_accounts = df.loc[mask, 'account'].unique()
-            sub_mask = df['account'].apply(lambda x: any(x.startswith(acct) for acct in sub_accounts))
+            # Append the current criteria to the parent criteria info
+            parent_criteria_info.append({'target': target, 'filters': filters})
+
+            crits = []
+
+            # Define a dictionary to map filter conditions to functions
+            condition_map = {
+                'equals': lambda col, val: col == val.lower(),
+                'not_equals': lambda col, val: col != val.lower(),
+                # 'startswith': lambda col, val: col.str.startswith(tuple(map(str.lower, val))),
+                'startswith': lambda col, val: col.astype(str).str.startswith(val),
+                'not_startswith': lambda col, val: ~col.str.startswith(tuple(map(str.lower, val))),
+                'endswith': lambda col, val: col.str.endswith(tuple(map(str.lower, val))),
+                'not_endswith': lambda col, val: ~col.str.endswith(tuple(map(str.lower, val))),
+                'contains_all': lambda col, val: col.apply(lambda x: all(term in x.lower() for term in val) if pd.notna(x) else False),
+                'contains_any': lambda col, val: col.str.contains('|'.join(map(re.escape, val)), case=False, na=False),
+                'contains_none': lambda col, val: ~col.str.contains('|'.join(map(re.escape, val)), case=False, na=False),
+                'not_contains': lambda col, val: col.apply(lambda x: not all(term in x.lower() for term in val) if pd.notna(x) else True),
+                'not_contains_any': lambda col, val: col.apply(lambda x: all(term not in x.lower() for term in val) if pd.notna(x) else True),
+                'level': lambda col, val: (col.str.count(r'\.') + 1) == int(val)  # Merged level filter for exact levels
+            }
+
+            # Apply each filter to the mask
+            for filter_column, filter_condition, filter_value in filters:
+                crits.append([filter_column, filter_condition, filter_value])
+
+                # Convert filter values to lists for conditions that need lists
+                if filter_condition in ['contains_any', 'contains_none', 'contains_all', 'not_contains_all']:
+                    if not isinstance(filter_value, list):
+                        filter_value = [filter_value]
+
+                # df_column_lower = df[filter_column].str.lower() if df[filter_column].dtype == 'O' else df[filter_column]
+                df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
+
+                # Apply the filter condition using the mapping
+                if filter_condition in condition_map:
+                    condition_mask = condition_map[filter_condition](df_column_lower, filter_value)
+                    mask &= condition_mask
+                else:
+                    raise ValueError(f"Unknown filter condition: {filter_condition}")
+
+            # Ensure 'account_standard', 'description_standard', 'standard_criteria', and 'items_match' columns exist
+            if 'account_standard' not in df.columns:
+                df['account_standard'] = ''
+            if 'description_standard' not in df.columns:
+                df['description_standard'] = ''
+            if 'standard_criteria' not in df.columns:
+                df['standard_criteria'] = ''
+            if 'items_match' not in df.columns:
+                df['items_match'] = ''
+
+            # Apply the target modifications to the DataFrame for the current mask
+            account, description = target.split(' - ')
+            df.loc[mask, 'account_standard'] = account
+            df.loc[mask, 'description_standard'] = description
+            df.loc[mask, 'standard_criteria'] = ' | '.join([f"{c[0]} {c[1]} {c[2]}" for c in crits])  # Add criteria details
             
-            self.apply_criteria(df, sub, sector, section_name, parent_mask=sub_mask, output_file=output_file, parent_criteria_info=parent_criteria_info.copy())
+            # Capture "contém itens como" (items that match the mask)
+            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']} - {row['description']}", axis=1).tolist()
+            df.loc[mask, 'items_match'] = ', '.join(items_example)
 
+            print(sector, section_name, f"{account} - {description}")
+
+            # Recursively apply subcriteria using a new refined mask
+            for sub in sub_criteria:
+                # Create a new mask for sub-criteria by filtering the df with 'startswith' of the current filtered results
+                sub_accounts = df.loc[mask, 'account'].unique()
+                sub_mask = df['account'].apply(lambda x: any(x.startswith(acct) for acct in sub_accounts))
+                
+                df = self.apply_criteria(df, sub, sector, section_name, parent_mask=sub_mask, output_file=output_file, parent_criteria_info=parent_criteria_info.copy())
+
+        except Exception as e:
+            print(f'criteria error {e}')
+        
         return df
 
     def apply_criteria_tree(self, df, criteria_tree, sector, section_name, output_file='output.txt'):
@@ -245,8 +242,8 @@ class StandardizedReport:
         """
         for criteria in criteria_tree:
             df = self.apply_criteria(df, criteria, sector, section_name, output_file=output_file)
-        return df
 
+        return df
 
     def generate_standard_financial_statements(self, df):
         """
@@ -267,23 +264,26 @@ class StandardizedReport:
 
             standardization_sections = {
                 'Composição do Capital': intel.section_0_criteria, 
-                'Balanço Patrimonial Ativo': intel.section_1_criteria,
-                'Balanço Patrimonial Passivo': intel.section_2_criteria,
+                # 'Balanço Patrimonial Ativo': intel.section_1_criteria,
+                # 'Balanço Patrimonial Passivo': intel.section_2_criteria,
                 'Demonstração do Resultado': intel.section_3_criteria,
-                'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
-                'Demonstração de Valor Adiconado': intel.section_7_criteria,
+                # 'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
+                # 'Demonstração de Valor Adiconado': intel.section_7_criteria,
             }
-
+            print('standardizing sections..., with criteria restrictions')
             start_time = time.time()
             total_sections = len(standardization_sections)
 
             # Loop through each section in the standardization pack
             for i, (section_name, criteria_tree) in enumerate(standardization_sections.items()):
                 extra_info = [sector, section_name]
-                system.print_info(i, extra_info, start_time, total_sections)
+                system.print_info(i, total_sections, start_time, extra_info)
 
                 # Call the apply_criteria_to_dataframe method for each section
-                df = self.apply_criteria_tree(df, criteria_tree, sector, section_name)
+                try:
+                    df = self.apply_criteria_tree(df, criteria_tree, sector, section_name)
+                except Exception as e:
+                    print(f'Error during generate_standard_financial_statements section {section_name}: {e}')
 
         except Exception as e:
             system.log_error(f"Error during generate_standard_financial_statements: {e}")
@@ -304,16 +304,26 @@ class StandardizedReport:
         dict: Dictionary with standardized DataFrames.
         """
         try:
-            print('Standardizing data')
+            print('standardizing data...')
             start_time = time.time()
-            total = len(dict_df)
 
             for i, (sector, df) in enumerate(dict_df.items()):
 
                 extra_info = [f'{sector}']
-                system.print_info(i, extra_info, start_time, total)
+                system.print_info(i, len(dict_df), start_time, extra_info)
 
-                df = self.generate_standard_financial_statements(df)
+                try:
+                    # Generate standardized financial statements
+                    df = self.generate_standard_financial_statements(df)
+
+                    # Add updated DataFrame back to the dictionary
+                    dict_df[sector] = df
+
+                    print(f'break standarditizing')
+                    break
+
+                except Exception as e:
+                    system.log_error(f"Error in standardize_data section{sector}: {e}")
 
         except Exception as e:
             system.log_error(f"Error in standardize_data: {e}")
@@ -373,11 +383,21 @@ class StandardizedReport:
         Args:
             data_dict (dict): Dictionary containing DataFrames of transformed data for each sector.
         """
+        chunk_size = settings.chunk_size
+
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_standard}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
 
-            with sqlite3.connect(db_path) as conn:
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
+
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
                 start_time = time.time()
@@ -428,12 +448,19 @@ class StandardizedReport:
                     data_to_insert = list(df_to_insert.itertuples(index=False, name=None))
 
                     # Step 4: Execute batch insert
-                    cursor.executemany(insert_sql, data_to_insert)
-                    conn.commit()  # Commit the transaction
+                    total_chunks = len(range(0, len(data_to_insert), chunk_size))
+                    total_lines = len(data_to_insert)
+                    print('saving in parts...')
+                    start_time = time.time()  # Record the start time for progress tracking
+                    for c, start in enumerate(range(0, len(data_to_insert), chunk_size)):
+                        # Process the chunk
+                        chunk = data_to_insert[start:start + chunk_size]
+                        cursor.executemany(insert_sql, chunk)
+                        conn.commit()  # Commit after each chunk
 
                     total_lines += len(df)
                     extra_info = [f'{sector}: {len(df)}, {total_lines} lines']
-                    system.print_info(i, extra_info, start_time, len(data_dict))
+                    system.print_info(i, len(data_dict), start_time, extra_info)
 
                     df.to_csv(f'df_{sector}_standard.csv', index=False)
 
@@ -454,6 +481,7 @@ class StandardizedReport:
         """
         try:
             dict_df = self.load_data(settings.statements_file_math)
+
             standardized_data = self.standardize_data(dict_df)
 
             standardized_data = self.sanitize_db(standardized_data)

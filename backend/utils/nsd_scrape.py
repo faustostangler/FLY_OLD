@@ -21,9 +21,6 @@ class NSDScraper:
         """
         Initialize the NSDScraper with database settings.
         """
-        self.db_name = settings.db_name
-        self.db_folder = settings.db_folder
-        self.db_full_path = os.path.join(self.db_folder, self.db_name)
 
     def get_max_nsd(self):
         """
@@ -33,7 +30,7 @@ class NSDScraper:
         int: The maximum NSD value found in the database, or 0 if none exists.
         """
         try:
-            with sqlite3.connect(self.db_full_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT MAX(nsd) FROM nsd")
                 max_nsd = cursor.fetchone()[0]
@@ -50,7 +47,7 @@ class NSDScraper:
         list: A list of missing NSD values.
         """
         try:
-            with sqlite3.connect(self.db_full_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT nsd + 1 AS missing_nsd
@@ -88,7 +85,6 @@ class NSDScraper:
             new_nsds = list(range(max_nsd + 1, max_nsd + estimated_new_nsds + 1))
             missing_nsds = self.get_missing_nsds()
             nsd_range = new_nsds + missing_nsds
-            nsd_range = new_nsds + missing_nsds
 
             return nsd_range
         except Exception as e:
@@ -103,7 +99,7 @@ class NSDScraper:
         float: The estimated number of NSDs submitted per day.
         """
         try:
-            with sqlite3.connect(self.db_full_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT MIN(sent_date), MAX(sent_date), COUNT(*) FROM nsd")
                 result = cursor.fetchone()
@@ -135,7 +131,7 @@ class NSDScraper:
         tuple: The maximum NSD and its sent date.
         """
         try:
-            with sqlite3.connect(self.db_full_path) as conn:
+            with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT nsd, sent_date FROM nsd ORDER BY nsd DESC LIMIT 1")
                 result = cursor.fetchone()
@@ -165,6 +161,7 @@ class NSDScraper:
         try:
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
             headers = system.header_random()  # Use the random headers from the system module
+            system.test_internet()
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             html = response.text
@@ -245,16 +242,14 @@ class NSDScraper:
         nsd_data (list): A list of dictionaries containing NSD data.
         """
         try:
-            # Ensure the database directory exists
-            os.makedirs(self.db_folder, exist_ok=True)
-
             # Backup the existing database before saving new data
-            backup_name = f"{os.path.splitext(self.db_name)[0]} {settings.backup_name}.db"
-            backup_path = os.path.join(self.db_folder, backup_name)
-            if os.path.exists(self.db_full_path):
-                shutil.copy2(self.db_full_path, backup_path)
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
 
-            with sqlite3.connect(self.db_full_path) as conn:
+            if os.path.exists(settings.db_filepath):
+                shutil.copyfile(settings.db_filepath, backup_db_path)
+
+            with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
 
                 # Ensure the table exists with the correct schema and field order
@@ -303,10 +298,11 @@ class NSDScraper:
         except Exception as e:
             system.log_error(f"Error saving data to database: {e}")
 
-    def scrape_nsd(self):
+    def main(self):
         """
         The main method to scrape NSD data, parse it, and save it to the database.
         """
+        limit_tries = 2
         try:
             nsd_range = self.generate_nsd_range()
             nsd_data = []
@@ -328,7 +324,7 @@ class NSDScraper:
                             nsd_data.append(data)
 
                     # Print progress information
-                    system.print_info(i, extra_info, start_time, total_nsds)
+                    system.print_info(i, total_nsds, start_time, extra_info)
 
                     # Regressive periodic save
                     if (total_nsds - i - 1) % (settings.batch_size // 1) == 0:
@@ -339,13 +335,13 @@ class NSDScraper:
                         else:
                             limit_counter += 1
                             # Check if the counter has reached 5
-                            if limit_counter >= 2:
+                            if limit_counter >= limit_tries:
                                 nsd_data = self.save_to_db(nsd_data)
                                 return nsd_range # Interrupts the function so it does not go to infinity
 
                 except Exception as e:
                     system.log_error(f"Error processing NSD {nsd}: {e}")
-            system.db_optimize(self.db_name)
+            system.db_optimize(self.db_filepath)
             return nsd_range
         
         except Exception as e:

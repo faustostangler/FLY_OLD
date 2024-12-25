@@ -1,18 +1,45 @@
-# System-wide settings
-db_name = 'b3.db'  # Database name
-db_folder = 'backend/data'
-db_folder_short = 'data'
-db_path = 'backend/data/b3.db'
+import os
+
+# Define the base directory (root of the project)
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# Folder and file configuration
+backend_folder = os.path.join(base_dir, "backend")
+data_folder = os.path.join(backend_folder, "data")
+bin_folder = os.path.join(backend_folder, "bin")
+utils_folder = os.path.join(backend_folder, "utils")
+
+# Create necessary directories if they don't exist
+os.makedirs(backend_folder, exist_ok=True)
+os.makedirs(data_folder, exist_ok=True)
+os.makedirs(bin_folder, exist_ok=True)
+os.makedirs(utils_folder, exist_ok=True)
+
+# Main database name
+db_name = "b3.db"
 backup_name = 'backup'
+
+# Dynamic database names
+db_filepath = os.path.join(data_folder, db_name)
+backup_db = f"{db_name.split('.')[0]} {backup_name}.{db_name.split('.')[-1]}"
+
+max_workers = 10
 
 # batches
 batch_size = 50  # Batch size for data processing
 max_workers = 8
 big_batch_size = int(40000 / max_workers)
+chunk_size = 50000
 
 # Selenium settings
 wait_time = 2  # Wait time for Selenium operations
 driver = driver_wait = None  # Placeholders for Selenium driver and wait objects
+registry_paths = [
+    r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
+    r'reg query "HKEY_LOCAL_MACHINE\Software\Google\Chrome\BLBeacon" /v version',
+    r'reg query "HKEY_LOCAL_MACHINE\Software\WOW6432Node\Google\Chrome\BLBeacon" /v version'
+]
+
 
 # Requests
 USER_AGENTS = [
@@ -90,7 +117,7 @@ statements_file = 'statements'
 statements_types = ["DEMONSTRACOES FINANCEIRAS PADRONIZADAS", "INFORMACOES TRIMESTRAIS"]
 financial_statements_columns = ['account', 'description', 'value']  # Assuming these are the financial/statements columns
 statements_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'frame'] + financial_statements_columns
-statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'account', 'description']
+statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'account', 'description', 'type', ]
 year_end_accounts = ['3', '4']
 cumulative_quarter_accounts = ['6', '7']
 
@@ -100,7 +127,11 @@ statements_file_math = 'math'
 # Standard settings
 statements_standard = 'standard'
 
+# stock_market
+markets_file = 'markets'
+
 # ratios
+indicators_file = 'indicators'
 
 
 # Descriptions and accounts
@@ -161,8 +192,6 @@ governance_levels = {
     "DRN": "BDR Não Patrocinado"
 }
 
-# stock_market
-market_file = 'markets'
 
 tipos_acoes = {
     '1': 'Direitos de Subscrição de Ações Ordinárias',

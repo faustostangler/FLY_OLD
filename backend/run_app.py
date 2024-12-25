@@ -13,50 +13,49 @@ from utils import stock_market_scraper
 if __name__ == '__main__':
     try:
         # Ask the user if they want to scrape company information
-        # scrape_choice = system.timed_input('Want to scrape company information? (YES/NO): ')
         scrape_choice = 'N'
+        # scrape_choice = system.timed_input('Want to scrape company information? (YES/NO): ')
         if scrape_choice.strip().upper().startswith('Y'):
             # Instancia a classe CompanyScraper e executa o processo de scraping
             scraper = company_scrape.CompanyScraper()  # Instancia a classe, o WebDriver é gerado dentro dela
-            new_companies = scraper.run()  # Executa o processo principal de scraping
+            new_companies = scraper.main()  # Executa o processo principal de scraping
             scraper.close()  # Fecha o WebDriver
 
-        # nsd_choice = system.timed_input('Want to scrape NSD data? (YES/NO): ')
         nsd_choice = 'N'
+        # nsd_choice = system.timed_input('Want to scrape NSD data? (YES/NO): ')
         if nsd_choice.strip().upper().startswith('Y'):
             nsd_scraper = nsd_scrape.NSDScraper()
-            nsd_range = nsd_scraper.scrape_nsd()
+            nsd_range = nsd_scraper.main()
 
+        statements_choice = 'Y'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
-        statements_choice = 'N'
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()
-            scraper.close_scraper()
-            scraper.main()
+            scraped = scraper.main(thread=True)
 
-        # math_choice = system.timed_input('Want to Math Process Statements Sheets? (YES/NO): ')
         math_choice = 'N'
+        # math_choice = system.timed_input('Want to Math Process Statements Sheets? (YES/NO): ')
         if math_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             mathmagic = math_transformation.MathTransformation()
-            mathmagic.main()
+            math = mathmagic.main()
 
-        # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         transduction_choice = 'N'
+        # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             standart_statements = statements_standardize.StandardizedReport()
             data = standart_statements.main()
 
         # we need to grab stock daily data
-        market_choice = 'Y'
+        market_choice = 'N'
         if market_choice.strip().upper().startswith('Y'):
             # call market processes
             market = stock_market_scraper.StockMarketScraper()
             market_data = market.main()
 
         # financial_ratios_choice = system.timed_input('Want to Create Fundamentalist Ratios? (YES/NO): ')
-        financial_ratios_choice = 'N'
+        financial_ratios_choice = 'Y'
         if financial_ratios_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             financial_ratios = financial_ratios.FinancialRatios()
@@ -68,4 +67,4 @@ if __name__ == '__main__':
     except Exception as e:
         e = system.log_error(e)
 
-    # print('done')
+    print('done')

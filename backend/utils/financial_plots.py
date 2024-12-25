@@ -15,9 +15,16 @@ class FinancialDataPlotter:
 
         Load all tables from an SQLite database into a single DataFrame.
         """
-        db_path = os.path.join(settings.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}")
+        # Adjust base_dir to move up from "utils" to "backend"
+        backend_dir = os.path.dirname(settings.base_dir)
 
-        conn = sqlite3.connect(db_path)
+        # Construct the db_filepath with the 'standard' suffix
+        db_filepath = os.path.splitext(os.path.basename(settings.db_filepath))[0] + ' ' + settings.statements_standard + "." + settings.db_filepath.split('.')[-1]
+
+        # Construct the final db_filepath in the "data" folder under "backend"
+        db_filepath = os.path.join(backend_dir, settings.data_folder_short, db_filepath)
+
+        conn = sqlite3.connect(db_filepath)
         cursor = conn.cursor()
 
         # Fetch all table names
@@ -33,9 +40,9 @@ class FinancialDataPlotter:
             df['table_name'] = table_name  # Add a column to identify the source table
             df_list.append(df)
 
-            # Display progress using system.print_info
+            # Display progress
             extra_info = [table_name]
-            system.print_info(i, extra_info, start_time, len(tables))  # Removed the total_files argument
+            system.print_info(i, len(tables), start_time, extra_info)
 
             print('break')
             break

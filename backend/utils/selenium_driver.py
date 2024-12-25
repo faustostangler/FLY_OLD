@@ -58,6 +58,7 @@ def get_chromedriver_url(version):
     url_error_msg = f'Error obtaining ChromeDriver for version {version}'
 
     try:
+        system.test_internet()
         response = requests.get(chromedriver_url_template)
         if response.status_code == 200:
             return chromedriver_url_template
@@ -69,7 +70,7 @@ def get_chromedriver_url(version):
         system.log_error(str(e))
         return None
 
-def download_and_extract_chromedriver(url, dest_folder):
+def download_and_extract_chromedriver(url):
     """
     Download and extract ChromeDriver from the given URL.
 
@@ -81,13 +82,15 @@ def download_and_extract_chromedriver(url, dest_folder):
         str: The path to the extracted ChromeDriver executable.
     """
     zip_filename = 'chromedriver.zip'
+    dest_folder = settings.bin_folder
     chromedriver_folder = 'chromedriver-win64'
     chromedriver_executable = 'chromedriver.exe'
     download_error_msg = 'Failed to download or extract ChromeDriver: {e}'
 
     try:
+        system.test_internet()
         response = requests.get(url)
-        zip_path = dest_folder / zip_filename
+        zip_path = os.path.join(dest_folder, zip_filename)
 
         with open(zip_path, 'wb') as file:
             file.write(response.content)
@@ -96,8 +99,9 @@ def download_and_extract_chromedriver(url, dest_folder):
             zip_ref.extractall(dest_folder)
 
         os.remove(zip_path)
-        chromedriver_path = dest_folder / chromedriver_folder / chromedriver_executable
-        return str(chromedriver_path.resolve())
+        chromedriver_path = os.path.join(dest_folder, chromedriver_folder, chromedriver_executable)
+
+        return str(chromedriver_path)
 
     except Exception as e:
         system.log_error(download_error_msg.format(e=e))
@@ -110,8 +114,6 @@ def get_chromedriver_path():
     Returns:
         str: The path to the ChromeDriver executable.
     """
-    base_path = Path(__file__).resolve().parent.parent
-    bin_folder = settings.bin_folder
     chrome_version_error_msg = 'Unable to determine Chrome version.'
     chromedriver_url_error_msg = 'Unable to determine the correct ChromeDriver URL.'
     path_error_msg = 'Failed to obtain ChromeDriver path dynamically.'
@@ -125,10 +127,7 @@ def get_chromedriver_path():
         if not chromedriver_url:
             raise Exception(chromedriver_url_error_msg)
 
-        path = base_path / bin_folder
-        path.mkdir(parents=True, exist_ok=True)
-
-        chromedriver_path = download_and_extract_chromedriver(chromedriver_url, path)
+        chromedriver_path = download_and_extract_chromedriver(chromedriver_url)
         if not chromedriver_path:
             raise Exception(path_error_msg)
 
@@ -183,7 +182,9 @@ def initialize_driver():
     Returns:
         tuple: A tuple containing the WebDriver and WebDriverWait instances.
     """
+    # https://googlechromelabs.github.io/chrome-for-testing/#stable
     hardcoded_chromedriver_path = r'D:\\Fausto Stangler\\Documentos\\Python\\FLY\\backend\\bin\\chromedriver-win64\\chromedriver.exe'
+    hardcoded_chromedriver_path = r'c:\\Users\\Fausto\\OneDrive\\Documentos\\Python\\FLY\\backend\\bin\\chromedriver-win64\\chromedriver.exe'
     initialize_driver_error_msg = 'Failed to load driver from hardcoded path.'
     dynamic_driver_error_msg = 'Failed to obtain ChromeDriver path dynamically.'
 

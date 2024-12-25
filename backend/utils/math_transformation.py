@@ -1,5 +1,6 @@
 import time
 import os
+import shutil
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -16,8 +17,8 @@ class MathTransformation:
 
     def __init__(self):
         """Initialize the MathTransformation with settings."""
-        self.db_folder = settings.db_folder
-        self.db_name = settings.db_name
+        self.data_folder = settings.data_folder
+        self.db_filepath = settings.db_filepath
 
     def load_data(self, files):
         """
@@ -30,8 +31,11 @@ class MathTransformation:
             dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            db_file = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {files}.db")
-            conn = sqlite3.connect(db_file)
+            # Load db
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
+
+            conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
@@ -40,8 +44,8 @@ class MathTransformation:
 
             dfs = {}
             total_lines = 0
+            print(f'loading {files}...')
             start_time = time.time()  # Initialize start time for progress tracking
-            print(files)
 
             # Iterate through each table (sector) and process the data
             for i, table in enumerate(tables):
@@ -66,10 +70,12 @@ class MathTransformation:
                 dfs[sector] = df  # Store the DataFrame with the sector as the key
                 total_lines += len(df)  # Update the total number of processed lines
 
-                # Display progress using system.print_info
+                # Display progress
                 extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
-                system.print_info(i, extra_info, start_time, len(tables))  # Removed the total_files argument
+                system.print_info(i, len(tables), start_time, extra_info)
 
+                # print('break load')
+                # break
             return dfs
 
         except Exception as e:
@@ -117,9 +123,10 @@ class MathTransformation:
         new_entries_column = 'version'  # Define the column that will be used to identify the latest version of entries
 
         filtered_results = {}  # Initialize an empty dictionary to store the filtered results
-        start_time = time.time()  # Record the start time to measure processing time for each sector
         total_sectors = len(dict_new)  # Determine the total number of sectors to process
         total_lines = 0  # Initialize a counter to keep track of the total number of new lines identified
+        print('getting new entries...')
+        start_time = time.time()  # Record the start time to measure processing time for each sector
 
         try:
             # Iterate over each sector and its associated DataFrame in the new data dictionary
@@ -165,7 +172,7 @@ class MathTransformation:
 
                 # Prepare information for logging progress
                 extra_info = [f'{size} new lines to math from {sector}, total {total_lines}']
-                system.print_info(i, extra_info, start_time, total_sectors)
+                system.print_info(i, total_sectors, start_time, extra_info)
 
             return filtered_results
 
@@ -376,7 +383,7 @@ class MathTransformation:
             dict_transformed = {}
             total_lines = 0
 
-            print('transform')
+            print('transforming statements...')
             start_time = time.time()  # Record start time for progress tracking
             # Iterate over each sector in the filtered dictionary
             for i, (sector, df) in enumerate(dict_filtered.items()):
@@ -410,15 +417,18 @@ class MathTransformation:
                 size = len(transformed_df)
                 total_lines += size
 
-                # Display progress using system.print_info
+                # Display progress
                 extra_info = [f'{size} lines from {sector}, total {total_lines}']
-                system.print_info(i, extra_info, start_time, len(dict_filtered))
+                system.print_info(i, len(dict_filtered), start_time, extra_info)
 
             return dict_transformed
 
         except Exception as e:
             system.log_error(f"Error during mathematical transformations: {e}")
             return {}
+
+    def process_chunk(chunk):
+        return [tuple(row) for row in chunk.to_numpy()]
 
     def save_to_db(self, data_dict):
         """
@@ -428,13 +438,24 @@ class MathTransformation:
         Args:
             data_dict (dict): Dictionary containing DataFrames of transformed data for each sector.
         """
+        chunk_size = settings.chunk_size
+        
         try:
             # Construct the database path
-            db_path = os.path.join(self.db_folder, f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.db")
+            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math}.{settings.db_name.split('.')[-1]}"
+            specific_db_path = os.path.join(settings.data_folder, specific_name)
 
-            with sqlite3.connect(db_path) as conn:
+            # Backup the existing database before saving new data
+            backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
+            backup_db_path = os.path.join(settings.data_folder, backup_name)
+
+            if os.path.exists(specific_db_path):
+                shutil.copyfile(specific_db_path, backup_db_path)
+
+            # Load db
+            with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
-
+                print('saving...')
                 start_time = time.time()
                 total_lines = 0
                 for i, (sector, df) in enumerate(data_dict.items()):
@@ -494,18 +515,33 @@ class MathTransformation:
                     data_to_insert = list(df.itertuples(index=False, name=None))
 
                     # Execute batch insert
-                    cursor.executemany(insert_sql, data_to_insert)
+                    total_chunks = len(range(0, len(data_to_insert), chunk_size))
+                    total_lines = len(data_to_insert)
+                    print('saving in parts...')
+                    start_time = time.time()  # Record the start time for progress tracking
+                    for c, start in enumerate(range(0, len(data_to_insert), chunk_size)):
+                        # Process the chunk
+                        chunk = data_to_insert[start:start + chunk_size]
+                        cursor.executemany(insert_sql, chunk)
+                        conn.commit()  # Commit after each chunk
 
-                    conn.commit()  # Commit the transaction to save changes
+                        # Update progress info
+                        processed_lines = (c + 1) * chunk_size
+                        extra_info = [f'{sector} {i+1}/{len(data_dict)}: part {c + 1}/{total_chunks}']
+                        system.print_info(c, total_chunks, start_time, extra_info)
+                    # cursor.executemany(insert_sql, data_to_insert)
+                    # conn.commit()  # Commit the transaction to save changes
 
                     total_lines += len(df)
                     extra_info = [f'{sector}: {len(df)}, {total_lines} lines']
-                    system.print_info(i, extra_info, start_time, len(data_dict))
+                    system.print_info(i, len(data_dict), start_time, extra_info)
 
                 cursor.close()  # Close the cursor after all operations are complete
 
         except Exception as e:
             system.log_error(f"Error saving transformed data to database: {e}")
+
+        return data_dict
 
     def process_and_save(self, dict_filtered, batch_index=0):
         """
@@ -518,7 +554,7 @@ class MathTransformation:
         dict_transformed = self.mathmagic(dict_filtered, batch_index)
 
         # Save the transformed data to the database
-        self.save_to_db(dict_transformed)
+        dict_transformed = self.save_to_db(dict_transformed)
 
     def main_thread(self, dict_filtered, dict_math):
         """
@@ -574,6 +610,8 @@ class MathTransformation:
             self.main_thread(dict_filtered, dict_math)
         else:
             self.main_sequential(dict_filtered, dict_math)
+
+        return True
 
 if __name__ == "__main__":
     transformer = MathTransformation()
