@@ -117,4 +117,5 @@ bin/
 *.mobi
 *.jar
 *.war
-
+*.shm
+*.wal
