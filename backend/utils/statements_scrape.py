@@ -300,12 +300,12 @@ class StatementsDataScraper:
             value=excluded.value
             """
 
-            # Create a backup if the database already exists
-            if os.path.exists(specific_db_path):
-                shutil.copyfile(specific_db_path, backup_db_path)
-
             # Acquire the lock before performing database operations
             with self.db_lock:
+                print('skip backup file')
+                # # Create a backup if the database already exists
+                # if os.path.exists(specific_db_path):
+                #     shutil.copyfile(specific_db_path, backup_db_path)
                 # Connect to the main database
                 with sqlite3.connect(specific_db_path) as conn:
                     # Enable WAL mode
@@ -383,7 +383,7 @@ class StatementsDataScraper:
             scrape_targets['subsector'] = scrape_targets['subsector'].replace(last_order, '')
             scrape_targets['segment'] = scrape_targets['segment'].replace(last_order, '')
 
-
+            print(f'{len(nsd_list)} items found and {len(scrape_targets)} items to download')
             return scrape_targets
 
         except Exception as e:
@@ -475,9 +475,9 @@ class StatementsDataScraper:
                         # Process each company-quarter data using the refactored function
                         company_quarter_data = self.process_company_quarter_data(row)
                         all_data.extend(company_quarter_data)  # Add all processed DataFrames to all_data
-
+                        number_to_save = int(settings.batch_size // settings.max_workers)
                         # Save to DB every settings.batch_size iterations or at the end
-                        if (total_items - processed_items - 1) % int(settings.batch_size // settings.max_workers) == 0:
+                        if (total_items - processed_items - 1) % number_to_save == 0:
                             if all_data:
                                 batch_df = pd.concat(all_data, ignore_index=True)
                                 # Reorder columns and sort
