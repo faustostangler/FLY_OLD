@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from threading import Lock
 
 from utils import system
 from utils import settings
@@ -23,6 +23,8 @@ class StatementsDataScraper:
     def __init__(self):
         """Initialize the scraper with settings and WebDriver."""
         self.driver, self.driver_wait = selenium_driver.initialize_driver()
+        self.db_lock = Lock()
+        pass
 
     def load_nsd_list(self):
         """
@@ -299,22 +301,25 @@ class StatementsDataScraper:
             """
 
             # Create a backup if the database already exists
-            print(specific_db_path)
-            print(backup_db_path)
             if os.path.exists(specific_db_path):
                 shutil.copyfile(specific_db_path, backup_db_path)
 
-            # Connect to the main database
-            with sqlite3.connect(specific_db_path) as conn:
-                # Create the table with the composite primary key if it doesn't exist
-                conn.execute(create_table_sql)
-                conn.commit()
+            # Acquire the lock before performing database operations
+            with self.db_lock:
+                # Connect to the main database
+                with sqlite3.connect(specific_db_path) as conn:
+                    # Enable WAL mode
+                    conn.execute('PRAGMA journal_mode=WAL;')
 
-                # Insert data using INSERT OR REPLACE
-                for _, row in df.iterrows():
-                    conn.execute(insert_sql, tuple(row))
+                    # Create the table with the composite primary key if it doesn't exist
+                    conn.execute(create_table_sql)
+                    conn.commit()
 
-                conn.commit()
+                    # Insert data using INSERT OR REPLACE
+                    for _, row in df.iterrows():
+                        conn.execute(insert_sql, tuple(row))
+
+                    conn.commit()
 
             print('Partial save completed...')
             return df
@@ -343,13 +348,13 @@ class StatementsDataScraper:
 
             nsd_company_info = pd.merge(nsd_list, company_info, on='company_name', how='inner')
             # Group the merged DataFrame by sector and store in a dictionary
-            nsd_list_with_sector = {sector if sector.strip() else '_': df for sector, df in nsd_company_info.groupby('sector')}
+            nsd_list_by_sector = {sector if sector.strip() else '_': df for sector, df in nsd_company_info.groupby('sector')}
 
             financial_statements = self.load_financial_statements()
 
             scrape_target = []
             # Loop through each sector and filter out NSD entries that are already in financial statements
-            for sector, df in nsd_list_with_sector.items():
+            for sector, df in nsd_list_by_sector.items():
                 if sector in financial_statements:
                     # Filter out NSD entries that are already in the financial statements for the sector
                     filtered_df = df[~df['nsd'].isin(financial_statements[sector]['nsd'])]
@@ -570,8 +575,10 @@ class StatementsDataScraper:
 
     def close_scraper(self):
         """Close the WebDriver."""
-        if self.driver:
+        try:
             self.driver.quit()
+        except Exception as e:
+            pass
 
 if __name__ == "__main__":
     try:
