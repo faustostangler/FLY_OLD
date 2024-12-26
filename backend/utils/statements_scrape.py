@@ -41,9 +41,11 @@ class StatementsDataScraper:
             """.format(','.join('?' for _ in settings.statements_types))
 
             with sqlite3.connect(settings.db_filepath) as conn:
-                nsd_data = pd.read_sql_query(query, conn, params=settings.statements_types)
+                df = pd.read_sql_query(query, conn, params=settings.statements_types)
 
-            return nsd_data.drop_duplicates()
+            df = df.drop_duplicates()
+
+            return df
         except Exception as e:
             system.log_error(f"Error loading NSD data: {e}")
             return pd.DataFrame()
@@ -75,13 +77,19 @@ class StatementsDataScraper:
             for i, table in enumerate(tables):
                 sector = table[0]
                 df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
+
+                sector = sector.replace("_", " ")
                 financial_statements[sector] = df  # Store the DataFrame with the sector as the key
-                df.to_csv(f'{sector}.csv')
+
+                # df.to_csv(f'{sector}.csv')
+
                 # Display progress
                 total_lines += len(df)
                 extra_info = [f'{len(df)} lines in', sector, f'{total_lines} total lines']
                 system.print_info(i, total_files, start_time, extra_info)
 
+                # print('break finantial statements loading')
+                # break
             return financial_statements
 
         except Exception as e:
@@ -346,21 +354,24 @@ class StatementsDataScraper:
             nsd_list = self.load_nsd_list()
             company_info = self.load_company_info()
 
+            # merge nsd and company info
             nsd_company_info = pd.merge(nsd_list, company_info, on='company_name', how='inner')
+
             # Group the merged DataFrame by sector and store in a dictionary
             nsd_list_by_sector = {sector if sector.strip() else '_': df for sector, df in nsd_company_info.groupby('sector')}
 
             financial_statements = self.load_financial_statements()
 
             scrape_target = []
+
             # Loop through each sector and filter out NSD entries that are already in financial statements
-            for sector, df in nsd_list_by_sector.items():
+            for sector, df_nsd in nsd_list_by_sector.items():
                 if sector in financial_statements:
                     # Filter out NSD entries that are already in the financial statements for the sector
-                    filtered_df = df[~df['nsd'].isin(financial_statements[sector]['nsd'])]
+                    filtered_df = df_nsd[~df_nsd['nsd'].isin(financial_statements[sector]['nsd'])]
                 else:
                     # Include all NSD entries for sectors not in financial statements
-                    filtered_df = df
+                    filtered_df = df_nsd
 
                 if not filtered_df.empty:
                     scrape_target.append(filtered_df)

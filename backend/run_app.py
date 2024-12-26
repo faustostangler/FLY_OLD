@@ -3,6 +3,7 @@ from utils import system
 from utils import selenium_driver
 from utils import company_scrape
 from utils import nsd_scrape
+from utils import dados_abertos_scrape
 from utils import statements_scrape
 from utils import math_transformation
 from utils import statements_standardize
@@ -26,6 +27,12 @@ if __name__ == '__main__':
         if nsd_choice.strip().upper().startswith('Y'):
             nsd_scraper = nsd_scrape.NSDScraper()
             nsd_range = nsd_scraper.main()
+
+        dados_choice = 'Y'
+        # dados_choice = system.timed_input('Want to bulk download from Dados Abertos CVM? (YES/NO): ')
+        if dados_choice.strip().upper().startswith('Y'):
+            dados_abertos = dados_abertos_scrape.DadosAbertosScraper()
+            dados = dados_abertos.main(thread=True)
 
         statements_choice = 'Y'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
