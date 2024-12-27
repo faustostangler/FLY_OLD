@@ -23,8 +23,6 @@ backup_name = 'backup'
 db_filepath = os.path.join(data_folder, db_name)
 backup_db = f"{db_name.split('.')[0]} {backup_name}.{db_name.split('.')[-1]}"
 
-max_workers = 10
-
 # batches
 batch_size = 50  # Batch size for data processing
 max_workers = 8

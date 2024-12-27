@@ -31,7 +31,7 @@ if __name__ == '__main__':
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()
-            scraped = scraper.main(thread=True)
+            scraped = scraper.main(thread=False)
 
         math_choice = 'N'
         # math_choice = system.timed_input('Want to Math Process Statements Sheets? (YES/NO): ')

@@ -78,7 +78,7 @@ class StatementsDataScraper:
                 sector = table[0]
                 df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
 
-                sector = sector.replace("_", " ")
+                sector = sector.upper().replace('_', ' ')
                 financial_statements[sector] = df  # Store the DataFrame with the sector as the key
 
                 # df.to_csv(f'{sector}.csv')
@@ -554,7 +554,7 @@ class StatementsDataScraper:
         finally:
             self.close_scraper()
 
-    def main(self, thread=False):
+    def main(self, thread=True):
 
         self.close_scraper()
         

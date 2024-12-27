@@ -19,6 +19,10 @@ import subprocess
 
 from utils import settings
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+
 def log_error(error):
     """
     Logs an error to a file with detailed context, including caller info, 

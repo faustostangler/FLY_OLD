@@ -5,6 +5,7 @@ import sqlite3
 import pandas as pd
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from utils import system
 from utils import settings
@@ -19,6 +20,7 @@ class MathTransformation:
         """Initialize the MathTransformation with settings."""
         self.data_folder = settings.data_folder
         self.db_filepath = settings.db_filepath
+        self.db_lock = Lock()
 
     def load_data(self, files):
         """
@@ -48,34 +50,35 @@ class MathTransformation:
             start_time = time.time()  # Initialize start time for progress tracking
 
             # Iterate through each table (sector) and process the data
-            for i, table in enumerate(tables):
-                sector = table[0]
-                df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
+            with self.db_lock:
+                for i, table in enumerate(tables):
+                    sector = table[0]
+                    df = pd.read_sql_query(f"SELECT * FROM {sector}", con=conn)
 
-                # Normalize date columns to datetime format
-                df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
+                    # Normalize date columns to datetime format
+                    df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
 
-                # Normalize numeric columns
-                df['value'] = pd.to_numeric(df['value'], errors='coerce')
+                    # Normalize numeric columns
+                    df['value'] = pd.to_numeric(df['value'], errors='coerce')
 
-                # Fill missing 'value' with 0
-                df['value'] = df['value'].fillna(0)
+                    # Fill missing 'value' with 0
+                    df['value'] = df['value'].fillna(0)
 
-                # Identify rows where 'account' is missing or NaN and 'value' has been set to 0
-                missing_account = df['account'].isna() | df['account'].str.strip().eq('')
-                df.loc[missing_account, 'account'] = '0'  # Set 'account' to '0' (as text) for these rows
+                    # Identify rows where 'account' is missing or NaN and 'value' has been set to 0
+                    missing_account = df['account'].isna() | df['account'].str.strip().eq('')
+                    df.loc[missing_account, 'account'] = '0'  # Set 'account' to '0' (as text) for these rows
 
-                # Filter out only the latest versions for each group
-                df, _ = self.filter_newer_versions(df)
-                dfs[sector] = df  # Store the DataFrame with the sector as the key
-                total_lines += len(df)  # Update the total number of processed lines
+                    # Filter out only the latest versions for each group
+                    df, _ = self.filter_newer_versions(df)
+                    dfs[sector] = df  # Store the DataFrame with the sector as the key
+                    total_lines += len(df)  # Update the total number of processed lines
 
-                # Display progress
-                extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
-                system.print_info(i, len(tables), start_time, extra_info)
+                    # Display progress
+                    extra_info = [f'{files} {sector} {len(df)} of {total_lines} items']
+                    system.print_info(i, len(tables), start_time, extra_info)
 
-                # print('break load')
-                # break
+                    # print('break load')
+                    # break
             return dfs
 
         except Exception as e:
@@ -418,7 +421,7 @@ class MathTransformation:
                 total_lines += size
 
                 # Display progress
-                extra_info = [f'{size} lines from {sector}, total {total_lines}']
+                extra_info = [f'{batch_index} {size} lines from {sector}, total {total_lines}']
                 system.print_info(i, len(dict_filtered), start_time, extra_info)
 
             return dict_transformed
@@ -449,101 +452,103 @@ class MathTransformation:
             backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_file_math} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
             backup_db_path = os.path.join(settings.data_folder, backup_name)
 
-            if os.path.exists(specific_db_path):
-                shutil.copyfile(specific_db_path, backup_db_path)
+            # Acquire the lock before performing database operations
+            with self.db_lock:
+                if os.path.exists(specific_db_path):
+                    shutil.copyfile(specific_db_path, backup_db_path)
 
-            # Load db
-            with sqlite3.connect(specific_db_path) as conn:
-                cursor = conn.cursor()
-                print('saving...')
-                start_time = time.time()
-                total_lines = 0
-                for i, (sector, df) in enumerate(data_dict.items()):
-                    table_name = sector.upper().replace(' ', '_')  # Create a table name from sector name
-                    
-                    # # SQL for dropping the table if it exists
-                    # drop_table_sql = f"DROP TABLE IF EXISTS {table_name}"
-                    # cursor.execute(drop_table_sql)
+                # Load db
+                with sqlite3.connect(specific_db_path) as conn:
+                    cursor = conn.cursor()
+                    print('saving...')
+                    start_time = time.time()
+                    total_lines = 0
+                    for i, (sector, df) in enumerate(data_dict.items()):
+                        table_name = sector.upper().replace(' ', '_')  # Create a table name from sector name
                         
-                    # SQL for creating the table
-                    create_table_sql = f"""
-                    CREATE TABLE IF NOT EXISTS {table_name} (
-                        nsd INTEGER,
-                        sector TEXT,
-                        subsector TEXT,
-                        segment TEXT,
-                        company_name TEXT,
-                        quarter TEXT,
-                        version TEXT,
-                        type TEXT,
-                        frame TEXT,
-                        account TEXT,
-                        description TEXT,
-                        value REAL,
-                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
-                    )
-                    """
-                    cursor.execute(create_table_sql)
+                        # # SQL for dropping the table if it exists
+                        # drop_table_sql = f"DROP TABLE IF EXISTS {table_name}"
+                        # cursor.execute(drop_table_sql)
+                            
+                        # SQL for creating the table
+                        create_table_sql = f"""
+                        CREATE TABLE IF NOT EXISTS {table_name} (
+                            nsd INTEGER,
+                            sector TEXT,
+                            subsector TEXT,
+                            segment TEXT,
+                            company_name TEXT,
+                            quarter TEXT,
+                            version TEXT,
+                            type TEXT,
+                            frame TEXT,
+                            account TEXT,
+                            description TEXT,
+                            value REAL,
+                            PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
+                        )
+                        """
+                        cursor.execute(create_table_sql)
 
-                    # SQL command for INSERT OR REPLACE
-                    insert_sql = f"""
-                    INSERT INTO {table_name} 
-                    (nsd, sector, subsector, segment, company_name, quarter, version, type, frame, account, description, value) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(company_name, quarter, version, type, frame, account, description) DO UPDATE SET
-                    nsd=excluded.nsd,
-                    sector=excluded.sector,
-                    subsector=excluded.subsector,
-                    segment=excluded.segment,
-                    type=excluded.type,
-                    frame=excluded.frame,
-                    account=excluded.account,
-                    description=excluded.description,
-                    value=excluded.value
-                    """
+                        # SQL command for INSERT OR REPLACE
+                        insert_sql = f"""
+                        INSERT INTO {table_name} 
+                        (nsd, sector, subsector, segment, company_name, quarter, version, type, frame, account, description, value) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(company_name, quarter, version, type, frame, account, description) DO UPDATE SET
+                        nsd=excluded.nsd,
+                        sector=excluded.sector,
+                        subsector=excluded.subsector,
+                        segment=excluded.segment,
+                        type=excluded.type,
+                        frame=excluded.frame,
+                        account=excluded.account,
+                        description=excluded.description,
+                        value=excluded.value
+                        """
 
-                    # Prepare the data for bulk insertion
-                    df = df.copy()  # Work on a copy to avoid modifying the original DataFrame
+                        # Prepare the data for bulk insertion
+                        df = df.copy()  # Work on a copy to avoid modifying the original DataFrame
 
-                    # Ensure 'quarter' column is datetime and convert it to string format for SQLite compatibility
-                    df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce').dt.strftime('%Y-%m-%d')
-                   
-                    # Replace NaN and NaT with None to make the DataFrame compatible with SQLite
-                    df = df.where(pd.notna(df), None)
+                        # Ensure 'quarter' column is datetime and convert it to string format for SQLite compatibility
+                        df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce').dt.strftime('%Y-%m-%d')
+                    
+                        # Replace NaN and NaT with None to make the DataFrame compatible with SQLite
+                        df = df.where(pd.notna(df), None)
 
-                    # Convert DataFrame to list of tuples for batch insertion
-                    data_to_insert = list(df.itertuples(index=False, name=None))
+                        # Convert DataFrame to list of tuples for batch insertion
+                        data_to_insert = list(df.itertuples(index=False, name=None))
 
-                    # Execute batch insert
-                    total_chunks = len(range(0, len(data_to_insert), chunk_size))
-                    total_lines = len(data_to_insert)
-                    print('saving in parts...')
-                    start_time = time.time()  # Record the start time for progress tracking
-                    for c, start in enumerate(range(0, len(data_to_insert), chunk_size)):
-                        # Process the chunk
-                        chunk = data_to_insert[start:start + chunk_size]
-                        cursor.executemany(insert_sql, chunk)
-                        conn.commit()  # Commit after each chunk
+                        # Execute batch insert
+                        total_chunks = len(range(0, len(data_to_insert), chunk_size))
+                        total_lines = len(data_to_insert)
+                        print('saving in parts...')
+                        start_time = time.time()  # Record the start time for progress tracking
+                        for c, start in enumerate(range(0, len(data_to_insert), chunk_size)):
+                            # Process the chunk
+                            chunk = data_to_insert[start:start + chunk_size]
+                            cursor.executemany(insert_sql, chunk)
+                            conn.commit()  # Commit after each chunk
 
-                        # Update progress info
-                        processed_lines = (c + 1) * chunk_size
-                        extra_info = [f'{sector} {i+1}/{len(data_dict)}: part {c + 1}/{total_chunks}']
-                        system.print_info(c, total_chunks, start_time, extra_info)
-                    # cursor.executemany(insert_sql, data_to_insert)
-                    # conn.commit()  # Commit the transaction to save changes
+                            # Update progress info
+                            processed_lines = (c + 1) * chunk_size
+                            extra_info = [f'{sector} {i+1}/{len(data_dict)}: part {c + 1}/{total_chunks}']
+                            system.print_info(c, total_chunks, start_time, extra_info)
+                        # cursor.executemany(insert_sql, data_to_insert)
+                        # conn.commit()  # Commit the transaction to save changes
 
-                    total_lines += len(df)
-                    extra_info = [f'{sector}: {len(df)}, {total_lines} lines']
-                    system.print_info(i, len(data_dict), start_time, extra_info)
+                        total_lines += len(df)
+                        extra_info = [f'{sector}: {len(df)}, {total_lines} lines']
+                        system.print_info(i, len(data_dict), start_time, extra_info)
 
-                cursor.close()  # Close the cursor after all operations are complete
+                    cursor.close()  # Close the cursor after all operations are complete
 
         except Exception as e:
             system.log_error(f"Error saving transformed data to database: {e}")
 
         return data_dict
 
-    def process_and_save(self, dict_filtered, batch_index=0):
+    def process(self, dict_filtered, batch_index=0):
         """
         Process and save data for a batch of sectors.
 
@@ -553,9 +558,8 @@ class MathTransformation:
         # Apply mathematical transformations to the filtered data
         dict_transformed = self.mathmagic(dict_filtered, batch_index)
 
-        # Save the transformed data to the database
-        dict_transformed = self.save_to_db(dict_transformed)
-
+        return dict_transformed
+    
     def main_thread(self, dict_filtered, dict_math):
         """
         Run the math transformations using multiple threads.
@@ -569,13 +573,17 @@ class MathTransformation:
 
             with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
                 futures = []
+                dict_transformed = {} 
                 for batch_index, start in enumerate(range(0, total_lines, batch_size)):
                     end = min(start + batch_size, total_lines)
                     batch_data = {k: dict_filtered[k] for k in list(dict_filtered.keys())[start:end]}
-                    futures.append(executor.submit(lambda data=batch_data: self.process_and_save(data, batch_index)))
+                    futures.append(executor.submit(lambda data=batch_data: self.process(data, batch_index)))
 
                 for future in as_completed(futures):
-                    future.result()
+                    batch_index = future.result()  # Assuming process returns batch_index
+                    dict_transformed.update(batch_index)  # Assuming process returns a dictionary
+
+            return dict_transformed
 
         except Exception as e:
             system.log_error(f"Error during batch processing: {e}")
@@ -588,13 +596,15 @@ class MathTransformation:
             dict_filtered (dict): Dictionary containing filtered data to be processed.
         """
         try:
-            self.process_and_save(dict_filtered, dict_math)
+            dict_transformed = self.process(dict_filtered, dict_math)
+
+            return dict_transformed
                              
         except Exception as e:
             # Log any errors encountered during the sequential processing
             system.log_error(f"Error during sequential processing: {e}")
 
-    def main(self, thread=False):
+    def main(self, thread=True):
         """
         Main function to run the math transformations either sequentially or using multiple threads.
 
@@ -603,13 +613,16 @@ class MathTransformation:
         """
         dict_statements = self.load_data(settings.statements_file)
         # dict_math = self.load_data(settings.statements_file_math)
-        dict_math = {}
-        dict_filtered = self.filter_new_entries(dict_statements, dict_math)
+        dict_existing = {}
+        dict_filtered = self.filter_new_entries(dict_statements, dict_existing)
 
         if thread:
-            self.main_thread(dict_filtered, dict_math)
+            dict_math = self.main_thread(dict_filtered, dict_existing)
         else:
-            self.main_sequential(dict_filtered, dict_math)
+            dict_math = self.main_sequential(dict_filtered, dict_existing)
+
+        # Save the transformed data to the database
+        dict_math = self.save_to_db(dict_math)
 
         return True
 

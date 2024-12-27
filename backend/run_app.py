@@ -3,7 +3,6 @@ from utils import system
 from utils import selenium_driver
 from utils import company_scrape
 from utils import nsd_scrape
-from utils import dados_abertos_scrape
 from utils import statements_scrape
 from utils import math_transformation
 from utils import statements_standardize
@@ -28,17 +27,11 @@ if __name__ == '__main__':
             nsd_scraper = nsd_scrape.NSDScraper()
             nsd_range = nsd_scraper.main()
 
-        dados_choice = 'Y'
-        # dados_choice = system.timed_input('Want to bulk download from Dados Abertos CVM? (YES/NO): ')
-        if dados_choice.strip().upper().startswith('Y'):
-            dados_abertos = dados_abertos_scrape.DadosAbertosScraper()
-            dados = dados_abertos.main(thread=True)
-
-        statements_choice = 'Y'
+        statements_choice = 'N'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()
-            scraped = scraper.main(thread=True)
+            scraped = scraper.main()
 
         math_choice = 'N'
         # math_choice = system.timed_input('Want to Math Process Statements Sheets? (YES/NO): ')
@@ -47,7 +40,7 @@ if __name__ == '__main__':
             mathmagic = math_transformation.MathTransformation()
             math = mathmagic.main()
 
-        transduction_choice = 'N'
+        transduction_choice = 'Y'
         # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process

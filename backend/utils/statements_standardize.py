@@ -5,8 +5,7 @@ import numpy as np
 import sqlite3
 import time
 import re
-
-import plotly.express as px
+from threading import Lock
 
 from utils import system
 from utils import settings
@@ -25,6 +24,8 @@ class StandardizedReport:
         try:
             self.data_folder = settings.data_folder
             self.db_filepath = settings.db_filepath
+            self.db_lock = Lock()
+
         except Exception as e:
             system.log_error(f"Error initializing StandardizedReport: {e}")
 
@@ -55,39 +56,41 @@ class StandardizedReport:
             print(f'loading {files}...')
             start_time = time.time()  # Initialize start time for progress tracking
 
-            # Iterate through each table (sector) and process the data
-            for i, table in enumerate(tables):
-                try:
-                    sector = table[0]
-                    df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
+            with self.db_lock:
+                # Iterate through each table (sector) and process the data
+                for i, table in enumerate(tables):
+                    try:
+                        sector = table[0]
+                        df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
+                        sector = sector.upper().replace('_', ' ')  # Create a table name from sector name
 
-                    # Normalize date columns to datetime format
-                    df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
+                        # Normalize date columns to datetime format
+                        df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
 
-                    # Normalize numeric columns
-                    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+                        # Normalize numeric columns
+                        df['value'] = pd.to_numeric(df['value'], errors='coerce')
 
-                    # Fill missing 'value' with 0
-                    df['value'] = df['value'].fillna(0)
+                        # Fill missing 'value' with 0
+                        df['value'] = df['value'].fillna(0)
 
-                    # Identify rows where 'account' is missing or NaN and 'value' has been set to 0
-                    missing_account = df['account'].isna() | df['account'].str.strip().eq('')
-                    df.loc[missing_account, 'account'] = '0'  # Set 'account' to '0' (as text) for these rows
+                        # Identify rows where 'account' is missing or NaN and 'value' has been set to 0
+                        missing_account = df['account'].isna() | df['account'].str.strip().eq('')
+                        df.loc[missing_account, 'account'] = '0'  # Set 'account' to '0' (as text) for these rows
 
-                    # Filter out only the latest versions for each group
-                    df, _ = self.filter_newer_versions(df)
-                    dfs[sector] = df  # Store the DataFrame with the sector as the key
-                    total_lines += len(df)  # Update the total number of processed lines
+                        # Filter out only the latest versions for each group
+                        df, _ = self.filter_newer_versions(df)
+                        dfs[sector] = df  # Store the DataFrame with the sector as the key
+                        total_lines += len(df)  # Update the total number of processed lines
 
-                    # Display progress
-                    extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
-                    system.print_info(i, len(tables), start_time, extra_info)
+                        # Display progress
+                        extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
+                        system.print_info(i, len(tables), start_time, extra_info)
 
-                    print('break load math')
-                    break
+                        print('break load math')
+                        break
 
-                except Exception as e:
-                    system.log_error(f"Error processing table {table}: {e}")
+                    except Exception as e:
+                        system.log_error(f"Error processing table {table}: {e}")
 
             conn.close()
             return dfs
@@ -471,7 +474,15 @@ class StandardizedReport:
         except Exception as e:
             system.log_error(f"Error saving transformed data to database: {e}")
 
-    def main(self):
+        def stand_clean(self, dict_df):
+
+            dict_df = self.standardize_data(dict_df)
+
+            dict_df = self.sanitize_db(dict_df)
+
+            return dict_df
+
+    def main(self, trhead=True):
         """
         Main function to load, process, and standardize financial statement data.
 
@@ -482,14 +493,13 @@ class StandardizedReport:
         try:
             dict_df = self.load_data(settings.statements_file_math)
 
-            standardized_data = self.standardize_data(dict_df)
-
-            standardized_data = self.sanitize_db(standardized_data)
+    
+            dict_df = self.stand_clean(dict_df)
 
             # Save standardized data to the database
-            standardized_data = self.save_to_db(standardized_data)
+            dict_df = self.save_to_db(dict_df)
 
-            return standardized_data
+            return dict_df
 
         except Exception as e:
             system.log_error(f"Error in main method: {e}")
