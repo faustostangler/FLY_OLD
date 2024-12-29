@@ -27,7 +27,7 @@ if __name__ == '__main__':
             nsd_scraper = nsd_scrape.NSDScraper()
             nsd_range = nsd_scraper.main()
 
-        statements_choice = 'N'
+        statements_choice = 'Y'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()

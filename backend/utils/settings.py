@@ -23,7 +23,7 @@ backup_name = 'backup'
 db_filepath = os.path.join(data_folder, db_name)
 backup_db = f"{db_name.split('.')[0]} {backup_name}.{db_name.split('.')[-1]}"
 
-# batches
+# batches and other numbers
 batch_size = 50  # Batch size for data processing
 max_workers = 8
 big_batch_size = int(40000 / max_workers)
@@ -31,6 +31,7 @@ chunk_size = 50000
 
 # Selenium settings
 wait_time = 2  # Wait time for Selenium operations
+max_retries = 3
 driver = driver_wait = None  # Placeholders for Selenium driver and wait objects
 registry_paths = [
     r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
