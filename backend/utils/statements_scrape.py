@@ -78,7 +78,10 @@ class StatementsDataScraper:
                 sector = table[0]
                 df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
 
-                sector = sector.upper().replace('_', ' ')
+                if sector != '_':
+                    sector = sector.upper().replace('_', ' ')
+                else:
+                    pass
                 financial_statements[sector] = df  # Store the DataFrame with the sector as the key
 
                 # df.to_csv(f'{sector}.csv')
@@ -184,7 +187,7 @@ class StatementsDataScraper:
         """
         try:
             # Define the XPaths
-            xpath_grupo = '//*[@id="cmbGrupo"]'
+            xpath_grupo = '//*[@id="cmbGrupo"]' 
             xpath_quadro = '//*[@id="cmbQuadro"]'
             xpath_frame = '//*[@id="iFrameFormulariosFilho"]'
             xpath_thousand = '//*[@id="UltimaTabela"]/table/tbody[1]/tr[1]/td[1]/b'
@@ -249,7 +252,7 @@ class StatementsDataScraper:
             return df
             
         except Exception as e:
-            system.log_error(f"Error processing statements data: {e}")
+            # system.log_error(f"Error processing statements data: {e}")
             return None
 
     def save_to_db(self, df, setor):
@@ -472,9 +475,9 @@ class StatementsDataScraper:
 
             # Initialize a counter to track the total number of processed items
             processed_items = 0
-
+            scrape_targets_groups = scrape_targets.groupby('sector', sort=False)
             # Process data sector by sector, processing sectors with empty strings last
-            for sector, sector_data in scrape_targets.groupby('sector', sort=False):
+            for sector, sector_data in scrape_targets_groups:
                 all_data = []  # List to store all the processed data
 
                 for i, row in sector_data.iterrows():
@@ -486,7 +489,7 @@ class StatementsDataScraper:
                         # Process each company-quarter data using the refactored function
                         company_quarter_data = self.process_company_quarter_data(row)
                         all_data.extend(company_quarter_data)  # Add all processed DataFrames to all_data
-                        number_to_save = int(settings.batch_size // settings.max_workers)
+                        number_to_save = settings.batch_size # number_to_save = int(settings.batch_size // settings.max_workers)
                         # Save to DB every settings.batch_size iterations or at the end
                         if (total_items - processed_items - 1) % number_to_save == 0:
                             if all_data:
@@ -562,6 +565,9 @@ class StatementsDataScraper:
         scrape_targets = self.identify_scrape_targets()
         total_items = len(scrape_targets)
         batch_size = int(total_items / settings.max_workers)
+
+        if batch_size == 0:
+            thread = False
 
         if not scrape_targets.empty: 
             if thread:

@@ -9,6 +9,7 @@ import re
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
+from selenium.common.exceptions import TimeoutException
 import winsound
 import threading
 import pyautogui
@@ -176,7 +177,7 @@ def choose(xpath, driver, driver_wait):
         return ''
 
 def select(xpath, text, driver, driver_wait):
-    element = wait_forever(driver_wait, xpath)
+    element = wait_forever(driver_wait, xpath, max_attempts=3)
     select = Select(driver.find_element(By.XPATH, xpath))
     select.select_by_visible_text(text)
 
@@ -200,7 +201,7 @@ def raw_text(xpath, driver_wait):
         log_error(e)
         return ''
 
-def wait_forever(driver_wait, xpath):
+def wait_forever(driver_wait, xpath, max_attempts=None):
     """
     Espera indefinidamente até que o elemento da web localizado pelo xpath seja encontrado.
 
@@ -211,14 +212,16 @@ def wait_forever(driver_wait, xpath):
     Returns:
     WebElement: O elemento da web encontrado.
     """
+    attempt = 0
     while True:
         try:
             element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
             return element
         except Exception as e:
-            # print(f'waiting for {xpath} in DOM')
-            # log_error(f"Error WAITING during batch processing {xpath}: {e}")
-            time.sleep(settings.wait_time * 5)
+            attempt += 1
+            if max_attempts and attempt >= max_attempts:
+                raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_attempts} attempts.") from e
+            time.sleep(settings.wait_time)
 
 def subtract_lists(list1, list2):
     """
