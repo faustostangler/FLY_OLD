@@ -425,7 +425,7 @@ class MathTransformation:
                 total_lines += size
 
                 # Display progress
-                extra_info = [f'{02-} {size} lines from {sector}, total {total_lines}']
+                extra_info = [f'{batch_index} {size} lines from {sector}, total {total_lines}']
                 system.print_info(i, len(dict_filtered), start_time, extra_info)
 
             return dict_transformed
