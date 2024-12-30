@@ -5,6 +5,7 @@ import numpy as np
 import sqlite3
 import time
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from utils import system
@@ -62,7 +63,10 @@ class StandardizedReport:
                     try:
                         sector = table[0]
                         df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
-                        sector = sector.upper().replace('_', ' ')  # Create a table name from sector name
+                        if sector != '_':
+                            sector = sector.upper().replace('_', ' ')  # Create a table name from sector name
+                        else:
+                            pass
 
                         # Normalize date columns to datetime format
                         df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
@@ -86,8 +90,8 @@ class StandardizedReport:
                         extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
                         system.print_info(i, len(tables), start_time, extra_info)
 
-                        print('break load math')
-                        break
+                        # print('break load math')
+                        # break
 
                     except Exception as e:
                         system.log_error(f"Error processing table {table}: {e}")
@@ -267,13 +271,13 @@ class StandardizedReport:
 
             standardization_sections = {
                 'Composição do Capital': intel.section_0_criteria, 
-                # 'Balanço Patrimonial Ativo': intel.section_1_criteria,
-                # 'Balanço Patrimonial Passivo': intel.section_2_criteria,
+                'Balanço Patrimonial Ativo': intel.section_1_criteria,
+                'Balanço Patrimonial Passivo': intel.section_2_criteria,
                 'Demonstração do Resultado': intel.section_3_criteria,
-                # 'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
-                # 'Demonstração de Valor Adiconado': intel.section_7_criteria,
+                'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
+                'Demonstração de Valor Adiconado': intel.section_7_criteria,
             }
-            print('standardizing sections..., with criteria restrictions')
+            print('standardizing sections...')
             start_time = time.time()
             total_sections = len(standardization_sections)
 
@@ -322,11 +326,13 @@ class StandardizedReport:
                     # Add updated DataFrame back to the dictionary
                     dict_df[sector] = df
 
-                    print(f'break standarditizing')
-                    break
+                    # print(f'break standarditizing')
+                    # break
 
                 except Exception as e:
                     system.log_error(f"Error in standardize_data section{sector}: {e}")
+
+            dict_df = self.sanitize_db(dict_df)
 
         except Exception as e:
             system.log_error(f"Error in standardize_data: {e}")
@@ -482,7 +488,82 @@ class StandardizedReport:
 
             return dict_df
 
-    def main(self, trhead=True):
+    def standardize_data_threaded(self, dict_df):
+        """
+        Standardize data using multiple threads.
+
+        Args:
+        -----
+        dict_df : dict
+            Dictionary containing raw data for processing.
+
+        Returns
+        -------
+        dict: Dictionary with standardized DataFrames.
+        """
+        try:
+            total_lines = sum(len(df) for df in dict_df.values())
+            batch_size = max(1, total_lines // settings.max_workers)
+
+            with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
+                futures = []
+                standardized_data = {}
+
+                for start in range(0, total_lines, batch_size):
+                    batch_dict = {k: dict_df[k] for k in list(dict_df.keys())[start:start + batch_size]}
+                    futures.append(executor.submit(self.standardize_batch, batch_dict))
+
+                for future in as_completed(futures):
+                    standardized_data.update(future.result())
+
+            return standardized_data
+
+        except Exception as e:
+            system.log_error(f"Error during multithreaded standardization: {e}")
+            return {}
+
+    def standardize_data_sequential(self, dict_df):
+        """
+        Standardize data sequentially.
+
+        Args:
+        -----
+        dict_df : dict
+            Dictionary containing raw data for processing.
+
+        Returns
+        -------
+        dict: Dictionary with standardized DataFrames.
+        """
+        try:
+            dict_df = self.standardize_batch(dict_df)
+
+            return dict_df
+        except Exception as e:
+            system.log_error(f"Error during sequential standardization: {e}")
+            return {}
+
+    def standardize_batch(self, dict_df):
+        """
+        Standardize a batch of data.
+
+        Args:
+        -----
+        dict_batch : dict
+            Dictionary containing a batch of raw data.
+
+        Returns
+        -------
+        dict: Standardized batch of DataFrames.
+        """
+        try:
+            dict_df = self.standardize_data(dict_df)
+            return dict_df
+        except Exception as e:
+            system.log_error(f"Error during batch standardization: {e}")
+            return {}
+
+    def main(self, thread=True):
         """
         Main function to load, process, and standardize financial statement data.
 
@@ -494,7 +575,12 @@ class StandardizedReport:
             dict_df = self.load_data(settings.statements_file_math)
 
     
-            dict_df = self.stand_clean(dict_df)
+            # Conditional execution based on thread parameter
+            if thread:
+                dict_df = self.standardize_data_threaded(dict_df)
+            else:
+                dict_df = self.standardize_data_sequential(dict_df)
+
 
             # Save standardized data to the database
             dict_df = self.save_to_db(dict_df)

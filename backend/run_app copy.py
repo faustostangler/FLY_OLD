@@ -38,14 +38,14 @@ if __name__ == '__main__':
         if math_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             mathmagic = math_transformation.MathTransformation()
-            math = mathmagic.main(thread=False)
+            math = mathmagic.main(thread=True)
 
         transduction_choice = 'Y'
         # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             standart_statements = statements_standardize.StandardizedReport()
-            data = standart_statements.main()
+            data = standart_statements.main(thread=True)
 
         # we need to grab stock daily data
         market_choice = 'N'
