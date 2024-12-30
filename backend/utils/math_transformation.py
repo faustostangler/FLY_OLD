@@ -390,6 +390,10 @@ class MathTransformation:
             start_time = time.time()  # Record start time for progress tracking
             # Iterate over each sector in the filtered dictionary
             for i, (sector, df) in enumerate(dict_filtered.items()):
+
+               # Store the transformed data in the dictionary (we will merge with existing data during saving)
+                df.to_csv(f'{sector}_math_pre.csv', index=False)
+
                 # Ceate 'year' and 'month' columns
                 df['quarter'] = pd.to_datetime(df['quarter'])
                 df['year'] = df['quarter'].dt.year
@@ -414,14 +418,14 @@ class MathTransformation:
                 transformed_df = transformed_df.drop(columns=['year', 'month'])
 
                # Store the transformed data in the dictionary (we will merge with existing data during saving)
-                transformed_df.to_csv(f'{sector}_math.csv', index=False)
+                transformed_df.to_csv(f'{sector}_math_pos.csv', index=False)
 
                 dict_transformed[sector] = transformed_df
                 size = len(transformed_df)
                 total_lines += size
 
                 # Display progress
-                extra_info = [f'{batch_index} {size} lines from {sector}, total {total_lines}']
+                extra_info = [f'{02-} {size} lines from {sector}, total {total_lines}']
                 system.print_info(i, len(dict_filtered), start_time, extra_info)
 
             return dict_transformed

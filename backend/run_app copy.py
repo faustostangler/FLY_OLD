@@ -27,7 +27,7 @@ if __name__ == '__main__':
             nsd_scraper = nsd_scrape.NSDScraper()
             nsd_range = nsd_scraper.main()
 
-        statements_choice = 'Y'
+        statements_choice = 'N'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()
@@ -38,9 +38,9 @@ if __name__ == '__main__':
         if math_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             mathmagic = math_transformation.MathTransformation()
-            math = mathmagic.main()
+            math = mathmagic.main(thread=False)
 
-        transduction_choice = 'N'
+        transduction_choice = 'Y'
         # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
