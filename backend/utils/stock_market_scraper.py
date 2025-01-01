@@ -92,8 +92,8 @@ class StockMarketScraper:
                         extra_info = [f'Loaded {len(df)} items from {sector} in {files}, total {total_lines}']
                         system.print_info(i, len(tables), start_time, extra_info)
 
-                        print('break loading standard data')
-                        break
+                        # print('break loading standard data')
+                        # break
 
                     except Exception as e:
                         system.log_error(f"Error processing table {table}: {e}")

@@ -47,7 +47,7 @@ class FinancialRatios:
             dfs = {}
             total_lines = 0
             start_time = time.time()  # Initialize start time for progress tracking
-            print(f'debug x {settings.markets_file}')
+            # print(f'debug x {settings.markets_file}')
 
             # Iterate through each table (sector) and process the data
             for i, table in enumerate(tables):
@@ -75,8 +75,8 @@ class FinancialRatios:
                     extra_info = [f'{sector} {len(df)} of {total_lines} items']
                     system.print_info(i, len(tables), start_time, extra_info)
 
-                    print('break loading market')
-                    break
+                    # print('break loading market')
+                    # break
 
                 except Exception as e:
                     system.log_error(f"Error processing table {table}: {e}")
@@ -322,10 +322,10 @@ class FinancialRatios:
             fill_value=0  # Replace missing values with 0
         ).reset_index()
 
-        # print("Pivoted DataFrame created successfully.")
-        df.to_csv('df.csv', index=False)
-        pivot_df.to_csv('pivot_df.csv', index=False)
-        pivot_df2.to_csv('pivot_df2.csv', index=False)
+        # # print("Pivoted DataFrame created successfully.")
+        # df.to_csv('df.csv', index=False)
+        # pivot_df.to_csv('pivot_df.csv', index=False)
+        # pivot_df2.to_csv('pivot_df2.csv', index=False)
 
         # Step 2: Calculate the Indicators
         for indicator in indicator_list:
@@ -420,23 +420,24 @@ class FinancialRatios:
             # Define the dictionary with the indicator names and their corresponding values
             indicators = {
                 'Relações Entre Ativos e Passivos': intel.indicators_11,
-                # 'Patrimônio': intel.indicators_11b,
-                # 'Dívida': intel.indicators_12,
-                # 'Resultados Fundamentalistas 1': intel.indicators_13,
-                # 'Resultados Fundamentalistas 2': intel.indicators_14,
-                # 'Resultados Fundamentalistas 3': intel.indicators_15,
-                # 'Resultados Fundamentalistas 4': intel.indicators_16,
-                # 'Fluxo de Caixa': intel.indicators_17,
-                # 'Valor Agregado': intel.indicators_18,
-                # 'Preço e Lucro por Ação': intel.indicators_21,
-                # 'Crescimento e PEG': intel.indicators_22,
-                # 'Dividendos e TSR': intel.indicators_23,
-                # 'Múltiplos de Valuation': intel.indicators_24,
-                # 'Fluxo de Caixa Livre e P/FC': intel.indicators_25
+                'Patrimônio': intel.indicators_11b,
+                'Dívida': intel.indicators_12,
+                'Resultados Fundamentalistas 1': intel.indicators_13,
+                'Resultados Fundamentalistas 2': intel.indicators_14,
+                'Resultados Fundamentalistas 3': intel.indicators_15,
+                'Resultados Fundamentalistas 4': intel.indicators_16,
+                'Fluxo de Caixa': intel.indicators_17,
+                'Valor Agregado': intel.indicators_18,
+                'Preço e Lucro por Ação': intel.indicators_21,
+                'Crescimento e PEG': intel.indicators_22,
+                'Dividendos e TSR': intel.indicators_23,
+                'Múltiplos de Valuation': intel.indicators_24,
+                'Fluxo de Caixa Livre e P/FC': intel.indicators_25
             }
-            print('selected indicators only')
+            # print('selected indicators only')
             start_time = time.time()
             for i, (sector, df) in enumerate(dict_df.items()):
+                # df.to_csv(f'df_ratios_{sector}.csv')
                 df = self.adjust_dfs_types(df)
 
                 # Loop through the dictionary and apply the add_indicators method
@@ -448,10 +449,10 @@ class FinancialRatios:
                     extra_info2 = [sector, key]
                     system.print_info(j, len(indicators), start_time2, extra_info2)
 
-                df.to_csv(f'{sector}_ratios.csv', index=False)
+                # df.to_csv(f'{sector}_ratios.csv', index=False)
                 dfs[sector] = df
 
-                dfs = self.save_to_db(sector, df)
+                df = self.save_to_db(sector, df)
                 
                 extra_info = [sector]
                 system.print_info(i, len(dict_df), start_time, extra_info)

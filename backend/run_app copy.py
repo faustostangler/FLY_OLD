@@ -40,7 +40,7 @@ if __name__ == '__main__':
             mathmagic = math_transformation.MathTransformation()
             math = mathmagic.main(thread=True)
 
-        transduction_choice = 'Y'
+        transduction_choice = 'N'
         # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
@@ -55,7 +55,7 @@ if __name__ == '__main__':
             market_data = market.main()
 
         # financial_ratios_choice = system.timed_input('Want to Create Fundamentalist Ratios? (YES/NO): ')
-        financial_ratios_choice = 'Y'
+        financial_ratios_choice = 'N'
         if financial_ratios_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             financial_ratios = financial_ratios.FinancialRatios()
