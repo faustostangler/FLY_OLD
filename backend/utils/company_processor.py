@@ -16,7 +16,6 @@ class CompanyProcessor(BaseProcessor):
     '''
     def __init__(self):
         super().__init__()
-        # self.config = self.Config()  # Assume Config is already defined
         self.db_lock = Lock()  # Initialize a threading Lock
 
     def get_all_companies(self):
@@ -227,6 +226,9 @@ class CompanyProcessor(BaseProcessor):
     def main(self):
         '''
         '''
+        # Initialize the WebDriver
+        self.driver, self.driver_wait = self._initialize_driver()
+
         db_filepath = self.config.metadados_filepath
         try:
             print(f'Update Companies Details...')

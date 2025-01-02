@@ -35,9 +35,6 @@ class BaseProcessor:
         self.config = Config()  # Assume Config is already defined
         self.db_lock = Lock()  # Initialize a threading Lock
 
-        # Initialize the WebDriver
-        self.driver, self.driver_wait = self._initialize_driver()
-
     # SELENIUM DRIVER METHODS
     def _get_chrome_version(self):
         """
@@ -237,9 +234,8 @@ class BaseProcessor:
         try:
             if self.driver:
                 self.driver.quit()
-                # print("WebDriver successfully quit.")
         except Exception as e:
-            self.log_error(f"Error while quitting WebDriver: {e}")
+            pass
 
     # TEXT & SELENIUM OBJECT METHODS
     def clean_text(self, text):
@@ -661,9 +657,8 @@ class BaseProcessor:
             primary_key (str): The column used to identify unique rows in the table.
         """
         db_filepath = db_filepath or self.config.db_filepath
-        db_name = db_filepath.split("\\")[-1]  # Adjust for your OS if needed
-
-        schema = self.config.schema_definitions.get(db_name, {}).get(table_name, "")
+        database_name = os.path.basename(db_filepath)
+        schema = self.config.schema_definitions.get(database_name, {}).get(table_name, "")
         lines = schema.strip().splitlines()
 
         # Step 2: Initialize Variables for Parsing
@@ -696,6 +691,39 @@ class BaseProcessor:
                     {updates};
                     """
 
+                    text_columns = ['version']  # Specify columns to be treated as text
+                    date_columns = ['quarter', 'sent_date']
+                    numeric_columns = []
+
+                    # Replace NaN with None for SQLite compatibility
+                    dataframe = dataframe.where(pd.notnull(dataframe), None)
+
+                    # Replace NaN and None with an empty string for text columns
+                    try:
+                        for col in text_columns:
+                            if col in dataframe.columns:
+                                dataframe[col] = dataframe[col].replace([None, ''], '').astype(str)
+                    except Exception as e:
+                        pass
+
+                    # Convert datetime columns to string in ISO format or None
+                    try:
+                        for col in date_columns:
+                            if col in dataframe.columns:
+                                dataframe[col] = dataframe[col].apply(
+                                    lambda x: x.isoformat() if isinstance(x, pd.Timestamp) and pd.notna(x) else None
+                                )
+                    except Exception as e:
+                        pass
+
+                    # Ensure numeric columns have valid values or are set to None
+                    try:
+                        for col in numeric_columns:
+                            if col in dataframe.columns:
+                                dataframe[col] = dataframe[col].apply(lambda x: float(x) if pd.notna(x) else None)
+                    except Exception as e:
+                        pass
+
                     # Convert the DataFrame to a list of tuples for executemany
                     data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
 
@@ -703,6 +731,7 @@ class BaseProcessor:
                     cursor.executemany(sql, data_tuples)
 
                     conn.commit()
+            print(f'Saved {database_name}')
 
         except Exception as e:
             dataframe.to_csv('dataframe.csv', index=False)
@@ -775,4 +804,6 @@ class BaseProcessor:
             except Exception as e:
                 print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
             time.sleep(wait_time)
+
+        return True
 

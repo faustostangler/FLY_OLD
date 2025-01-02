@@ -30,8 +30,8 @@ class Config:
         self.backup_db = f"{self.metadados_database.split('.')[0]} {self.backup_name}.{self.metadados_database.split('.')[-1]}"
 
         # batches and other numbers
-        self.batch_size = 50  # Batch size for data processing
-        self.max_workers = 10
+        self.batch_size = 100  # Batch size for data processing
+        self.max_workers = 20
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 50000
 
@@ -131,8 +131,8 @@ class Config:
                         nsd INTEGER PRIMARY KEY,
                         company_name TEXT,
                         quarter TEXT,
-                        nsd_type TEXT,
                         version INTEGER,
+                        nsd_type TEXT,
                         dri TEXT,
                         auditor TEXT,
                         responsible_auditor TEXT,
@@ -202,7 +202,8 @@ class Config:
         self.company_columns = ['cvm_code', 'company_name', 'ticker', 'ticker_codes', 'isin_codes', 'trading_name', 'sector', 'subsector', 'segment', 'listing', 'activity', 'registrar', 'cnpj', 'website']
 
         # NSD scraping settings
-        self.nsd_columns = ['nsd', 'company_name', 'quarter', 'version', 'nsd_type', 'auditor', 'responsible_auditor', 'protocol', 'sent_date', 'reason']  # Adjusted columns based on NSD data
+        self.nsd_table = 'nsd'
+        self.nsd_columns = ['nsd', 'company_name', 'quarter', 'version', 'nsd_type', 'dri', 'auditor', 'responsible_auditor', 'protocol', 'sent_date', 'reason']  # Adjusted columns based on NSD data
         self.nsd_order = ['company_name', 'quarter', 'version']
         self.default_daily_submission_estimate = 30
         self.safety_factor = 3  # Apply a safety factor to account for possible increases
