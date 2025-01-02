@@ -27,25 +27,25 @@ if __name__ == '__main__':
             nsd_scraper = nsd_scrape.NSDScraper()
             nsd_range = nsd_scraper.main()
 
-        statements_choice = 'N'
+        statements_choice = 'Y'
         # statements_choice = system.timed_input('Want to scrape Statements Sheets? (YES/NO): ')
         if statements_choice.strip().upper().startswith('Y'):
             scraper = statements_scrape.StatementsDataScraper()
-            scraped = scraper.main(thread=True)
+            scraped = scraper.main()
 
         math_choice = 'N'
         # math_choice = system.timed_input('Want to Math Process Statements Sheets? (YES/NO): ')
         if math_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             mathmagic = math_transformation.MathTransformation()
-            math = mathmagic.main(thread=True)
+            math = mathmagic.main()
 
-        transduction_choice = 'N'
+        transduction_choice = 'Y'
         # transduction_choice = system.timed_input('Want to Transducte the Math Processed Statements Sheets? (YES/NO): ')
         if transduction_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             standart_statements = statements_standardize.StandardizedReport()
-            data = standart_statements.main(thread=True)
+            data = standart_statements.main()
 
         # we need to grab stock daily data
         market_choice = 'N'
@@ -55,7 +55,7 @@ if __name__ == '__main__':
             market_data = market.main()
 
         # financial_ratios_choice = system.timed_input('Want to Create Fundamentalist Ratios? (YES/NO): ')
-        financial_ratios_choice = 'N'
+        financial_ratios_choice = 'Y'
         if financial_ratios_choice.strip().upper().startswith('Y'):
             # Call the MathTransformation process
             financial_ratios = financial_ratios.FinancialRatios()

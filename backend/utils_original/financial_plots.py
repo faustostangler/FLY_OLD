@@ -5,8 +5,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from utils import system
-from utils import settings
+from utils_original import system
+from utils_original import settings
 
 class FinancialDataPlotter:
     def __init__(self):

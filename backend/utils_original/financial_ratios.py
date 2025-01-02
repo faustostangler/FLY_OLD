@@ -5,9 +5,9 @@ import pandas as pd
 import numpy as np
 import sqlite3
 
-from utils import settings
-from utils import system
-from utils import intel
+from utils_original import settings
+from utils_original import system
+from utils_original import intel
 
 
 class FinancialRatios:

@@ -8,9 +8,9 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from utils import system
-from utils import settings
-from utils import intel
+from utils_original import system
+from utils_original import settings
+from utils_original import intel
 
 
 class StandardizedReport:

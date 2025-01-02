@@ -11,9 +11,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from utils import system
-from utils import settings
-from utils import selenium_driver
+from utils_original import system
+from utils_original import settings
+from utils_original import selenium_driver
 
 class StatementsDataScraper:
     """

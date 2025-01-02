@@ -12,8 +12,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
-from utils import system
-from utils import settings
+from utils_original import system
+from utils_original import settings
 
 def get_chrome_version():
     """

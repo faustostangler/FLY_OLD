@@ -18,7 +18,7 @@ import random
 import sqlite3
 import subprocess
 
-from utils import settings
+from utils_original import settings
 
 import logging
 # logging.basicConfig(level=logging.DEBUG)

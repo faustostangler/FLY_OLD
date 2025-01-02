@@ -1,0 +1,710 @@
+import os
+import pandas as pd
+import logging
+import inspect
+import platform
+from datetime import datetime
+import time
+import string
+import unidecode
+import re
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.keys import Keys
+import random
+import sqlite3
+import subprocess
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from threading import Lock
+import zipfile
+import requests
+
+from utils.config import Config
+
+class BaseProcessor:
+    def __init__(self):
+        self.config = Config()  # Assume Config is already defined
+        self.db_lock = Lock()  # Initialize a threading Lock
+
+        # Initialize the WebDriver
+        self.driver, self.driver_wait = self._initialize_driver()
+
+    # SELENIUM DRIVER METHODS
+    def _get_chrome_version(self):
+        """
+        Retrieve the version of Chrome installed on the system.
+
+        Returns:
+            str: The Chrome version, or None if not found.
+        """
+        chrome_error_msg = 'Failed to retrieve Chrome version: {e}'
+
+        for reg_query in self.config.registry_paths:
+            try:
+                output = subprocess.check_output(reg_query, shell=True)
+                version = re.search(r'\d+\.\d+\.\d+\.\d+', output.decode('utf-8')).group(0)
+                return version
+            except subprocess.CalledProcessError:
+                continue
+
+        try:
+            chrome_path = self.config.chrome_path_64 if os.path.exists(self.config.chrome_path_64) else self.config.chrome_path_32
+            output = subprocess.check_output([chrome_path, '--version'], shell=True)
+            version = re.search(r'\d+\.\d+\.\d+\.\d+', output.decode('utf-8')).group(0)
+            return version
+
+        except Exception as e:
+            self.system.log_error(chrome_error_msg.format(e=e))
+            return None
+
+    def _get_chromedriver_url(self, version):
+        """
+        Generate the download URL for ChromeDriver based on the Chrome version.
+
+        Args:
+            version (str): The Chrome version.
+
+        Returns:
+            str: The URL for downloading the corresponding ChromeDriver.
+        """
+        chromedriver_url_template = f'https://storage.googleapis.com/chrome-for-testing-public/{version}/win64/chromedriver-win64.zip'
+        url_error_msg = f'Error obtaining ChromeDriver for version {version}'
+
+        try:
+            self.test_internet()
+            response = requests.get(chromedriver_url_template)
+            if response.status_code == 200:
+                return chromedriver_url_template
+            else:
+                print(url_error_msg)
+                return None
+
+        except Exception as e:
+            self.log_error(str(e))
+            return None
+
+    def _download_and_extract_chromedriver(self, url):
+        """
+        Download and extract ChromeDriver from the given URL.
+
+        Args:
+            url (str): The URL for downloading ChromeDriver.
+            dest_folder (Path): The destination folder for extraction.
+
+        Returns:
+            str: The path to the extracted ChromeDriver executable.
+        """
+        zip_filename = 'chromedriver.zip'
+        dest_folder = self.config.bin_folder
+        chromedriver_folder = 'chromedriver-win64'
+        chromedriver_executable = 'chromedriver.exe'
+        download_error_msg = 'Failed to download or extract ChromeDriver: {e}'
+
+        try:
+            self.test_internet()
+            response = requests.get(url)
+            zip_path = os.path.join(dest_folder, zip_filename)
+
+            with open(zip_path, 'wb') as file:
+                file.write(response.content)
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(dest_folder)
+
+            os.remove(zip_path)
+            chromedriver_path = os.path.join(dest_folder, chromedriver_folder, chromedriver_executable)
+
+            return str(chromedriver_path)
+
+        except Exception as e:
+            self.log_error(download_error_msg.format(e=e))
+            return None
+
+    def _get_chromedriver_path(self):
+        """
+        Download and extract the ChromeDriver based on the Chrome version installed on the system.
+
+        Returns:
+            str: The path to the ChromeDriver executable.
+        """
+        chrome_version_error_msg = 'Unable to determine Chrome version.'
+        chromedriver_url_error_msg = 'Unable to determine the correct ChromeDriver URL.'
+        path_error_msg = 'Failed to obtain ChromeDriver path dynamically.'
+
+        try:
+            chrome_version = self._get_chrome_version()
+            if not chrome_version:
+                raise Exception(chrome_version_error_msg)
+
+            chromedriver_url = self._get_chromedriver_url(chrome_version)
+            if not chromedriver_url:
+                raise Exception(chromedriver_url_error_msg)
+
+            chromedriver_path = self._download_and_extract_chromedriver(chromedriver_url)
+            if not chromedriver_path:
+                raise Exception(path_error_msg)
+
+            return chromedriver_path
+
+        except Exception as e:
+            self.log_error(str(e))
+            return None
+
+    def _load_driver(self, chromedriver_path):
+        """
+        Initialize and return the Selenium WebDriver and WebDriverWait instances.
+
+        Args:
+            chromedriver_path (str): The path to the ChromeDriver executable.
+
+        Returns:
+            tuple: A tuple containing the WebDriver and WebDriverWait instances.
+        """
+        load_driver_error_msg = 'Failed to load driver: {e}'
+
+        try:
+            # Get random headers using the custom function
+            headers = self.header_random()
+
+            chrome_service = Service(chromedriver_path)
+            chrome_options = Options()
+            chrome_options.add_argument(f"user-agent={headers['User-Agent']}")
+            chrome_options.add_argument('--window-size=960,540')
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--log-level=3')
+            chrome_options.add_argument('--ignore-ssl-errors')
+            chrome_options.add_argument('--disable-infobars')
+            # chrome_options.add_argument('--headless')
+
+            driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+            exceptions_ignore = (NoSuchElementException, StaleElementReferenceException)
+            driver_wait = WebDriverWait(driver, self.config.wait_time, ignored_exceptions=exceptions_ignore)
+
+            return driver, driver_wait
+
+        except Exception as e:
+            self.log_error(load_driver_error_msg.format(e=e))
+            return None, None
+
+    def _initialize_driver(self):
+        """
+        Obtain the Selenium WebDriver and WebDriverWait instances.
+
+        This function either uses a predefined path to ChromeDriver or fetches and loads it dynamically.
+
+        Returns:
+            tuple: A tuple containing the WebDriver and WebDriverWait instances.
+        """
+        # https://googlechromelabs.github.io/chrome-for-testing/#stable
+        computer_name = os.environ['COMPUTERNAME']
+        chromedriver_path = os.path.join(self.config.backend_folder, r'bin\chromedriver-win64\chromedriver.exe')
+        initialize_driver_error_msg = 'Failed to load driver from hardcoded path.'
+        dynamic_driver_error_msg = 'Failed to obtain ChromeDriver path dynamically.'
+
+        try:
+            driver, driver_wait = self._load_driver(chromedriver_path)
+            if driver is not None:
+                return driver, driver_wait
+            else:
+                raise Exception(initialize_driver_error_msg)
+
+        except Exception as initial_error:
+            try:
+                chromedriver_path = self._get_chromedriver_path()
+                if not chromedriver_path:
+                    raise Exception(dynamic_driver_error_msg)
+
+                driver, driver_wait = self._load_driver(chromedriver_path)
+                return driver, driver_wait
+
+            except Exception as dynamic_error:
+                self.log_error(str(dynamic_error))
+                return None, None
+    
+    # TEXT & SELENIUM OBJECT METHODS
+    def clean_text(self, text):
+        """
+        Cleans and normalizes the input text by removing punctuation, converting to uppercase,
+        removing extra whitespace, and eliminating specific words.
+
+        Parameters:
+        - text (str): The input text to be cleaned.
+
+        Returns:
+        str: The cleaned and normalized text.
+        """
+        try:
+            # Remove punctuation, accents, and normalize case
+            translation_table = str.maketrans('', '', string.punctuation)
+            text = unidecode.unidecode(text).translate(translation_table).upper().strip()
+            text = re.sub(r'\s+', ' ', text)
+
+            # Regular expression pattern to remove specific words from text
+            words_to_remove = '|'.join(map(re.escape, self.config.words_to_remove))
+            pattern = r'\b(?:' + words_to_remove + r')\b'
+            text = re.sub(pattern, '', text)
+
+            # Remove extra spaces after word removal
+            text = re.sub(r'\s+', ' ', text).strip()
+
+        except Exception as e:
+            self.log_error(e)
+        
+        return text
+
+    def text(self, xpath, driver_wait):
+        """
+        Encontra e recupera o texto de um elemento da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para recuperar o texto.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        str: O texto do elemento ou uma string vazia se ocorrer uma exceção.
+        """
+        try:
+            element = self.wait_forever(driver_wait, xpath)
+            return element.text
+        except Exception as e:
+            self.log_error(e)
+            return ''
+
+    def click(self, xpath, driver_wait):
+        """
+        Encontra e clica em um elemento da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para clicar.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        bool: True se o elemento foi encontrado e clicado, False caso contrário.
+        """
+        try:
+            element = self.wait_forever(driver_wait, xpath)
+            element.click()
+            return True
+        except Exception as e:
+            self.log_error(e)
+            return False
+
+    def choose(self, xpath, driver, driver_wait):
+        """
+        Encontra e seleciona um elemento da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para selecionar.
+        - driver (webdriver.Chrome): O objeto driver Chrome a ser usado.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        int: O valor da opção selecionada ou uma string vazia se ocorrer uma exceção.
+        """
+        try:
+            element = self.wait_forever(driver_wait, xpath)
+            element.click()
+            select = Select(driver.find_element(By.XPATH, xpath))
+            options = [int(option.text) for option in select.options]
+            highest_option = str(max(options))
+            select.select_by_value(highest_option)
+            return int(highest_option)
+        except Exception as e:
+            self.log_error(e)
+            return ''
+
+    def select(self, xpath, text, driver, driver_wait):
+        element = self.wait_forever(driver_wait, xpath, max_attempts=3)
+        select = Select(driver.find_element(By.XPATH, xpath))
+        select.select_by_visible_text(text)
+
+        return select
+
+    def raw_text(self, xpath, driver_wait):
+        """
+        Encontra e recupera o HTML bruto de um elemento da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para recuperar o HTML bruto.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        str: O HTML bruto do elemento ou uma string vazia se ocorrer uma exceção.
+        """
+        try:
+            element = self.wait_forever(driver_wait, xpath)
+            return element.get_attribute("innerHTML")
+        except Exception as e:
+            self.log_error(e)
+            return ''
+
+    def wait_forever(self, driver_wait, xpath, max_attempts=None):
+        """
+        Espera indefinidamente até que o elemento da web localizado pelo xpath seja encontrado.
+
+        Parameters:
+        - driver_wait (WebDriverWait): O objeto de espera para usar.
+        - xpath (str): O xpath do elemento para esperar.
+
+        Returns:
+        WebElement: O elemento da web encontrado.
+        """
+        attempt = 0
+        while True:
+            try:
+                element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+                return element
+            except Exception as e:
+                attempt += 1
+                if max_attempts and attempt >= max_attempts:
+                    raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_attempts} attempts.") from e
+                time.sleep(self.config.wait_time)
+
+    def subtract_lists(self, list1, list2):
+        """
+        Subtract elements of list2 from list1.
+        Example: ['a', 'b'] - ['b', 'c'] = ['a']
+
+        Parameters
+        ----------
+        list1 : list
+            The list from which elements will be removed.
+        list2 : list
+            The list of elements to remove from list1.
+
+        Returns
+        -------
+        list
+            A list containing elements from list1 that are not in list2.
+        """
+        return [item for item in list1 if item not in list2]
+
+    def escape_keywords(self, keywords):
+        """
+        Escape special characters in a list of keywords for regex operations.
+
+        Parameters
+        ----------
+        keywords : list
+            A list of keywords that may contain special characters.
+
+        Returns
+        -------
+        list
+            A list of escaped keywords ready for regex operations.
+        """
+        return [re.escape(keyword) for keyword in keywords]
+
+    # LOG & DEBUG METHODS
+    def log_error(self, error):
+        """
+        Logs an error to a file with detailed context, including caller info, 
+        module, function, line number, timestamp, and system information.
+        """
+        try:
+            # Get the current frame and the caller frame
+            current_frame = inspect.currentframe()
+            caller_frame = current_frame.f_back
+
+            # Gather detailed context information
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            function_name = caller_frame.f_code.co_name
+            line_number = caller_frame.f_lineno
+            module_name = caller_frame.f_globals["__name__"]
+            system_info = platform.platform()
+            caller_name = caller_frame.f_globals["__name__"]
+
+            # Configure logging settings
+            logging.basicConfig(
+                filename='app_errors.log',
+                level=logging.ERROR,
+                format='%(asctime)s - %(levelname)s - %(message)s'
+            )
+
+            # Detailed log message without stack trace
+            log_message = (
+                f"Timestamp: {timestamp}\n"
+                f"Error in module '{module_name}', function '{function_name}', line {line_number}\n"
+                f"Caller: {caller_name}\n"
+                f"Error: {error}\n"
+                f"System Info: {system_info}\n"
+            )
+
+            # Log the error message to the file
+            logging.error(log_message)
+
+            # Print a simplified error message to the console
+            print(f"Error in {function_name} (line {line_number}): {error}")
+
+        except Exception as e:
+            print(e)
+
+        return error
+
+    def print_info(self, index=0, size=1, start_time=time.time(), extra_info=[], indent_level=0):
+        """
+        Prints the provided information along with the progress, elapsed time, 
+        estimated remaining time, and total estimated time.
+        """
+        try:
+            completed_items = index + 1
+            remaining_items = size - completed_items
+            percentage_completed = completed_items / size
+
+            elapsed_time = time.time() - start_time
+            avg_time_per_item = elapsed_time / completed_items
+            remaining_time = remaining_items * avg_time_per_item
+            total_estimated_time = elapsed_time + remaining_time
+
+            # Format elapsed time
+            elapsed_hours, elapsed_remainder = divmod(int(elapsed_time), 3600)
+            elapsed_minutes, elapsed_seconds = divmod(elapsed_remainder, 60)
+            elapsed_time_formatted = f"{int(elapsed_hours)}h {int(elapsed_minutes):02}m {int(elapsed_seconds):02}s"
+
+            # Format remaining time
+            remaining_hours, remaining_remainder = divmod(int(remaining_time), 3600)
+            remaining_minutes, remaining_seconds = divmod(remaining_remainder, 60)
+            remaining_time_formatted = f"{int(remaining_hours)}h {int(remaining_minutes):02}m {int(remaining_seconds):02}s"
+
+            # Format total estimated time
+            total_hours, total_remainder = divmod(int(total_estimated_time), 3600)
+            total_minutes, total_seconds = divmod(total_remainder, 60)
+            total_time_formatted = f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
+
+            # Prepare progress string
+            progress = (
+                f"{percentage_completed:.2%} ({completed_items}+{remaining_items}), "
+                f"{avg_time_per_item:.4f}s per item, "
+                f"{total_time_formatted} = {elapsed_time_formatted} + {remaining_time_formatted}"
+            )
+
+            # Add indentation
+            indent = " " * 2 * (indent_level + 1)
+            extra_info_str = " ".join(map(str, extra_info))
+            print(f"{indent}{progress} {extra_info_str}")
+
+        except Exception as e:
+            self.log_error(e)
+            pass
+    
+    def winbeep(frequency=5000, duration=50):
+        """
+        Generates a system beep sound with the specified frequency and duration.
+
+        Parameters:
+        - frequency (int): The frequency of the beep sound in Hertz (default is 5000 Hz).
+        - duration (int): The duration of the beep sound in milliseconds (default is 50 ms).
+
+        Returns:
+        bool: True if the beep was successful, False otherwise.
+        """
+        # winsound.Beep(frequency, duration)
+        return True
+
+    # DATABASE METHODS
+    def _initialize_database(self, db_filepath, database_name, table_name=None):
+        """
+        Ensure the database and table exist, creating them if necessary.
+        """
+        try:
+            if not os.path.exists(db_filepath):
+                # print(f"Database '{database_name}' does not exist. Creating...")
+                with sqlite3.connect(db_filepath) as conn:
+                    pass  # Create the database file if it doesn't exist
+
+            if table_name:
+                self._initialize_table(db_filepath, database_name, table_name)
+        except Exception as e:
+            self.log_error(e)
+
+    def _initialize_table(self, db_filepath, database_name, table_name):
+        """
+        Ensure the specified table exists, creating it if necessary.
+        """
+        try:
+            schema_definitions = self.config.schema_definitions.get(database_name, {})
+            for schema_table_name, schema_sql in schema_definitions.items():
+                # Handle dynamic table names for sectors
+                if schema_table_name in table_name or schema_table_name == table_name:
+                    with sqlite3.connect(db_filepath) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(schema_sql.format(table_name=table_name))
+                        conn.commit()
+                        # print(f"Table '{table_name}' initialized in '{database_name}'.")
+                    return
+            # print(f"Warning: No schema defined for table '{table_name}' in database '{database_name}'.")
+        except Exception as e:
+            self.log_error(e)
+
+    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
+        """
+        Load data from the SQLite database into a pandas DataFrame or execute a query.
+        Dynamically creates databases and tables if they do not exist.
+        """
+        db_filepath = db_filepath or self.config.metadados_filepath
+        database_name = os.path.basename(db_filepath)
+
+        with self.db_lock:
+            try:
+                # Ensure the database and table exist
+                self._initialize_database(db_filepath, database_name, table_name)
+
+                # Connect and load data
+                with sqlite3.connect(db_filepath) as conn:
+                    if query:
+                        df = pd.read_sql_query(query, conn, params=params)
+                    elif table_name:
+                        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+                    else:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                        return [row[0] for row in cursor.fetchall()]
+
+                    # Normalize columns if specified
+                    if normalize_columns:
+                        for col in normalize_columns:
+                            if col in df.columns:
+                                if 'date' in col.lower() or 'time' in col.lower():
+                                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                                else:
+                                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                    return df
+            except sqlite3.Error as e:
+                self.log_error(f"Database error: {e}")
+            except Exception as e:
+                self.log_error(f"Error loading data: {e}")
+            return pd.DataFrame()
+
+    def save_to_db(self, dataframe, table_name=None, db_filepath=None):
+        """
+        Save or update a DataFrame in a SQLite database table.
+
+        Args:
+            table_name (str): Name of the table where the data will be saved.
+            dataframe (DataFrame): DataFrame containing the data to save.
+            db_filepath (str): Path to the database file. Defaults to self.config.db_filepath.
+            primary_key (str): The column used to identify unique rows in the table.
+        """
+        db_filepath = db_filepath or self.config.db_filepath
+        db_name = db_filepath.split("\\")[-1]  # Adjust for your OS if needed
+
+        schema = self.config.schema_definitions.get(db_name, {}).get(table_name, "")
+        lines = schema.strip().splitlines()
+
+        # Step 2: Initialize Variables for Parsing
+        primary_keys = []
+
+        # Step 3: Parse the Lines for PRIMARY KEY
+        for line in lines:
+            if "PRIMARY KEY" in line.upper():
+                # Extract the part after PRIMARY KEY
+                start = line.upper().find("PRIMARY KEY") + len("PRIMARY KEY")
+                key_part = line.split("PRIMARY KEY")[0].strip()
+                key = key_part.split()[0]  # Extract the first part as the key
+                primary_keys.append(key)
+        primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
+
+        try:
+            # Acquire the lock to ensure thread safety
+            with self.db_lock:
+                with sqlite3.connect(db_filepath) as conn:
+                    cursor = conn.cursor()
+
+                    # Prepare the SQL query for INSERT ... ON CONFLICT ... DO UPDATE
+                    columns = dataframe.columns.tolist()
+                    placeholders = ", ".join(["?" for _ in columns])
+                    updates = ", ".join([f"{col}=excluded.{col}" for col in columns if col != f'{primary_key}'])  # Exclude primary key
+                    sql = f"""
+                    INSERT INTO {table_name} ({", ".join(columns)})
+                    VALUES ({placeholders})
+                    ON CONFLICT({primary_key}) DO UPDATE SET
+                    {updates};
+                    """
+
+                    # Convert the DataFrame to a list of tuples for executemany
+                    data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+
+                    # Execute the batch operation
+                    cursor.executemany(sql, data_tuples)
+
+                    conn.commit()
+
+        except Exception as e:
+            dataframe.to_csv('dataframe.csv', index=False)
+            self.log_error(f"Error saving to database: {e}")
+
+    def db_optimize(self, db_filepath=None):
+        """
+        Optimize the SQLite database by running VACUUM, ANALYZE, and REINDEX.
+
+        Parameters:
+            db_filepath (str): The file path to the SQLite database.
+        """
+        db_filepath = db_filepath or self.config.db_filepath
+
+        try:
+            # Acquire the lock to ensure thread safety
+            with self.db_lock:
+                with sqlite3.connect(db_filepath) as conn:
+                    cursor = conn.cursor()
+
+                    # Run VACUUM to reduce file size and defragment the database
+                    cursor.execute("VACUUM")
+
+                    # Run ANALYZE to update statistics for query optimization
+                    cursor.execute("ANALYZE")
+
+                    # Run REINDEX to rebuild indexes for better performance
+                    cursor.execute("REINDEX")
+
+                    conn.commit()
+
+        except sqlite3.Error as e:
+            self.log_error(f"An error occurred during database optimization: {e}")
+
+    # WEB & REQUESTS
+    def header_random(self):
+        """Generate random HTTP headers for requests."""
+        user_agent = random.choice(self.config.USER_AGENTS)
+        referer = random.choice(self.config.REFERERS)
+        language = random.choice(self.config.LANGUAGES)
+
+        headers = {
+            'User-Agent': user_agent,
+            'Referer': referer,
+            'Accept-Language': language
+        }
+
+        return headers
+
+    def test_internet(self, host="8.8.8.8"):
+        """
+        Test internet connection by pinging a specified host. Retries if no connection is detected.
+        
+        Parameters:
+            host (str): The host to ping (default: Google's public DNS server 8.8.8.8).
+        """
+        wait_time = self.config.wait_time
+        
+        while True:
+            try:
+                result = subprocess.run(
+                    ["ping", "-n", "1", host],  # Use "-n" for Windows; "-c" would be used on Unix systems.
+                    stdout=subprocess.DEVNULL,  # Suppress standard output.
+                    stderr=subprocess.DEVNULL   # Suppress error output.
+                )
+                if result.returncode == 0:
+                    break
+                else:
+                    print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
+            except Exception as e:
+                print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+
