@@ -25,6 +25,8 @@ from selenium import webdriver
 from threading import Lock
 import zipfile
 import requests
+import threading
+import pyautogui
 
 from utils.config import Config
 
@@ -228,6 +230,17 @@ class BaseProcessor:
                 self.log_error(str(dynamic_error))
                 return None, None
     
+    def close_driver(self):
+        """
+        Safely quits the Selenium WebDriver instance.
+        """
+        try:
+            if self.driver:
+                self.driver.quit()
+                # print("WebDriver successfully quit.")
+        except Exception as e:
+            self.log_error(f"Error while quitting WebDriver: {e}")
+
     # TEXT & SELENIUM OBJECT METHODS
     def clean_text(self, text):
         """
@@ -401,6 +414,61 @@ class BaseProcessor:
             A list of escaped keywords ready for regex operations.
         """
         return [re.escape(keyword) for keyword in keywords]
+
+    # APP METHODS
+    def prefill_input(self, text, delay=None):
+        """
+        Simulate typing the default text into the input field.
+        
+        Parameters:
+        - text (str): The text to pre-fill in the input.
+        - delay (int): The delay before typing starts.
+        """
+        try:
+            if delay == None:
+                delay = self.config.wait_time
+
+            time.sleep(delay)
+            pyautogui.typewrite(text)
+            
+        except Exception as e:
+            self.log_error(e)
+
+    def timed_input(self, prompt, timeout=None, default='YES'):
+        """
+        Display a prompt and return the user's input, with a timeout and pre-filled value.
+        
+        Parameters:
+        - prompt (str): The input prompt to display.
+        - timeout (int): The number of seconds to wait for input.
+        - default (str): The default value to return if timeout is reached.
+        
+        Returns:
+        - str: The user's input or the default value if timeout is reached.
+        """
+        try:
+            if timeout == None:
+                timeout = self.config.wait_time
+
+            prefill_thread = threading.Thread(target=self.prefill_input, args=(default,))
+            prefill_thread.start()
+
+            print(f'{prompt} (default: {default}) [You have {timeout} seconds to answer]: ', end='', flush=True)
+            
+            # Start a thread to run the input() call, which will block until the user provides input
+            input_thread = threading.Thread(target=lambda: input())
+            input_thread.start()
+            
+            # Wait for the input or timeout
+            input_thread.join(timeout=timeout)
+            
+            if input_thread.is_alive():
+                # print(f'\nNo input provided within {timeout} seconds. Using default: {default}')
+                return default
+            else:
+                return input()
+        except Exception as e:
+            self.log_error(e)
 
     # LOG & DEBUG METHODS
     def log_error(self, error):
