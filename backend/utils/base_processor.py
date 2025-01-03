@@ -583,8 +583,8 @@ class BaseProcessor:
                 with sqlite3.connect(db_filepath) as conn:
                     pass  # Create the database file if it doesn't exist
 
-            if table_name:
-                self._initialize_table(db_filepath, database_name, table_name)
+                if table_name:
+                    self._initialize_table(db_filepath, database_name, table_name)
         except Exception as e:
             self.log_error(e)
 
@@ -656,23 +656,36 @@ class BaseProcessor:
             db_filepath (str): Path to the database file. Defaults to self.config.db_filepath.
             primary_key (str): The column used to identify unique rows in the table.
         """
-        db_filepath = db_filepath or self.config.db_filepath
-        database_name = os.path.basename(db_filepath)
-        schema = self.config.schema_definitions.get(database_name, {}).get(table_name, "")
-        lines = schema.strip().splitlines()
+        try:
+            db_filepath = db_filepath or self.config.db_filepath
+            database_name = os.path.basename(db_filepath)
+            schema = self.config.schema_definitions.get(database_name, {}).get(table_name, "")
+            lines = schema.strip().splitlines()
 
-        # Step 2: Initialize Variables for Parsing
-        primary_keys = []
+            # Step 2: Initialize Variables for Parsing
+            primary_keys = []
 
-        # Step 3: Parse the Lines for PRIMARY KEY
-        for line in lines:
-            if "PRIMARY KEY" in line.upper():
-                # Extract the part after PRIMARY KEY
-                start = line.upper().find("PRIMARY KEY") + len("PRIMARY KEY")
-                key_part = line.split("PRIMARY KEY")[0].strip()
-                key = key_part.split()[0]  # Extract the first part as the key
-                primary_keys.append(key)
-        primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
+            # Step 3: Parse the Lines for PRIMARY KEY
+            for line in lines:
+                if "PRIMARY KEY" in line.upper():
+                    primary_key_index = line.upper().find("PRIMARY KEY")
+                    key_part_before = line[:primary_key_index].strip()  # Part before PRIMARY KEY
+                    key_part_after = line[primary_key_index + len("PRIMARY KEY"):].strip()  # Part after PRIMARY KEY
+
+                    # Handle keys before PRIMARY KEY
+                    if key_part_before:
+                        key = key_part_before.split()[0]  # Extract the first part as the key
+                        primary_keys.append(key)
+
+                    # Handle keys inside parentheses after PRIMARY KEY
+                    if key_part_after.startswith("(") and key_part_after.endswith(")"):
+                        keys_in_parentheses = key_part_after[1:-1].split(",")  # Remove parentheses and split keys
+                        primary_keys.extend(key.strip() for key in keys_in_parentheses)
+
+
+            primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
+        except Exception as e:
+            self.log_error(e)
 
         try:
             # Acquire the lock to ensure thread safety
@@ -710,11 +723,15 @@ class BaseProcessor:
                     try:
                         for col in date_columns:
                             if col in dataframe.columns:
+                                # Convert column to datetime safely
+                                dataframe[col] = pd.to_datetime(dataframe[col], format='%Y-%m-%d', errors='coerce')
+
+                                # Apply the conversion to ISO format
                                 dataframe[col] = dataframe[col].apply(
                                     lambda x: x.isoformat() if isinstance(x, pd.Timestamp) and pd.notna(x) else None
                                 )
                     except Exception as e:
-                        pass
+                        print(f"Error processing datetime columns: {e}")
 
                     # Ensure numeric columns have valid values or are set to None
                     try:

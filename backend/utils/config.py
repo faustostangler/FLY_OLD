@@ -2,8 +2,8 @@ import os
 
 class Config:
     def __init__(self):
-        self.raw_db_path = 'raw.db'
-        self.final_db_path = 'final.db'
+        self.initial_database = 'statements initial.db'
+        self.final_database = 'statements final.db'
 
         #### OLD CONFIG
         # Define the base directory (root of the project)
@@ -29,9 +29,12 @@ class Config:
         self.metadados_filepath = os.path.join(self.data_folder, self.metadados_database)
         self.backup_db = f"{self.metadados_database.split('.')[0]} {self.backup_name}.{self.metadados_database.split('.')[-1]}"
 
+        self.initial_filepath = os.path.join(self.data_folder, self.initial_database)
+        self.backup_db = f"{self.initial_database.split('.')[0]} {self.backup_name}.{self.initial_database.split('.')[-1]}"
+
         # batches and other numbers
         self.batch_size = 100  # Batch size for data processing
-        self.max_workers = 20
+        self.max_workers = 10
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 50000
 
@@ -142,8 +145,8 @@ class Config:
                     )
                 """
             },
-            self.raw_db_path: {
-                "statements_raw": """
+            self.initial_database: {
+                "statements_initial": """
                     CREATE TABLE IF NOT EXISTS {table_name} (
                         nsd INTEGER,
                         sector TEXT,
@@ -161,7 +164,7 @@ class Config:
                     )
                 """
             },
-            self.final_db_path: {
+            self.final_database: {
                 "statements_processed": """
                     CREATE TABLE IF NOT EXISTS {table_name} (
                         nsd INTEGER,
@@ -211,7 +214,7 @@ class Config:
         # Statements settings
         self.statements_sheet_columns = ['company_name', 'quarter', 'version', 'type', 'frame']
 
-        self.statements_file = 'statements'
+        self.statements_file = 'statements_initial'
         self.statements_types = ["DEMONSTRACOES FINANCEIRAS PADRONIZADAS", "INFORMACOES TRIMESTRAIS"]
         self.financial_statements_columns = ['account', 'description', 'value']  # Assuming these are the financial/statements columns
         self.statements_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'frame'] + self.financial_statements_columns
