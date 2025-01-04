@@ -106,8 +106,16 @@ class StockProcessor(BaseProcessor):
                     for table in tables:
                         if "Nome da Ação" in table.get_text():
                             try:
-                                # Wrap the HTML string in StringIO before passing to read_html
-                                html_string = StringIO(str(table))
+                                # Convert the table to a string
+                                table_html = str(table)
+
+                                # Preprocess: Replace ',' with '.' for decimals and '.' with '' for thousands
+                                table_html = table_html.replace('.', '').replace(',', '.')
+
+                                # Wrap the modified HTML string in StringIO
+                                html_string = StringIO(table_html)
+
+                                # Read the table with pandas
                                 df = pd.read_html(html_string, header=0)[0]
                             except ValueError:
                                 print(f"Skipping table for {company_ticker} {year}-{month} due to format issues.")
@@ -133,6 +141,8 @@ class StockProcessor(BaseProcessor):
                             df = df[self.config.stock_all_columns]
 
                             processed_batch.append(df)
+                            
+                            extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], company_ticker, year, month, ticker, df['close'].iloc[-1]]
 
                 else:
                     new_row = {
@@ -143,10 +153,10 @@ class StockProcessor(BaseProcessor):
                     df['day'] = pd.to_datetime(df['day'], errors='coerce')
                     df = df.fillna('')
                     processed_batch.append(df)
+                    extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], company_ticker, year, month]
 
                 # Print progress information
                 index_number = progress['batch_start'] + progress['sub_batch_start'] + i
-                extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], company_ticker, year, month]
                 self.print_info(index_number, progress['scrape_size'], progress['start_time'], extra_info)
 
         except Exception as e:
