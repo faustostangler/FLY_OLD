@@ -16,7 +16,7 @@ class NsdProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
-    def generate_nsd_list(self, existing_nsd):
+    def _generate_nsd_list(self, existing_nsd):
         """
         """
         try:
@@ -44,11 +44,11 @@ class NsdProcessor(BaseProcessor):
             self.log_error(e)
         
 
-        nsd_df = pd.DataFrame({'nsd': list(nsd_range)})
+        scrape_targets = pd.DataFrame({'nsd': list(nsd_range)})
 
-        return nsd_df
+        return scrape_targets
 
-    def parse_nsd_data(self, html, nsd):
+    def parse_nsd_data_old(self, html, nsd):
         """
         Parse the HTML content to extract NSD data.
 
@@ -112,7 +112,7 @@ class NsdProcessor(BaseProcessor):
             # self.log_error(f"Error parsing NSD {nsd}: {e}")
             return None
 
-    def get_nsd_data(self, nsd_data, nsd):
+    def get_nsd_data_old(self, nsd_data, nsd):
         '''
         '''
         data = ''
@@ -137,7 +137,112 @@ class NsdProcessor(BaseProcessor):
 
         return nsd_data
 
-    def process_batch(self, batch, batch_start, length):
+    def process_batch(self, sub_batch, progress):
+        """
+        Process a batch of NSD data by scraping and extracting relevant information.
+        """
+        result = pd.DataFrame(columns=self.config.nsd_columns)
+        processed_data = []
+        start_time = time.time()
+
+        for i, (_, row) in enumerate(sub_batch.iterrows()):
+            try:
+                nsd = row['nsd']
+                # Fetch and process NSD details
+                nsd_data = self._fetch_nsd_html(nsd)
+                if nsd_data:
+                    processed_data.append(nsd_data)
+
+                # Log progress
+                extra_info = [
+                    nsd,
+                    nsd_data.get('sent_date', None),
+                    nsd_data.get('quarter', None),
+                    nsd_data.get('nsd_type', None),
+                    nsd_data.get('company_name', None),
+                ]
+                self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
+
+            except Exception as e:
+                self.log_error(f"Error processing NSD {row['nsd']}: {e}")
+
+        # Combine results into a DataFrame
+        if processed_data:
+            result = pd.DataFrame(processed_data, columns=self.config.nsd_columns)
+        
+        return result
+
+    def _fetch_nsd_html(self, nsd):
+        """
+        Fetch and parse NSD data for a given NSD value.
+        """
+        result = {'nsd': nsd}  # Minimal data to prevent stopping the process
+        try:
+            url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
+            headers = self.header_random()
+            self.test_internet()
+
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+
+            # Parse the response HTML
+            result = self._parse_nsd_data(response.text, nsd)
+
+        except Exception as e:
+            self.log_error(f"Error fetching NSD {nsd}: {e}")
+
+        return result
+
+    def _parse_nsd_data(self, html, nsd):
+        """
+        Parse the HTML content to extract NSD data.
+        """
+        result = {}
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            data = {'nsd': nsd}
+
+            # Define selectors for the required data
+            selectors = {
+                'company_name': '#lblNomeCompanhia',
+                'dri': '#lblNomeDRI',
+                'nsd_type_version': '#lblDescricaoCategoria',
+                'auditor': '#lblAuditor',
+                'responsible_auditor': '#lblResponsavelTecnico',
+                'protocol': '#lblProtocolo',
+                'quarter': '#lblDataDocumento',
+                'sent_date': '#lblDataEnvio',
+                'reason': '#lblMotivoCancelamentoReapresentacao',
+            }
+
+            for key, selector in selectors.items():
+                element = soup.select_one(selector)
+                if element:
+                    data[key] = self.clean_text(element.text) if key != 'sent_date' else element.text
+
+            # Parse quarter and sent_date into datetime objects
+            data['quarter'] = pd.to_datetime(data.get('quarter', None), format="%d/%m/%Y", errors='coerce')
+            data['sent_date'] = pd.to_datetime(data.get('sent_date', None), format="%d/%m/%Y %H:%M:%S", errors='coerce')
+
+            if data['sent_date']:
+                result = data
+
+        except Exception as e:
+            self.log_error(f"Error parsing NSD {nsd}: {e}")
+
+        return result 
+
+    def process_instance(self, sub_batch, progress):
+        """
+        Process a single batch by delegating to process_batch.
+        """
+        try:
+            return self.process_batch(sub_batch, progress)
+        except Exception as e:
+            self.log_error(f"Error in process_instance: {e}")
+            return pd.DataFrame()  # Return an empty DataFrame on failure
+
+    def process_batch_old(self, batch, batch_start, length):
         '''
         '''
         processed_batch = []
@@ -162,7 +267,7 @@ class NsdProcessor(BaseProcessor):
 
         return processed_batch_df
 
-    def main_thread(self, batch, batch_start, length):
+    def main_thread_old(self, batch, batch_start, length):
         """
         Multithreaded processing of NSD sub-batches within a given batch.
         """
@@ -204,7 +309,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
-    def main_sequential(self, batch, batch_start, length):
+    def main_sequential_old(self, batch, batch_start, length):
         """
         Sequential processing of NSD batches.
         """
@@ -212,7 +317,31 @@ class NsdProcessor(BaseProcessor):
 
         return processed_batch
 
-    def main(self, limit=2, thread=True):
+    def main(self, thread=True):
+        """
+        Main method to scrape NSD data, parse it, and save it to the database.
+        """
+        try:
+            # # Initialize the WebDriver
+            # self.driver, self.driver_wait = self._initialize_driver()
+
+            # Load existing NSD data
+            existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+            existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
+            scrape_targets = self._generate_nsd_list(existing_nsd)
+
+            # Run processing (threaded or sequential)
+            processed_data = self.run(scrape_targets, thread=thread)
+
+            # Save processed data
+            if not processed_data.empty:
+                self.save_to_db(dataframe=processed_data, table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+
+        except Exception as e:
+            self.log_error(f"Error in main: {e}")
+
+
+    def main_old(self, limit=2, thread=True):
         """
         The main method to scrape NSD data, parse it, and save it to the database.
         """
@@ -228,15 +357,15 @@ class NsdProcessor(BaseProcessor):
             existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
 
             # Step 2: Generate NSD list and setup processing variables
-            nsd_df = self.generate_nsd_list(existing_nsd)
-            length = len(nsd_df)
+            scrape_targets = self._generate_nsd_list(existing_nsd)
+            length = len(scrape_targets)
             batch_size = self.config.batch_size
             total_batches = (length + batch_size - 1) // batch_size
             self.start_time = time.time()
 
             for c, batch_start in enumerate(range(0, length, batch_size)):
                 # Slice the DataFrame for the current batch
-                batch = nsd_df.iloc[batch_start:batch_start + batch_size]
+                batch = scrape_targets.iloc[batch_start:batch_start + batch_size]
 
                 # Process batches using thread or sequential method
                 if thread:

@@ -55,7 +55,7 @@ class StatementsProcessor(BaseProcessor):
 
         return scrape_targets
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance_old(self, sub_batch, progress):
         """
         Create a new instance of StatementsDataprocess_batch and run the process_batch.
         This ensures each batch has its own WebDriver instance.
@@ -72,7 +72,46 @@ class StatementsProcessor(BaseProcessor):
 
         return processed_batch
 
+    def process_instance(self, sub_batch, progress):
+        """
+        Process a single batch by delegating to process_batch.
+        """
+        try:
+            return self.process_batch(sub_batch, progress)
+        except Exception as e:
+            self.log_error(f"Error in process_instance: {e}")
+            return pd.DataFrame()  # Return an empty DataFrame on failure
+
     def process_batch(self, sub_batch, progress):
+        """
+        Process a batch of financial data by iterating over rows and scraping statements.
+        """
+        processed_data = []
+
+        start_time = time.time()
+        for i, (_, row) in enumerate(sub_batch.iterrows()):
+            try:
+                # Extract and process data for each row
+                row_data = self._process_company_quarter_data(row)
+                processed_data.extend(row_data)
+
+                # Log progress
+                extra_info = [f"{i+1}/{len(sub_batch)}", row['company_name'], row['quarter'], f"v{row['version']}"]
+                self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
+
+            except Exception as e:
+                self.log_error(f"Error processing row {i}: {e}")
+                row_data = 'empty'
+
+        # Combine results into a single DataFrame
+        if processed_data:
+            result = pd.concat(processed_data, ignore_index=True)
+        else:
+            result = pd.DataFrame(columns=self.config.statements_columns)
+
+        return result
+
+    def process_batch_old(self, sub_batch, progress):
         """
         Run the entire scraping process for the identified NSD entries, iterating over all financial data statements.
         """
@@ -89,7 +128,7 @@ class StatementsProcessor(BaseProcessor):
                 try:
                     # Process each company-quarter data using the refactored function
 
-                    company_quarter_data = self.process_company_quarter_data(row)
+                    company_quarter_data = self._process_company_quarter_data(row)
                     all_data.extend(company_quarter_data)  # Add all processed DataFrames to all_data
 
                     # Print progress information
@@ -112,9 +151,9 @@ class StatementsProcessor(BaseProcessor):
             self.log_error(f"Error in run_process_batch: {e}")
             return None  # Return None to indicate that the scraping process did not complete
 
-    def process_company_quarter_data(self, row):
+    def _process_company_quarter_data(self, row):
         """
-        Process financial and statements data for a specific company and quarter.
+        Internal method to process financial and statements data for a specific company and quarter.
 
         Args:
             row (pd.Series): A row of data containing NSD, company name, quarter, sector, and other metadata.
@@ -145,9 +184,9 @@ class StatementsProcessor(BaseProcessor):
             for cmbGrupo, cmbQuadro in statements:
                 # Determine which scraping method to use
                 if [cmbGrupo, cmbQuadro] in self.config.financial_data_statements:
-                    df = self.scrape_financial_data(cmbGrupo, cmbQuadro)
+                    df = self._scrape_financial_data(cmbGrupo, cmbQuadro)
                 else:
-                    df = self.scrape_statements_data(cmbGrupo, cmbQuadro)
+                    df = self._scrape_statements_data(cmbGrupo, cmbQuadro)
 
                 if df is not None:
                     # Add necessary metadata columns to the DataFrame
@@ -172,7 +211,7 @@ class StatementsProcessor(BaseProcessor):
             self.log_error(f"Error processing company quarter data: {e}")
             return []  # Return an empty list to prevent the process from stopping
 
-    def scrape_financial_data(self, cmbGrupo, cmbQuadro):
+    def _scrape_financial_data(self, cmbGrupo, cmbQuadro):
         """
         Scrapes statements data from the specified page.
 
@@ -237,7 +276,7 @@ class StatementsProcessor(BaseProcessor):
             # self.log_error(e)
             return None
 
-    def scrape_statements_data(self, cmbGrupo, cmbQuadro):
+    def _scrape_statements_data(self, cmbGrupo, cmbQuadro):
         """
         Process the scraped statements data into a DataFrame.
 
@@ -318,7 +357,7 @@ class StatementsProcessor(BaseProcessor):
             # self.log_error(f"Error processing statements data: {e}")
             return None
 
-    def main_thread(self, batch, progress):
+    def main_thread_old(self, batch, progress):
         """
         Process the batches of statements data using concurrent workers for sub-batches.
 
@@ -370,7 +409,7 @@ class StatementsProcessor(BaseProcessor):
 
         return processed_batch
 
-    def main_sequential(self, batch, progress):
+    def main_sequential_old(self, batch, progress):
         """
         Sequentially process all scrape targets at once.
         
@@ -389,6 +428,33 @@ class StatementsProcessor(BaseProcessor):
         return processed_batch
 
     def main(self, thread=True):
+        """
+        Main method to process data.
+        """
+        self.close_driver()
+
+        try:
+            # Load necessary data
+            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+            financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+
+            # Identify scrape targets
+            scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
+
+            # Process targets using threading or sequential logic
+            processed_data = self.run(scrape_targets, thread=thread)
+
+            # Save processed data
+            if not processed_data.empty:
+                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+
+        except Exception as e:
+            self.log_error(f"Error in main: {e}")
+
+        return True
+
+    def main_old(self, thread=True):
         """
         The main method to scrape NSD data, parse it, and save it to the database.
         """

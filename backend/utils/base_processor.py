@@ -28,12 +28,76 @@ import requests
 import threading
 import pyautogui
 
+from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from utils.config import Config
 
 class BaseProcessor:
     def __init__(self):
         self.config = Config()  # Assume Config is already defined
         self.db_lock = Lock()  # Initialize a threading Lock
+
+    # APP FLOW LOGIC
+    def run(self, data, thread=True):
+        """
+        Split data into batches and process them sequentially or with threads.
+        """
+        results = []
+        try:
+            batches = self._split_batches(data, self.config.batch_size)
+            if thread:
+                results = self._process_with_threads(batches)
+            else:
+                results = self._process_sequentially(batches)
+        except Exception as e:
+            self.log_error(e)
+
+        return results
+
+    def _split_batches(self, data, batch_size):
+        """Split data into batches."""
+        batches = []
+        try:
+            batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        except Exception as e:
+            self.log_error(e)
+
+        return batches
+
+    def _process_with_threads(self, batches):
+        '''
+        '''
+        results = []
+        try:
+            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+                futures = [executor.submit(self.process_batch, batch) for batch in batches]
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        self.log_error(f"Error in thread: {e}")
+        except Exception as e:
+            self.log_error(e)
+
+        return results
+        
+    def _process_sequentially(self, batches):
+        '''
+        '''
+        results = []
+        for batch in batches:
+            try:
+                results.append(self.process_batch(batch))
+            except Exception as e:
+                self.log_error(f"Error in batch: {e}")
+        
+        return results
+
+    @abstractmethod
+    def process_batch(self, batch):
+        """To be implemented by child classes."""
+        pass
 
     # SELENIUM DRIVER METHODS
     def _get_chrome_version(self):
