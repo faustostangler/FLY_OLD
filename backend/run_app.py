@@ -8,7 +8,7 @@ if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
         company_processor = CompanyProcessor()
-        run_company_processor = 'N'
+        run_company_processor = 'Y'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):

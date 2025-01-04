@@ -53,7 +53,9 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-        return results
+        processed_data = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+
+        return processed_data
 
     def _split_batches(self, data, batch_size):
         """Split data into batches."""
@@ -65,7 +67,7 @@ class BaseProcessor:
 
         return batches
 
-    def _process_with_threads(self, batches):
+    def _process_with_threads_old(self, batches):
         '''
         '''
         results = []
@@ -82,6 +84,40 @@ class BaseProcessor:
 
         return results
         
+    def _process_with_threads(self, batches):
+        """
+        Process batches with threading.
+        """
+        results = []
+        try:
+            total_batches = len(batches)
+            start_time = time.time()
+
+            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+                futures = []
+                for batch_index, batch in enumerate(batches):
+                    # Prepare progress dictionary
+                    progress = {
+                        'batch_index': batch_index,
+                        'total_batches': total_batches,
+                        'batch_start': batch_index * self.config.batch_size,
+                        'scrape_size': sum(len(b) for b in batches),
+                        'start_time': start_time,
+                    }
+
+                    # Submit task with progress
+                    futures.append(executor.submit(self.process_batch, batch, progress))
+
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        self.log_error(f"Error in thread: {e}")
+        except Exception as e:
+            self.log_error(e)
+
+        return results
+
     def _process_sequentially(self, batches):
         '''
         '''
