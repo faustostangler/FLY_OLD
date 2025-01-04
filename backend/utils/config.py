@@ -22,6 +22,7 @@ class Config:
         os.makedirs(self.utils_folder, exist_ok=True)
 
         # Main database name
+        self.stock_database = "historical_data.db"
         self.metadados_database = "metadados.db"
         self.backup_name = 'backup'
 
@@ -32,9 +33,12 @@ class Config:
         self.initial_filepath = os.path.join(self.data_folder, self.initial_database)
         self.backup_db = f"{self.initial_database.split('.')[0]} {self.backup_name}.{self.initial_database.split('.')[-1]}"
 
+        self.stock_filepath = os.path.join(self.data_folder, self.stock_database)
+        self.backup_db = f"{self.stock_database.split('.')[0]} {self.backup_name}.{self.stock_database.split('.')[-1]}"
+
         # batches and other numbers
-        self.batch_size = 100  # Batch size for data processing
-        self.max_workers = 10
+        self.batch_size = 500  # Batch size for data processing
+        self.max_workers = 20
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 50000
 
@@ -183,20 +187,28 @@ class Config:
                     )
                 """
             },
-            "market_data.db": {
-                "stock_prices": """
-                    CREATE TABLE IF NOT EXISTS stock_prices (
-                        company_name TEXT,
+            self.stock_database: {
+                "stock_data": """
+                    CREATE TABLE IF NOT EXISTS stock_data (
+                        company_ticker TEXT,
                         ticker TEXT,
-                        date TEXT,
+                        day TEXT,
+                        type TEXT,
+                        trades INTEGER,
+                        tradeshare REAL,
+                        quantity INTEGER,
+                        volume REAL,
+                        volshare REAL,
+                        open REAL,
+                        low REAL,
+                        high REAL,
+                        average REAL,
                         close REAL,
-                        adj_close REAL,
-                        PRIMARY KEY (ticker, date)
+                        PRIMARY KEY (company_ticker, ticker, day)
                     )
                 """
             }
         }
-
         
         # Company Info from B3
         self.companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"  # URL for the B3 companies search page
@@ -221,6 +233,11 @@ class Config:
         self.statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'account', 'description', 'type', ]
         self.year_end_accounts = ['3', '4']
         self.cumulative_quarter_accounts = ['6', '7']
+
+        # B3 Stock Settings
+        self.stock_table = 'stock_data'
+        self.stock_columns = ["day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
+        self.stock_all_columns = ["company_ticker", "ticker", "day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
 
         # Math settings
         self.statements_file_math = 'math'

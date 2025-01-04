@@ -95,7 +95,7 @@ class StatementsProcessor(BaseProcessor):
                     # Print progress information
                     index_number = progress['batch_start'] + progress['sub_batch_start'] + i
                     index_number_b = (progress['batch_start'] * progress['batch_counter']) + (progress['sub_batch_start'] * progress['sub_batch_counter']) + i
-                    extra_info = [progress['sub_batch_counter'], row['nsd'], row['company_name'], pd.to_datetime(row['quarter'], dayfirst=False, errors='coerce').strftime('%Y-%m-%d'), f"v{row['version']}"]
+                    extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], row['nsd'], row['company_name'], pd.to_datetime(row['quarter'], dayfirst=False, errors='coerce').strftime('%Y-%m-%d'), f"v{row['version']}"]
                     self.print_info(index_number, progress['scrape_size'], progress['start_time'], extra_info)
 
                 except Exception as e:
@@ -420,7 +420,6 @@ class StatementsProcessor(BaseProcessor):
                 else:
                     # Run sequentially
                     processed_batch = self.main_sequential(batch, progress)
-                    pass
 
                 if not processed_batch.empty:
                     self.save_to_db(dataframe=processed_batch, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)

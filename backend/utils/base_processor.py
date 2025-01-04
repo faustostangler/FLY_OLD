@@ -705,7 +705,7 @@ class BaseProcessor:
                     """
 
                     text_columns = ['version']  # Specify columns to be treated as text
-                    date_columns = ['quarter', 'sent_date']
+                    date_columns = ['quarter', 'sent_date', 'day']
                     numeric_columns = []
 
                     # Replace NaN with None for SQLite compatibility
@@ -751,6 +751,7 @@ class BaseProcessor:
             print(f'Saved {database_name}')
 
         except Exception as e:
+            print(dataframe.dtypes)
             dataframe.to_csv('dataframe.csv', index=False)
             self.log_error(f"Error saving to database: {e}")
 
