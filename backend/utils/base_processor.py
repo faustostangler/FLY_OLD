@@ -122,16 +122,28 @@ class BaseProcessor:
         '''
         '''
         results = []
-        for batch in batches:
+        start_time = time.time()
+        total_batches = len(batches)
+        
+        for batch_index, batch in enumerate(batches):
+            # Prepare progress dictionary
+            progress = {
+                'batch_index': batch_index,
+                'total_batches': total_batches,
+                'batch_start': batch_index * self.config.batch_size,
+                'scrape_size': sum(len(b) for b in batches),
+                'start_time': start_time,
+            }
+
             try:
-                results.append(self.process_batch(batch))
+                results.append(self.process_batch(batch, progress))
             except Exception as e:
                 self.log_error(f"Error in batch: {e}")
         
         return results
 
     @abstractmethod
-    def process_batch(self, batch):
+    def process_batch(self, batch, progress):
         """To be implemented by child classes."""
         pass
 
@@ -759,6 +771,38 @@ class BaseProcessor:
         try:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
+
+            primary_key = self._get_primary_key(table_name, database_name)
+
+            # Acquire the lock to ensure thread safety
+            with self.db_lock:
+                with sqlite3.connect(db_filepath) as conn:
+                    cursor = conn.cursor()
+
+                    sql = self._get_sql_statement(dataframe, primary_key, table_name)
+
+                    dataframe = self._prepare_dataframe(dataframe)
+
+                    # Convert the DataFrame to a list of tuples for executemany
+                    data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+
+                    # Execute the batch operation
+                    cursor.executemany(sql, data_tuples)
+
+                    conn.commit()
+            print(f'Saved {database_name}')
+
+        except Exception as e:
+            print(dataframe.dtypes)
+            dataframe.to_csv('dataframe.csv', index=False)
+            self.log_error(f"Error saving to database: {e}")
+
+    def _get_primary_key(self, table_name, database_name):
+        """
+        """
+        primary_key = ''
+
+        try:
             schema = self.config.schema_definitions.get(database_name, {}).get(table_name, "")
             lines = schema.strip().splitlines()
 
@@ -784,77 +828,78 @@ class BaseProcessor:
 
 
             primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
+
         except Exception as e:
             self.log_error(e)
 
+        return primary_key
+
+    def _get_sql_statement(self, dataframe, primary_key, table_name):
+        """
+        """
+        sql = ''
         try:
-            # Acquire the lock to ensure thread safety
-            with self.db_lock:
-                with sqlite3.connect(db_filepath) as conn:
-                    cursor = conn.cursor()
+            # Prepare the SQL query for INSERT ... ON CONFLICT ... DO UPDATE
+            columns = dataframe.columns.tolist()
+            placeholders = ", ".join(["?" for _ in columns])
+            updates = ", ".join([f"{col}=excluded.{col}" for col in columns if col != f'{primary_key}'])  # Exclude primary key
+            sql = f"""
+            INSERT INTO {table_name} ({", ".join(columns)})
+            VALUES ({placeholders})
+            ON CONFLICT({primary_key}) DO UPDATE SET
+            {updates};
+            """
+        except Exception as e:
+            pass
 
-                    # Prepare the SQL query for INSERT ... ON CONFLICT ... DO UPDATE
-                    columns = dataframe.columns.tolist()
-                    placeholders = ", ".join(["?" for _ in columns])
-                    updates = ", ".join([f"{col}=excluded.{col}" for col in columns if col != f'{primary_key}'])  # Exclude primary key
-                    sql = f"""
-                    INSERT INTO {table_name} ({", ".join(columns)})
-                    VALUES ({placeholders})
-                    ON CONFLICT({primary_key}) DO UPDATE SET
-                    {updates};
-                    """
+        return sql
 
-                    text_columns = ['version']  # Specify columns to be treated as text
-                    date_columns = ['quarter', 'sent_date', 'day']
-                    numeric_columns = []
+    def _prepare_dataframe(self, dataframe):
+        """
+        """
+        try:
+            text_columns = ['version']
+            date_columns = ['quarter', 'sent_date', 'date']
+            numeric_columns = []
 
-                    # Replace NaN with None for SQLite compatibility
-                    dataframe = dataframe.where(pd.notnull(dataframe), None)
+            # Replace NaN with None for SQLite compatibility
+            dataframe = dataframe.where(pd.notnull(dataframe), None)
 
-                    # Replace NaN and None with an empty string for text columns
-                    try:
-                        for col in text_columns:
-                            if col in dataframe.columns:
-                                dataframe[col] = dataframe[col].replace([None, ''], '').astype(str)
-                    except Exception as e:
-                        pass
+            # Replace NaN and None with an empty string for text columns
+            try:
+                for col in text_columns:
+                    if col in dataframe.columns:
+                        dataframe[col] = dataframe[col].replace([None, ''], '').astype(str)
+            except Exception as e:
+                pass
 
-                    # Convert datetime columns to string in ISO format or None
-                    try:
-                        for col in date_columns:
-                            if col in dataframe.columns:
-                                # Convert column to datetime safely
-                                dataframe[col] = pd.to_datetime(dataframe[col], format='%Y-%m-%d', errors='coerce')
+            # Convert datetime columns to string in ISO format or None
+            try:
+                for col in date_columns:
+                    if col in dataframe.columns:
+                        # Convert column to datetime safely
+                        dataframe[col] = pd.to_datetime(dataframe[col], format='%Y-%m-%d', errors='coerce')
 
-                                # Apply the conversion to ISO format
-                                dataframe[col] = dataframe[col].apply(
-                                    lambda x: x.isoformat() if isinstance(x, pd.Timestamp) and pd.notna(x) else None
-                                )
-                    except Exception as e:
-                        print(f"Error processing datetime columns: {e}")
+                        # Apply the conversion to ISO format
+                        dataframe[col] = dataframe[col].apply(
+                            lambda x: x.isoformat() if isinstance(x, pd.Timestamp) and pd.notna(x) else None
+                        )
+            except Exception as e:
+                pass
 
-                    # Ensure numeric columns have valid values or are set to None
-                    try:
-                        for col in numeric_columns:
-                            if col in dataframe.columns:
-                                dataframe[col] = dataframe[col].apply(lambda x: float(x) if pd.notna(x) else None)
-                    except Exception as e:
-                        pass
-
-                    # Convert the DataFrame to a list of tuples for executemany
-                    data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
-
-                    # Execute the batch operation
-                    cursor.executemany(sql, data_tuples)
-
-                    conn.commit()
-            print(f'Saved {database_name}')
+            # Ensure numeric columns have valid values or are set to None
+            try:
+                for col in numeric_columns:
+                    if col in dataframe.columns:
+                        dataframe[col] = dataframe[col].apply(lambda x: float(x) if pd.notna(x) else None)
+            except Exception as e:
+                pass
 
         except Exception as e:
-            print(dataframe.dtypes)
-            dataframe.to_csv('dataframe.csv', index=False)
-            self.log_error(f"Error saving to database: {e}")
+            self.log_error(e)
 
+        return dataframe
+    
     def db_optimize(self, db_filepath=None):
         """
         Optimize the SQLite database by running VACUUM, ANALYZE, and REINDEX.
@@ -883,6 +928,7 @@ class BaseProcessor:
 
         except sqlite3.Error as e:
             self.log_error(f"An error occurred during database optimization: {e}")
+
 
     # WEB & REQUESTS
     def header_random(self):

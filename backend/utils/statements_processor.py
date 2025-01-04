@@ -17,9 +17,6 @@ class StatementsProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
-        # Initialize the WebDriver
-        self.driver, self.driver_wait = self._initialize_driver()
-
     def get_scrape_targets(self, company_info, existing_nsd, financial_statements):
         '''
         '''
@@ -431,7 +428,8 @@ class StatementsProcessor(BaseProcessor):
         """
         Main method to process data.
         """
-        self.close_driver()
+        # # Initialize the WebDriver
+        # self.driver, self.driver_wait = self._initialize_driver()
 
         try:
             # Load necessary data
@@ -441,6 +439,11 @@ class StatementsProcessor(BaseProcessor):
 
             # Identify scrape targets
             scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
+
+            # Exit if no scrape_targets
+            if scrape_targets.empty:
+                self.db_optimize(self.config.initial_filepath)
+                return True
 
             # Process targets using threading or sequential logic
             processed_data = self.run(scrape_targets, thread=thread)

@@ -8,11 +8,11 @@ if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
         company_processor = CompanyProcessor()
-        run_company_processor = 'Y'
+        run_company_processor = 'N'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
-            company_processor.main()
+            company_processor.main(thread=True)
         company_processor.close_driver()
 
         # Ask the user if they want to get nsd information
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
         # Ask the user if they want to get finantial statements
         statements_processor = StatementsProcessor()
-        run_statements_processor = 'N'
+        run_statements_processor = 'Y'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):

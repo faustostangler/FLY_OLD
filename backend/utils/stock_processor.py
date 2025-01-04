@@ -26,10 +26,10 @@ class StockProcessor(BaseProcessor):
         Generate scrape targets for missing data combinations.
         """
         try:
-            # Convert 'day' column to datetime and extract year and month
-            stock_info['day'] = pd.to_datetime(stock_info['day'])
-            stock_info['year'] = stock_info['day'].dt.year.astype(str)
-            stock_info['month'] = stock_info['day'].dt.month.astype(str).str.zfill(2)
+            # Convert 'date' column to datetime and extract year and month
+            stock_info['date'] = pd.to_datetime(stock_info['date'])
+            stock_info['year'] = stock_info['date'].dt.year.astype(str)
+            stock_info['month'] = stock_info['date'].dt.month.astype(str).str.zfill(2)
 
             # Create a set of existing combinations for faster lookups
             existing_combinations = set(
@@ -134,7 +134,7 @@ class StockProcessor(BaseProcessor):
                             df.columns = self.config.stock_columns
                             df = df[1:-1].reset_index(drop=True)  # Reset index after dropping rows
 
-                            df['day'] = pd.to_datetime(df['day'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
+                            df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
                             df['company_ticker'] = company_ticker
                             df['ticker'] = ticker
 
@@ -147,10 +147,10 @@ class StockProcessor(BaseProcessor):
                 else:
                     new_row = {
                         'company_ticker': company_ticker,
-                        'day': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
+                        'date': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
                     }
                     df = pd.DataFrame([new_row], columns=self.config.stock_all_columns)
-                    df['day'] = pd.to_datetime(df['day'], errors='coerce')
+                    df['date'] = pd.to_datetime(df['date'], errors='coerce')
                     df = df.fillna('')
                     processed_batch.append(df)
                     extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], company_ticker, year, month]
@@ -275,7 +275,7 @@ class StockProcessor(BaseProcessor):
 
             df.columns = self.config.stock_columns
             df = df[1:-1].reset_index(drop=True)
-            df['day'] = pd.to_datetime(df['day'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
+            df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
             df['company_ticker'] = company_ticker
             df['ticker'] = ticker
 
@@ -302,10 +302,10 @@ class StockProcessor(BaseProcessor):
         try:
             new_row = {
                 'company_ticker': company_ticker,
-                'day': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
+                'date': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
             }
             df = pd.DataFrame([new_row], columns=self.config.stock_all_columns)
-            df['day'] = pd.to_datetime(df['day'], errors='coerce')
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
             result = df.fillna('')
         except Exception as e:
             self.log_error(e)

@@ -156,10 +156,10 @@ class NsdProcessor(BaseProcessor):
                 # Log progress
                 extra_info = [
                     nsd,
-                    nsd_data.get('sent_date', None),
-                    nsd_data.get('quarter', None),
-                    nsd_data.get('nsd_type', None),
-                    nsd_data.get('company_name', None),
+                    nsd_data.get('sent_date').strftime('%Y-%m-%d %H:%M:%S') if nsd_data.get('sent_date') else '',
+                    nsd_data.get('nsd_type', ''),
+                    nsd_data.get('company_name', ''),
+                    nsd_data.get('quarter').strftime('%Y-%m') if nsd_data.get('quarter') else '',
                 ]
                 self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
 
@@ -186,6 +186,7 @@ class NsdProcessor(BaseProcessor):
             response.raise_for_status()
 
             # Parse the response HTML
+            html = response.text
             result = self._parse_nsd_data(response.text, nsd)
 
         except Exception as e:
@@ -220,7 +221,19 @@ class NsdProcessor(BaseProcessor):
                 if element:
                     data[key] = self.clean_text(element.text) if key != 'sent_date' else element.text
 
-            # Parse quarter and sent_date into datetime objects
+            # Parse data information nsd_type, version, quarter and sent_date into datetime objects
+            parts = data['nsd_type_version'].split()
+
+            # Extract version, year, and nsd_type
+            data['version'] = parts[-1]  # Last part
+            year = parts[-2]     # Second last part
+            data['nsd_type'] = " ".join(parts[:-2])  # Remaining parts joined
+
+            if len(data['quarter']) == 4:  # Only a year is provided
+                # Assuming the last day of the year
+                data['quarter'] = datetime.datetime.strptime(f"31/12/{data['quarter']}", "%d/%m/%Y")
+            else:
+                data['quarter'] = datetime.datetime.strptime(data['quarter'], "%d/%m/%Y")
             data['quarter'] = pd.to_datetime(data.get('quarter', None), format="%d/%m/%Y", errors='coerce')
             data['sent_date'] = pd.to_datetime(data.get('sent_date', None), format="%d/%m/%Y %H:%M:%S", errors='coerce')
 
@@ -228,7 +241,8 @@ class NsdProcessor(BaseProcessor):
                 result = data
 
         except Exception as e:
-            self.log_error(f"Error parsing NSD {nsd}: {e}")
+            # self.log_error(f"Error parsing NSD {nsd}: {e}")
+            pass
 
         return result 
 
@@ -327,9 +341,20 @@ class NsdProcessor(BaseProcessor):
 
             # Load existing NSD data
             existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+
+            # Filter by the last sent_date
             existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
+            last_valid_index = existing_nsd.sort_values(by='sent_date', ascending=False).index[0]
+            existing_nsd = existing_nsd.loc[:last_valid_index]
+
             scrape_targets = self._generate_nsd_list(existing_nsd)
 
+            # Exit if no scrape_targets
+            if scrape_targets.empty:
+                self.db_optimize(self.config.metadados_filepath)
+                return True
+
+            thread = False
             # Run processing (threaded or sequential)
             processed_data = self.run(scrape_targets, thread=thread)
 
@@ -339,7 +364,6 @@ class NsdProcessor(BaseProcessor):
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
-
 
     def main_old(self, limit=2, thread=True):
         """
