@@ -28,7 +28,7 @@ if __name__ == '__main__':
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
-            statements_processor.main(thread=True)
+            statements_processor.main(thread=False)
         statements_processor.close_driver()
 
 

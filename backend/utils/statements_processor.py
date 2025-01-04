@@ -55,24 +55,24 @@ class StatementsProcessor(BaseProcessor):
 
         return scrape_targets
 
-    def process_statements(self, sub_batch, progress):
+    def process_instance(self, sub_batch, progress):
         """
-        Create a new instance of StatementsDataScraper and run the scraper.
+        Create a new instance of StatementsDataprocess_batch and run the process_batch.
         This ensures each batch has its own WebDriver instance.
         """
         try:
-            statements_processor = StatementsProcessor()
+            processor = StatementsProcessor()
 
-            processed_batch = statements_processor.scraper(sub_batch, progress)
+            processed_batch = processor.process_batch(sub_batch, progress)
 
-            statements_processor.close_driver()
+            processor.close_driver()
 
         except Exception as e:
             self.log_error(e)
 
         return processed_batch
 
-    def scraper(self, sub_batch, progress):
+    def process_batch(self, sub_batch, progress):
         """
         Run the entire scraping process for the identified NSD entries, iterating over all financial data statements.
         """
@@ -109,7 +109,7 @@ class StatementsProcessor(BaseProcessor):
 
         except Exception as e:
             # Log any errors encountered during the main scraping process
-            self.log_error(f"Error in run_scraper: {e}")
+            self.log_error(f"Error in run_process_batch: {e}")
             return None  # Return None to indicate that the scraping process did not complete
 
     def process_company_quarter_data(self, row):
@@ -348,7 +348,7 @@ class StatementsProcessor(BaseProcessor):
     
                     sub_batch_counter += 1  # Increment thread counter
 
-                    future = executor.submit(self.process_statements, sub_batch, sub_batch_progress)
+                    future = executor.submit(self.process_instance, sub_batch, sub_batch_progress)
                     futures.append(future)
                     time.sleep(1)
 
@@ -381,7 +381,7 @@ class StatementsProcessor(BaseProcessor):
         progress['sub_batch_start'] = 0
         try:
             # Process all scrape targets at once without batching
-            processed_batch = self.process_statements(batch, progress)
+            processed_batch = self.process_instance(batch, progress)
 
         except Exception as e:
             self.log_error(f"Error during sequential processing: {e}")
