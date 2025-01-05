@@ -106,7 +106,7 @@ class BaseProcessor:
                     }
 
                     # Submit task with progress
-                    futures.append(executor.submit(self.process_batch, batch, progress))
+                    futures.append(executor.submit(self.process_instance, batch, progress))
 
                 for future in as_completed(futures):
                     try:
@@ -136,7 +136,8 @@ class BaseProcessor:
             }
 
             try:
-                results.append(self.process_batch(batch, progress))
+                result = self.process_instance(batch, progress)
+                results.append(result)
             except Exception as e:
                 self.log_error(f"Error in batch: {e}")
         
@@ -719,13 +720,63 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
+    def load_data_old(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
         """
         Load data from the SQLite database into a pandas DataFrame or execute a query.
         Dynamically creates databases and tables if they do not exist.
         """
         db_filepath = db_filepath or self.config.metadados_filepath
         database_name = os.path.basename(db_filepath)
+
+        with self.db_lock:
+            try:
+                # Ensure the database and table exist
+                self._initialize_database(db_filepath, database_name, table_name)
+
+                # List to hold the dataframes for each batch
+                dataframes = []
+                offset = 0
+
+                # Load data in batches
+                with sqlite3.connect(db_filepath) as conn:
+                    cursor = conn.cursor()
+
+                    # Count the total number of rows
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    total_rows = cursor.fetchone()[0]
+                    batch_size = self.config.chunk_size
+                    number_of_batches = 1 + int(total_rows / batch_size)
+                    batch_number = 1
+                    while True:
+                        if query:
+                            paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
+                            df = pd.read_sql_query(paginated_query, conn, params=params)
+                        elif table_name:
+                            paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
+                            df = pd.read_sql_query(paginated_query, conn)
+
+                        # Break the loop if no more data is returned
+                        if df.empty:
+                            break
+
+                        # Append the batch to the list
+                        dataframes.append(df)
+
+                        # Increment the offset for the next batch
+                        print(f'Loading {database_name} {table_name} {(batch_number/number_of_batches)*100:.02f}%')
+                        offset += batch_size
+                        batch_number += 1
+
+                # Concatenate all the dataframes
+                print('Consolidating database...')
+                final_df = pd.concat(dataframes, ignore_index=True)
+
+                return final_df
+
+            except Exception as e:
+                self.log_error(f"Error loading data: {e}")
+
+
 
         with self.db_lock:
             try:
@@ -758,6 +809,76 @@ class BaseProcessor:
                 self.log_error(f"Error loading data: {e}")
             return pd.DataFrame()
 
+    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
+        """
+        Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
+        Dynamically creates databases and tables if they do not exist.
+        """
+        db_filepath = db_filepath or self.config.metadados_filepath
+        database_name = os.path.basename(db_filepath)
+        primary_key = self._get_primary_key(table_name, database_name)
+        first_primary_key = primary_key.split(',')[0]
+
+        with self.db_lock:
+            try:
+                # Ensure the database and table exist
+                self._initialize_database(db_filepath, database_name, table_name)
+
+                # Connect to the database and count total rows
+                with sqlite3.connect(db_filepath) as conn:
+                    cursor = conn.cursor()
+                    if table_name:
+                        cursor.execute(f"SELECT COUNT({first_primary_key}) FROM {table_name}")
+                    elif query:
+                        cursor.execute(f"SELECT COUNT(*) FROM ({query})")
+                    total_rows = cursor.fetchone()[0]
+
+                    batch_size = self.config.chunk_size
+                    number_of_batches = (total_rows // batch_size) + 1
+                    num_threads = min(self.config.max_workers, number_of_batches)  # Use fewer threads if less data
+                    offsets = range(0, total_rows, batch_size)
+
+                    start_time = time.time()  # Start time for tracking progress
+
+                    # Define the worker function for reading batches
+                    def read_batch(offset, batch_number):
+                        extra_info = [f"part {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
+                        self.print_info(batch_number, number_of_batches, start_time, extra_info)
+                        with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
+                            if query:
+                                paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
+                                return pd.read_sql_query(paginated_query, conn, params=params)
+                            elif table_name:
+                                paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
+                                return pd.read_sql_query(paginated_query, conn)
+                            return pd.DataFrame()
+
+                    # Read data using multithreading
+                    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                        tasks = [
+                            executor.submit(read_batch, offset, batch_number)
+                            for batch_number, offset in enumerate(offsets)
+                        ]
+                        dataframes = [task.result() for task in tasks]
+
+                    # Concatenate all the dataframes
+                    print("Concatenating data...")
+                    final_df = pd.concat(dataframes, ignore_index=True)
+
+                    # Normalize columns if specified
+                    if normalize_columns:
+                        for col in normalize_columns:
+                            if col in final_df.columns:
+                                if 'date' in col.lower() or 'time' in col.lower():
+                                    final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
+                                else:
+                                    final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+
+                    return final_df
+
+            except Exception as e:
+                self.log_error(e)
+
     def save_to_db(self, dataframe, table_name=None, db_filepath=None):
         """
         Save or update a DataFrame in a SQLite database table.
@@ -777,6 +898,7 @@ class BaseProcessor:
             # Acquire the lock to ensure thread safety
             with self.db_lock:
                 with sqlite3.connect(db_filepath) as conn:
+                    conn.execute("PRAGMA journal_mode=WAL;")
                     cursor = conn.cursor()
 
                     sql = self._get_sql_statement(dataframe, primary_key, table_name)

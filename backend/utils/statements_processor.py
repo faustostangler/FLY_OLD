@@ -74,10 +74,22 @@ class StatementsProcessor(BaseProcessor):
         Process a single batch by delegating to process_batch.
         """
         try:
-            return self.process_batch(sub_batch, progress)
+
+            # Initialize driver and other resources
+            self.driver, self.driver_wait = self._initialize_driver()
+
+            # Delegate to process_batch for the actual batch processing
+            result = self.process_batch(sub_batch, progress)
+
+            # Clean up driver after processing
+            self.close_driver()
+            return result
+
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            return pd.DataFrame()  # Return an empty DataFrame on failure
+            self.close_driver()  # Ensure driver is closed even on errors
+            result = pd.DataFrame()  # Return an empty DataFrame on failure
+            return result
 
     def process_batch(self, sub_batch, progress):
         """

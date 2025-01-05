@@ -1,4 +1,5 @@
 import os
+import multiprocessing
 
 class Config:
     def __init__(self):
@@ -37,10 +38,10 @@ class Config:
         self.backup_db = f"{self.stock_database.split('.')[0]} {self.backup_name}.{self.stock_database.split('.')[-1]}"
 
         # batches and other numbers
-        self.batch_size = 500  # Batch size for data processing
-        self.max_workers = 20
+        self.batch_size = 250  # Batch size for data processing
+        self.max_workers = multiprocessing.cpu_count()
         self.big_batch_size = int(40000 / self.max_workers)
-        self.chunk_size = 50000
+        self.chunk_size = 100000
 
         # Selenium settings
         self.wait_time = 2  # Wait time for Selenium operations
