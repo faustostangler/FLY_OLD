@@ -27,6 +27,7 @@ import zipfile
 import requests
 import threading
 import pyautogui
+import math
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,6 +47,7 @@ class BaseProcessor:
         results = []
         try:
             batches = self._split_batches(data, self.config.batch_size)
+            print(f'Downloading {data.shape[0]} items in {len(batches)} cycles of {self.config.batch_size} items, with {self.config.max_workers} simultaneous workers...')
             if thread:
                 results = self._process_with_threads(batches)
             else:
@@ -92,17 +94,18 @@ class BaseProcessor:
         try:
             total_batches = len(batches)
             start_time = time.time()
+            total_scrape_size = sum(len(b) for b in batches)
 
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 futures = []
                 for batch_index, batch in enumerate(batches):
-                    # Prepare progress dictionary
                     progress = {
                         'batch_index': batch_index,
                         'total_batches': total_batches,
                         'batch_start': batch_index * self.config.batch_size,
-                        'scrape_size': sum(len(b) for b in batches),
+                        'scrape_size': total_scrape_size, 
                         'start_time': start_time,
+                        'thread_id': batch_index % self.config.max_workers,  # Map batch index to thread pool ID
                     }
 
                     # Submit task with progress
@@ -124,15 +127,17 @@ class BaseProcessor:
         results = []
         start_time = time.time()
         total_batches = len(batches)
-        
+        total_scrape_size = sum(len(b) for b in batches)
+
         for batch_index, batch in enumerate(batches):
             # Prepare progress dictionary
             progress = {
                 'batch_index': batch_index,
                 'total_batches': total_batches,
                 'batch_start': batch_index * self.config.batch_size,
-                'scrape_size': sum(len(b) for b in batches),
+                'scrape_size': total_scrape_size, 
                 'start_time': start_time,
+                'thread_id': batch_index % self.config.max_workers,  # Map batch index to thread pool ID
             }
 
             try:
@@ -144,7 +149,7 @@ class BaseProcessor:
         return results
 
     @abstractmethod
-    def process_batch(self, batch, progress):
+    def process_instance(self, batch, progress):
         """To be implemented by child classes."""
         pass
 
@@ -817,7 +822,8 @@ class BaseProcessor:
         db_filepath = db_filepath or self.config.metadados_filepath
         database_name = os.path.basename(db_filepath)
         primary_key = self._get_primary_key(table_name, database_name)
-        first_primary_key = primary_key.split(',')[0]
+        primary_key_first = primary_key.split(',')[0]
+        dataframes = []
 
         with self.db_lock:
             try:
@@ -828,7 +834,7 @@ class BaseProcessor:
                 with sqlite3.connect(db_filepath) as conn:
                     cursor = conn.cursor()
                     if table_name:
-                        cursor.execute(f"SELECT COUNT({first_primary_key}) FROM {table_name}")
+                        cursor.execute(f"SELECT COUNT({primary_key_first}) FROM {table_name}")
                     elif query:
                         cursor.execute(f"SELECT COUNT(*) FROM ({query})")
                     total_rows = cursor.fetchone()[0]
@@ -863,7 +869,10 @@ class BaseProcessor:
 
                     # Concatenate all the dataframes
                     print("Concatenating data...")
-                    final_df = pd.concat(dataframes, ignore_index=True)
+                    if dataframes:
+                        final_df = pd.concat(dataframes, ignore_index=True)
+                    else:
+                        final_df = pd.DataFrame()
 
                     # Normalize columns if specified
                     if normalize_columns:

@@ -17,6 +17,9 @@ class StatementsProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize driver and other resources
+        self.driver, self.driver_wait = self._initialize_driver()
+
     def get_scrape_targets(self, company_info, existing_nsd, financial_statements):
         '''
         '''
@@ -29,7 +32,10 @@ class StatementsProcessor(BaseProcessor):
 
             # merge nsd and company info
             nsd_company_df = pd.merge(nsd_df, company_info, on='company_name', how='inner')
-            scrape_targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
+            try:
+                scrape_targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
+            except:
+                scrape_targets = nsd_company_df
 
             # Custom sorting to place empty fields last
             scrape_targets.loc[scrape_targets['sector'] == '', 'sector'] = last_order
@@ -44,7 +50,6 @@ class StatementsProcessor(BaseProcessor):
             scrape_targets.loc[scrape_targets['subsector'] == last_order, 'subsector'] = ''
             scrape_targets.loc[scrape_targets['segment'] == last_order, 'segment'] = ''
 
-            print(f'{len(scrape_targets)} items to download')
             return scrape_targets
 
         except Exception as e:
@@ -74,15 +79,16 @@ class StatementsProcessor(BaseProcessor):
         Process a single batch by delegating to process_batch.
         """
         try:
+            print(f'Starting cycle {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+            batch_processor = StatementsProcessor()
 
-            # Initialize driver and other resources
-            self.driver, self.driver_wait = self._initialize_driver()
 
             # Delegate to process_batch for the actual batch processing
-            result = self.process_batch(sub_batch, progress)
+            result = batch_processor.process_batch(sub_batch, progress)
+            result = []
 
             # Clean up driver after processing
-            self.close_driver()
+            batch_processor.close_driver()
             return result
 
         except Exception as e:
@@ -105,7 +111,7 @@ class StatementsProcessor(BaseProcessor):
                 processed_data.extend(row_data)
 
                 # Log progress
-                extra_info = [f"{i+1}/{len(sub_batch)}", row['company_name'], row['quarter'], f"v{row['version']}"]
+                extra_info = [f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", row['company_name'], row['quarter'], f"v{row['version']}"]
                 self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
 
             except Exception as e:
@@ -238,6 +244,7 @@ class StatementsProcessor(BaseProcessor):
             xpath_frame = '//*[@id="iFrameFormulariosFilho"]'
 
             # Select the correct options for cmbGrupo and cmbQuadro
+            self.test_internet()
             grupo = self.select(xpath_grupo, cmbGrupo, self.driver, self.driver_wait)
             quadro = self.select(xpath_quadro, cmbQuadro, self.driver, self.driver_wait)
 
@@ -311,6 +318,7 @@ class StatementsProcessor(BaseProcessor):
             acoes_pn_tesouraria_xpath = '//*[@id="QtdAprfTeso_1"]'
 
             # Select the correct options for cmbGrupo and cmbQuadro
+            self.test_internet()
             grupo = self.select(xpath_grupo, cmbGrupo, self.driver, self.driver_wait)
             quadro = self.select(xpath_quadro, cmbQuadro, self.driver, self.driver_wait)
 

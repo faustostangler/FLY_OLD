@@ -26,6 +26,7 @@ if __name__ == '__main__':
 
         # Ask the user if they want to get finantial statements
         statements_processor = StatementsProcessor()
+        statements_processor.close_driver()
         run_statements_processor = 'Y'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)

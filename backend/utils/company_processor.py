@@ -104,11 +104,14 @@ class CompanyProcessor(BaseProcessor):
         """
         Process a single batch by delegating to process_batch.
         """
+        result = pd.DataFrame()
+
         try:
-            return self.process_batch(sub_batch, progress)
+            result = self.process_batch(sub_batch, progress)
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            return pd.DataFrame()  # Return an empty DataFrame on failure
+
+        return result
 
     def process_batch(self, sub_batch, progress):
         """
