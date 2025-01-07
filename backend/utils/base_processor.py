@@ -770,7 +770,6 @@ class BaseProcessor:
 
                     # Concatenate all the dataframes
                     if dataframes:
-                        print("Concatenating data...")
                         final_df = pd.concat(dataframes, ignore_index=True)
                     else:
                         final_df = pd.DataFrame()
