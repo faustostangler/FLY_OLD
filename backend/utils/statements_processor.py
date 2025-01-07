@@ -58,23 +58,6 @@ class StatementsProcessor(BaseProcessor):
 
         return scrape_targets
 
-    def process_instance_old(self, sub_batch, progress):
-        """
-        Create a new instance of StatementsDataprocess_batch and run the process_batch.
-        This ensures each batch has its own WebDriver instance.
-        """
-        try:
-            processor = StatementsProcessor()
-
-            processed_batch = processor.process_batch(sub_batch, progress)
-
-            processor.close_driver()
-
-        except Exception as e:
-            self.log_error(e)
-
-        return processed_batch
-
     def process_instance(self, sub_batch, progress):
         """
         Process a single batch by delegating to process_batch.
@@ -137,46 +120,6 @@ class StatementsProcessor(BaseProcessor):
             result = pd.DataFrame(columns=self.config.statements_columns)
 
         return result
-
-    def process_batch_old(self, sub_batch, progress):
-        """
-        Run the entire scraping process for the identified NSD entries, iterating over all financial data statements.
-        """
-        try:
-            # Initialize the overall counter
-            start_time = time.time()  # Record the start time for the entire process
-            total_items = len(sub_batch)  # Total number of items across all sectors
-
-            # Initialize a counter to track the total number of processed items
-            processed_items = 0
-            # Process data sector by sector, processing sectors with empty strings last
-            all_data = []  # List to store all the processed data
-            for i, (_, row) in enumerate(sub_batch.iterrows()):
-                try:
-                    # Process each company-quarter data using the refactored function
-
-                    company_quarter_data = self._process_company_quarter_data(row)
-                    all_data.extend(company_quarter_data)  # Add all processed DataFrames to all_data
-
-                    # Print progress information
-                    index_number = progress['batch_start'] + progress['sub_batch_start'] + i
-                    index_number_b = (progress['batch_start'] * progress['batch_counter']) + (progress['sub_batch_start'] * progress['sub_batch_counter']) + i
-                    extra_info = [f'{i+1}/{len(sub_batch)} in batch', progress['sub_batch_counter'], row['nsd'], row['company_name'], pd.to_datetime(row['quarter'], dayfirst=False, errors='coerce').strftime('%Y-%m-%d'), f"v{row['version']}"]
-                    self.print_info(index_number, progress['scrape_size'], progress['start_time'], extra_info)
-
-                except Exception as e:
-                    # Log any errors encountered during processing of individual rows
-                    self.log_error(f"Error processing row {i}: {e}")
-
-            batch_df = pd.concat(all_data, ignore_index=True)
-            batch_df = batch_df[self.config.statements_columns].sort_values(by=self.config.statements_order)
-
-            return batch_df
-
-        except Exception as e:
-            # Log any errors encountered during the main scraping process
-            self.log_error(f"Error in run_process_batch: {e}")
-            return None  # Return None to indicate that the scraping process did not complete
 
     def _process_company_quarter_data(self, row):
         """
@@ -386,76 +329,6 @@ class StatementsProcessor(BaseProcessor):
             # self.log_error(f"Error processing statements data: {e}")
             return None
 
-    def main_thread_old(self, batch, progress):
-        """
-        Process the batches of statements data using concurrent workers for sub-batches.
-
-        Parameters:
-        - progress (dict): Progress details including current batch, size, and total length.
-        - batch (DataFrame): The current batch to be processed.
-        - batch_number (int): Batch number for logging or debugging.
-
-        Returns:
-        DataFrame: Combined results of processed sub-batches.
-        """
-        try:
-            all_results = []  # To collect results from all futures
-            sub_batch_counter = 0  # Initialize thread counter
-
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-                sub_batch_size = max(1, len(batch) // self.config.max_workers)
-                futures = []
-
-                for sub_batch_start in range(0, len(batch), sub_batch_size):
-                    sub_batch_progress = progress.copy()
-                    sub_batch_progress['sub_batch_counter'] = sub_batch_counter
-                    sub_batch_progress['sub_batch_start'] = sub_batch_start
-
-                    # Define the sub-batch
-                    sub_batch = batch.iloc[sub_batch_start:sub_batch_start + sub_batch_size]
-    
-                    sub_batch_counter += 1  # Increment thread counter
-
-                    future = executor.submit(self.process_instance, sub_batch, sub_batch_progress)
-                    futures.append(future)
-                    time.sleep(1)
-
-                # Collect results as sub-batches complete
-                for future in as_completed(futures):
-                    result = future.result()  # Will raise exceptions if any occurred during processing
-                    if not result.empty:
-                        all_results.append(result)
-
-            # Combine all results into a single DataFrame
-            if all_results:
-                processed_batch = pd.concat(all_results, ignore_index=True)
-            else:
-                processed_batch = pd.DataFrame(columns=self.config.statements_columns)
-
-        except Exception as e:
-            self.log_error(f"Error during threaded batch processing: {e}")
-            processed_batch = pd.DataFrame(columns=self.config.statements_columns)
-
-        return processed_batch
-
-    def main_sequential_old(self, batch, progress):
-        """
-        Sequentially process all scrape targets at once.
-        
-        Parameters:
-        - batch (DataFrame): DataFrame containing targets to scrape.
-        """
-        progress['sub_batch_counter'] = 0 # not incremental, sequential thread
-        progress['sub_batch_start'] = 0
-        try:
-            # Process all scrape targets at once without batching
-            processed_batch = self.process_instance(batch, progress)
-
-        except Exception as e:
-            self.log_error(f"Error during sequential processing: {e}")
-
-        return processed_batch
-
     def main(self, thread=True):
         """
         Main method to process data.
@@ -486,48 +359,5 @@ class StatementsProcessor(BaseProcessor):
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
-
-        return True
-
-    def main_old(self, thread=True):
-        """
-        The main method to scrape NSD data, parse it, and save it to the database.
-        """
-        self.close_driver()
-        try:
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
-            financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
-
-            scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
-
-            progress = {}
-            progress['scrape_size'] = len(scrape_targets)
-            progress['batch_size'] = self.config.batch_size
-
-            start_time = time.time()
-            progress['start_time'] = start_time
-
-            for batch_counter, batch_start in enumerate(range(0, progress['scrape_size'], progress['batch_size'])):
-                progress['batch_counter'] = batch_counter
-                progress['batch_start'] = batch_start
-
-                # Slice the DataFrame for the current batch
-                batch = scrape_targets.iloc[batch_start:batch_start + progress['batch_size']]
-
-                if thread:
-                    # Run with threading
-                    processed_batch = self.main_thread(batch, progress)
-                else:
-                    # Run sequentially
-                    processed_batch = self.main_sequential(batch, progress)
-
-                if not processed_batch.empty:
-                    self.save_to_db(dataframe=processed_batch, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
-
-        except Exception as e:
-            self.log_error(e)
-
-        self.close_driver()
 
         return True

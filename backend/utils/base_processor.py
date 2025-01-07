@@ -74,23 +74,6 @@ class BaseProcessor:
 
         return batches
 
-    def _process_with_threads_old(self, batches):
-        '''
-        '''
-        results = []
-        try:
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-                futures = [executor.submit(self.process_batch, batch) for batch in batches]
-                for future in as_completed(futures):
-                    try:
-                        results.append(future.result())
-                    except Exception as e:
-                        self.log_error(f"Error in thread: {e}")
-        except Exception as e:
-            self.log_error(e)
-
-        return results
-        
     def _process_with_threads(self, batches):
         """
         Process batches with threading.
@@ -730,95 +713,6 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    def load_data_old(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
-        """
-        Load data from the SQLite database into a pandas DataFrame or execute a query.
-        Dynamically creates databases and tables if they do not exist.
-        """
-        db_filepath = db_filepath or self.config.metadados_filepath
-        database_name = os.path.basename(db_filepath)
-
-        with self.db_lock:
-            try:
-                # Ensure the database and table exist
-                self._initialize_database(db_filepath, database_name, table_name)
-
-                # List to hold the dataframes for each batch
-                dataframes = []
-                offset = 0
-
-                # Load data in batches
-                with sqlite3.connect(db_filepath) as conn:
-                    cursor = conn.cursor()
-
-                    # Count the total number of rows
-                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    total_rows = cursor.fetchone()[0]
-                    batch_size = self.config.chunk_size
-                    number_of_batches = 1 + int(total_rows / batch_size)
-                    batch_number = 1
-                    while True:
-                        if query:
-                            paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                            df = pd.read_sql_query(paginated_query, conn, params=params)
-                        elif table_name:
-                            paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
-                            df = pd.read_sql_query(paginated_query, conn)
-
-                        # Break the loop if no more data is returned
-                        if df.empty:
-                            break
-
-                        # Append the batch to the list
-                        dataframes.append(df)
-
-                        # Increment the offset for the next batch
-                        print(f'Loading {database_name} {table_name} {(batch_number/number_of_batches)*100:.02f}%')
-                        offset += batch_size
-                        batch_number += 1
-
-                # Concatenate all the dataframes
-                print('Consolidating database...')
-                final_df = pd.concat(dataframes, ignore_index=True)
-
-                return final_df
-
-            except Exception as e:
-                self.log_error(f"Error loading data: {e}")
-
-
-
-        with self.db_lock:
-            try:
-                # Ensure the database and table exist
-                self._initialize_database(db_filepath, database_name, table_name)
-
-                # Connect and load data
-                with sqlite3.connect(db_filepath) as conn:
-                    if query:
-                        df = pd.read_sql_query(query, conn, params=params)
-                    elif table_name:
-                        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
-                    else:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-                        return [row[0] for row in cursor.fetchall()]
-
-                    # Normalize columns if specified
-                    if normalize_columns:
-                        for col in normalize_columns:
-                            if col in df.columns:
-                                if 'date' in col.lower() or 'time' in col.lower():
-                                    df[col] = pd.to_datetime(df[col], errors='coerce')
-                                else:
-                                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                    return df
-            except sqlite3.Error as e:
-                self.log_error(f"Database error: {e}")
-            except Exception as e:
-                self.log_error(f"Error loading data: {e}")
-            return pd.DataFrame()
-
     def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
@@ -1082,33 +976,6 @@ class BaseProcessor:
         }
 
         return headers
-
-    def test_internet_old(self, host="8.8.8.8"):
-        """
-        Test internet connection by pinging a specified host. Retries if no connection is detected.
-        
-        Parameters:
-            host (str): The host to ping (default: Google's public DNS server 8.8.8.8).
-        """
-        wait_time = self.config.wait_time
-        
-        while True:
-            try:
-                result = subprocess.run(
-                    ["ping", "-n", "1", host],  # Use "-n" for Windows; "-c" would be used on Unix systems.
-                    stdout=subprocess.DEVNULL,  # Suppress standard output.
-                    stderr=subprocess.DEVNULL   # Suppress error output.
-                )
-                if result.returncode == 0:
-                    break
-                else:
-                    # print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
-                    pass
-            except Exception as e:
-                print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
-
-        return True
 
     def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
         """
