@@ -55,6 +55,7 @@ class CompanyProcessor(BaseProcessor):
 
                     extra_info = [f'page {page + 1}']
                     self.print_info(i, total_pages + 1, start_time, extra_info)
+                    time.sleep(0.05)
 
             except Exception as e:
                 self.config.log_error(e)
@@ -407,7 +408,7 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
-            processed_data = self.run(scrape_targets, thread=thread)
+            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not processed_data.empty:

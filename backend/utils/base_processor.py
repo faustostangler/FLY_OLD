@@ -27,7 +27,7 @@ import zipfile
 import requests
 import threading
 import pyautogui
-import math
+import inspect
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,18 +36,19 @@ from utils.config import Config
 
 class BaseProcessor:
     def __init__(self):
+        self.inspect = inspect
         self.config = Config()  # Assume Config is already defined
         self.db_lock = Lock()  # Initialize a threading Lock
 
     # APP FLOW LOGIC
-    def run(self, data, thread=True):
+    def run(self, data, thread=True, module_name=''):
         """
         Split data into batches and process them sequentially or with threads.
         """
         results = []
         try:
-            batches = self._split_batches(data, self.config.batch_size)
-            print(f'Downloading {data.shape[0]} items in {len(batches)} cycles of {self.config.batch_size} items, with {self.config.max_workers} simultaneous workers...')
+            batches = self._split_batches(data, self.config.max_workers)
+            print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {self.config.max_workers} simultaneous workers of {self.config.batch_size} items each')
             if thread:
                 results = self._process_with_threads(batches)
             else:
@@ -55,9 +56,13 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-        processed_data = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+        try:
+            processed_batch = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+        except Exception as e:
+            # self.log_error(e)
+            pass
 
-        return processed_data
+        return processed_batch
 
     def _split_batches(self, data, batch_size):
         """Split data into batches."""
@@ -861,15 +866,17 @@ class BaseProcessor:
 
                     # Read data using multithreading
                     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-                        tasks = [
-                            executor.submit(read_batch, offset, batch_number)
-                            for batch_number, offset in enumerate(offsets)
-                        ]
+                        tasks = []
+                        for batch_number, offset in enumerate(offsets):
+                            task = executor.submit(read_batch, offset, batch_number)
+                            tasks.append(task)
+                            time.sleep(1)
+
                         dataframes = [task.result() for task in tasks]
 
                     # Concatenate all the dataframes
-                    print("Concatenating data...")
                     if dataframes:
+                        print("Concatenating data...")
                         final_df = pd.concat(dataframes, ignore_index=True)
                     else:
                         final_df = pd.DataFrame()
@@ -1076,7 +1083,7 @@ class BaseProcessor:
 
         return headers
 
-    def test_internet(self, host="8.8.8.8"):
+    def test_internet_old(self, host="8.8.8.8"):
         """
         Test internet connection by pinging a specified host. Retries if no connection is detected.
         
@@ -1095,10 +1102,34 @@ class BaseProcessor:
                 if result.returncode == 0:
                     break
                 else:
-                    print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
+                    # print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
+                    pass
             except Exception as e:
                 print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
             time.sleep(wait_time)
 
         return True
 
+    def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
+        """
+        Test internet connection by sending an HTTP GET request to a specified URL. 
+        Retries if no connection is detected.
+        
+        Parameters:
+            url (str): The URL to request (default: Google's favicon URL).
+        """
+        if not wait_time:
+            wait_time = self.config.wait_time  # Time to wait before retrying on failure
+        
+
+        while True:
+            try:
+                # Make a lightweight GET request
+                response = requests.get(url, timeout=wait_time)  # Timeout in seconds
+                if response.status_code == 200:
+                    return True  # Connection is successful
+            except requests.RequestException as e:
+                # Log the error or suppress if preferred
+                # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
+                pass
+            time.sleep(wait_time)  # Wait before retrying

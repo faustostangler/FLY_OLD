@@ -5,6 +5,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import inspect
 
 from utils.base_processor import BaseProcessor
 
@@ -155,6 +156,7 @@ class NsdProcessor(BaseProcessor):
 
                 # Log progress
                 extra_info = [
+                    f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", 
                     nsd,
                     nsd_data.get('sent_date').strftime('%Y-%m-%d %H:%M:%S') if nsd_data.get('sent_date') else '',
                     nsd_data.get('nsd_type', ''),
@@ -356,7 +358,8 @@ class NsdProcessor(BaseProcessor):
 
             thread = False
             # Run processing (threaded or sequential)
-            processed_data = self.run(scrape_targets, thread=thread)
+            module_name = inspect.getmodule(inspect.currentframe()).__name__
+            processed_data = self.run(scrape_targets, thread=thread, module_name=module_name)
 
             # Save processed data
             if not processed_data.empty:

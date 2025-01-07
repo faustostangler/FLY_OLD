@@ -6,6 +6,7 @@ from io import StringIO
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
+import datetime
 
 from utils.base_processor import BaseProcessor
 
@@ -111,8 +112,19 @@ class StatementsProcessor(BaseProcessor):
                 processed_data.extend(row_data)
 
                 # Log progress
-                extra_info = [f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", row['company_name'], row['quarter'], f"v{row['version']}"]
-                self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
+                position_i = progress['batch_start'] + i
+                global_position = f"Global position {position_i}/{progress['scrape_size']}"
+                worker = f"Worker {progress['thread_id']}"
+                item = f"Item {i+1}/{len(sub_batch)}"
+                version = f"v{row['version']}"
+                company = row['company_name']
+                quarter = datetime.datetime.strptime(row['quarter'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m')
+                sent_date = datetime.datetime.strptime(row['sent_date'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
+                extra_info = [worker, item, global_position, quarter, version, sent_date, company, ]
+                self.print_info(i, len(sub_batch), start_time, extra_info)
+                if int(i % (self.batch_size/2)) == 0:  # Check its divisiblility
+                    extra_info_2 = ['global progress...']
+                    self.print_info(position_i, progress['scrape_size'], progress['scrape_time'], extra_info_2)
 
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
@@ -466,7 +478,7 @@ class StatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            processed_data = self.run(scrape_targets, thread=thread)
+            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not processed_data.empty:
