@@ -48,7 +48,7 @@ class BaseProcessor:
         results = []
         try:
             batches = self._split_batches(data, self.config.max_workers)
-            print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {self.config.max_workers} simultaneous workers of {self.config.batch_size} items each')
+            print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in up to {self.config.max_workers} simultaneous workers of up to {self.config.batch_size} items each')
             if thread:
                 results = self._process_with_threads(batches)
             else:
@@ -60,7 +60,7 @@ class BaseProcessor:
             processed_batch = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
         except Exception as e:
             # self.log_error(e)
-            pass
+            processed_batch = results
 
         return processed_batch
 
@@ -713,6 +713,10 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
+    def prepare_db_conn(self, db):
+        conn = ''
+        return conn
+
     def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
@@ -747,7 +751,7 @@ class BaseProcessor:
 
                     # Define the worker function for reading batches
                     def read_batch(offset, batch_number):
-                        extra_info = [f"part {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
+                        extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
                         self.print_info(batch_number, number_of_batches, start_time, extra_info)
                         with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
                             if query:

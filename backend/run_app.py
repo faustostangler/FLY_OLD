@@ -27,7 +27,7 @@ if __name__ == '__main__':
         # Ask the user if they want to get finantial statements
         statements_processor = StatementsProcessor()
         statements_processor.close_driver()
-        run_statements_processor = 'Y'
+        run_statements_processor = 'N'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
         # Ask the user if they want to get finantial historical market data from yfinance
         market_processor = MarketProcessor()
-        run_market_processor = 'N'
+        run_market_processor = 'Y'
         prompt = 'Want to update markets historical data? (YES/NO): '
         # run_market_processor = market_processor.timed_input(prompt)
         if run_market_processor.strip().upper().startswith('Y'):

@@ -63,13 +63,12 @@ class StatementsProcessor(BaseProcessor):
         Process a single batch by delegating to process_batch.
         """
         try:
-            print(f'Starting cycle {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
             batch_processor = StatementsProcessor()
 
 
             # Delegate to process_batch for the actual batch processing
             result = batch_processor.process_batch(sub_batch, progress)
-            result = []
 
             # Clean up driver after processing
             batch_processor.close_driver()
@@ -95,23 +94,23 @@ class StatementsProcessor(BaseProcessor):
                 processed_data.extend(row_data)
 
                 # Log progress
-                position_i = progress['batch_start'] + i
-                global_position = f"Global position {position_i}/{progress['scrape_size']}"
                 worker = f"Worker {progress['thread_id']}"
                 item = f"Item {i+1}/{len(sub_batch)}"
+                position_i = progress['batch_start'] + i
+                global_position = f"Global position {position_i}/{progress['scrape_size']}"
                 version = f"v{row['version']}"
                 company = row['company_name']
                 quarter = datetime.datetime.strptime(row['quarter'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m')
                 sent_date = datetime.datetime.strptime(row['sent_date'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
                 extra_info = [worker, item, global_position, quarter, version, sent_date, company, ]
                 self.print_info(i, len(sub_batch), start_time, extra_info)
-                if int(i % (self.batch_size/2)) == 0:  # Check its divisiblility
-                    extra_info_2 = ['global progress...']
-                    self.print_info(position_i, progress['scrape_size'], progress['scrape_time'], extra_info_2)
 
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
                 row_data = 'empty'
+
+        # After processing the batch
+        progress['batch_start'] += len(sub_batch)
 
         # Combine results into a single DataFrame
         if processed_data:

@@ -192,10 +192,8 @@ class NsdProcessor(BaseProcessor):
                 self.db_optimize(self.config.metadados_filepath)
                 return True
 
-            thread = False
             # Run processing (threaded or sequential)
-            module_name = inspect.getmodule(inspect.currentframe()).__name__
-            processed_data = self.run(scrape_targets, thread=thread, module_name=module_name)
+            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not processed_data.empty:
