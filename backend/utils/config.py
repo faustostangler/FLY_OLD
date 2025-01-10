@@ -3,7 +3,9 @@ import os
 class Config:
     def __init__(self):
         self.initial_database = 'statements initial.db'
+        self.initial_table = 'statements_initial'
         self.final_database = 'statements final.db'
+        self.final_table = 'statements_processed'
 
         #### OLD CONFIG
         # Define the base directory (root of the project)
@@ -112,105 +114,7 @@ class Config:
             'https://www.paypal.com/'
         ]
         self.LANGUAGES = ['en-US;q=1.0', 'es-ES;q=0.9', 'fr-FR;q=0.8', 'de-DE;q=0.7', 'it-IT;q=0.6', 'pt-BR;q=0.9', 'ja-JP;q=0.8', 'zh-CN;q=0.7', 'ko-KR;q=0.6', 'ru-RU;q=0.9', 'ar-SA;q=0.8', 'hi-IN;q=0.7', 'tr-TR;q=0.6', 'nl-NL;q=0.9', 'sv-SE;q=0.8', 'pl-PL;q=0.7', 'fi-FI;q=0.6', 'da-DK;q=0.9', 'no-NO;q=0.8', 'hu-HU;q=0.7', 'ro-RO;q=0.6', 'cs-CZ;q=0.9', 'el-GR;q=0.8', 'th-TH;q=0.7', 'id-ID;q=0.6']
-
-        # App database schemas
-        self.schema_definitions = {
-            self.metadados_database: {
-                "company_info": """
-                    CREATE TABLE IF NOT EXISTS company_info (
-                        cvm_code TEXT,
-                        company_name TEXT PRIMARY KEY,
-                        ticker TEXT,
-                        ticker_codes TEXT,
-                        isin_codes TEXT,
-                        trading_name TEXT,
-                        sector TEXT,
-                        subsector TEXT,
-                        segment TEXT,
-                        listing TEXT,
-                        activity TEXT,
-                        registrar TEXT,
-                        cnpj TEXT,
-                        website TEXT
-                    )
-                """,
-                "nsd": """
-                    CREATE TABLE IF NOT EXISTS nsd (
-                        nsd INTEGER PRIMARY KEY,
-                        company_name TEXT,
-                        quarter TEXT,
-                        version INTEGER,
-                        nsd_type TEXT,
-                        dri TEXT,
-                        auditor TEXT,
-                        responsible_auditor TEXT,
-                        protocol TEXT,
-                        sent_date TEXT,
-                        reason TEXT
-                    )
-                """
-            },
-            self.initial_database: {
-                "statements_initial": """
-                    CREATE TABLE IF NOT EXISTS {table_name} (
-                        nsd INTEGER,
-                        sector TEXT,
-                        subsector TEXT,
-                        segment TEXT,
-                        company_name TEXT,
-                        quarter TEXT,
-                        version TEXT,
-                        type TEXT,
-                        frame TEXT,
-                        account TEXT,
-                        description TEXT,
-                        value REAL,
-                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
-                    )
-                """
-            },
-            self.final_database: {
-                "statements_processed": """
-                    CREATE TABLE IF NOT EXISTS {table_name} (
-                        nsd INTEGER,
-                        sector TEXT,
-                        subsector TEXT,
-                        segment TEXT,
-                        company_name TEXT,
-                        quarter TEXT,
-                        version TEXT,
-                        type TEXT,
-                        frame TEXT,
-                        account TEXT,
-                        description TEXT,
-                        value REAL,
-                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
-                    )
-                """
-            },
-            self.stock_database: {
-                "stock_data": """
-                    CREATE TABLE IF NOT EXISTS stock_data (
-                        company_ticker TEXT,
-                        ticker TEXT,
-                        day TEXT,
-                        type TEXT,
-                        trades INTEGER,
-                        tradeshare REAL,
-                        quantity INTEGER,
-                        volume REAL,
-                        volshare REAL,
-                        open REAL,
-                        low REAL,
-                        high REAL,
-                        average REAL,
-                        close REAL,
-                        PRIMARY KEY (company_ticker, ticker, day)
-                    )
-                """
-            }
-        }
-        
+  
         # Company Info from B3
         self.companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"  # URL for the B3 companies search page
         self.company_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"  # URL for the B3 company detail page
@@ -236,9 +140,17 @@ class Config:
         self.cumulative_quarter_accounts = ['6', '7']
 
         # B3 Stock Settings
-        self.stock_table = 'stock_data'
-        self.stock_columns = ["day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
-        self.stock_all_columns = ["company_ticker", "ticker", "day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
+        self.historical_columns = ["day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
+        self.historical_all_columns = ["company_ticker", "ticker", "day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
+
+        self.historical_data = 'historical_data'
+        self.historical_columns_both = ['company_name', 'sector', 'subsector', 'segment']
+        self.historical_columns_new = ['cvm_code', 'ticker', 'ticker_codes', 'isin_codes', 'trading_name', 'listing', 'activity', 'registrar', 'cnpj', 'website']
+
+        self.historical_tickers_urls_table = 'historical_tickers_urls'
+        self.historical_columns = ['date', 'stock type', 'trades', 'relative trades %', 'quantity', 'volume', 'relative volume %', 'open', 'low', 'high', 'average', 'close']
+        self.historical_columns = ['date', 'stock_type', 'trades', 'relative_trades_percent', 'quantity', 'volume', 'relative_volume_percent', 'open', 'low', 'high', 'average', 'close']
+        self.historical_all_columns = ['ticker', 'ticker_type'] + self.historical_columns
 
         # Math settings
         self.statements_file_math = 'math'
@@ -364,3 +276,109 @@ class Config:
             '90': 'Títulos Públicos Federais (Tesouro Direto)',
             '91': 'Cotas de Fundos de Investimento em Previdência'
         }
+
+        # App database schemas
+        self.schema_definitions = {
+            self.metadados_database: {
+                self.company_table: """
+                    CREATE TABLE IF NOT EXISTS company_info (
+                        cvm_code TEXT,
+                        company_name TEXT PRIMARY KEY,
+                        ticker TEXT,
+                        ticker_codes TEXT,
+                        isin_codes TEXT,
+                        trading_name TEXT,
+                        sector TEXT,
+                        subsector TEXT,
+                        segment TEXT,
+                        listing TEXT,
+                        activity TEXT,
+                        registrar TEXT,
+                        cnpj TEXT,
+                        website TEXT
+                    )
+                """,
+                self.nsd_table: """
+                    CREATE TABLE IF NOT EXISTS nsd (
+                        nsd INTEGER PRIMARY KEY,
+                        company_name TEXT,
+                        quarter TEXT,
+                        version INTEGER,
+                        nsd_type TEXT,
+                        dri TEXT,
+                        auditor TEXT,
+                        responsible_auditor TEXT,
+                        protocol TEXT,
+                        sent_date TEXT,
+                        reason TEXT
+                    )
+                """, 
+                self.historical_tickers_urls_table: """
+                    CREATE TABLE IF NOT EXISTS historical_tickers_urls (
+                        ticker TEXT,
+                        year TEXT, 
+                        month TEXT, 
+                        url TEXT,
+                        PRIMARY KEY (ticker, url)
+                    )
+                """,
+                self.historical_data: """
+                    CREATE TABLE IF NOT EXISTS historical_data (
+                        ticker TEXT,
+                        ticker_type TEXT,
+                        date TEXT,
+                        stock_type TEXT,
+                        trades INTEGER,
+                        relative_trades_percent REAL,
+                        quantity INTEGER,
+                        volume REAL,
+                        relative_volume_percent REAL,
+                        open REAL,
+                        low REAL,
+                        high REAL,
+                        average REAL,
+                        close REAL,
+                        PRIMARY KEY (ticker, date)
+                                    )
+                """, 
+            },
+            self.initial_database: {
+                self.initial_table: """
+                    CREATE TABLE IF NOT EXISTS {table_name} (
+                        nsd INTEGER,
+                        sector TEXT,
+                        subsector TEXT,
+                        segment TEXT,
+                        company_name TEXT,
+                        quarter TEXT,
+                        version TEXT,
+                        type TEXT,
+                        frame TEXT,
+                        account TEXT,
+                        description TEXT,
+                        value REAL,
+                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
+                    )
+                """
+            },
+            self.final_database: {
+                self.final_table: """
+                    CREATE TABLE IF NOT EXISTS {table_name} (
+                        nsd INTEGER,
+                        sector TEXT,
+                        subsector TEXT,
+                        segment TEXT,
+                        company_name TEXT,
+                        quarter TEXT,
+                        version TEXT,
+                        type TEXT,
+                        frame TEXT,
+                        account TEXT,
+                        description TEXT,
+                        value REAL,
+                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
+                    )
+                """
+            },
+        }
+      

@@ -1,35 +1,67 @@
 from utils.company_processor import CompanyProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
+from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
+from utils.historical_stock_data_processor import HistoricalStockDataProcessor
 
 if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
-        company_processor = CompanyProcessor()
         run_company_processor = 'N'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
-            company_processor.main()
-        company_processor.close_driver()
+            company_processor = CompanyProcessor()
+            company_processor.main(thread=True)
+            company_processor.close_driver()
 
         # Ask the user if they want to get nsd information
-        nsd_processor = NsdProcessor()
         run_nsd_processor = 'N'
         prompt = 'Want to update nsd information? (YES/NO): '
         # run_nsd_processor = nsd_processor.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith('Y'):
+            nsd_processor = NsdProcessor()
             nsd_processor.main(thread=True)
-        nsd_processor.close_driver()
+            nsd_processor.close_driver()
 
         # Ask the user if they want to get finantial statements
-        statements_processor = StatementsProcessor()
-        run_statements_processor = 'Y'
+        run_statements_processor = 'N'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
-            statements_processor.main(thread=False)
-        statements_processor.close_driver()
+            statements_processor = StatementsProcessor()
+            statements_processor.close_driver()
+            statements_processor.main(thread=True)
+            statements_processor.close_driver()
+
+        # Ask the user if they want to get finantial historical stock data from b3
+        run_historical_stock_url_processor = 'Y'
+        prompt = 'Want to update historical stock market data? (YES/NO): '
+        # run_historical_stock_url_processor = market_processor.timed_input(prompt)
+        if run_historical_stock_url_processor.strip().upper().startswith('Y'):
+            historical_stock_url_processor = HistoricalStockUrlProcessor()
+            historical_stock_url_processor.main(thread=True)
+            historical_stock_url_processor.close_driver()
+
+        # Ask the user if they want to get finantial historical stock data from b3
+        run_historical_stock_data_processor = 'N'
+        prompt = 'Want to update historical stock market data? (YES/NO): '
+        # run_historical_stock_data_processor = market_processor.timed_input(prompt)
+        if run_historical_stock_data_processor.strip().upper().startswith('Y'):
+            historical_stock_data_processor = HistoricalStockDataProcessor()
+            historical_stock_data_processor.main(thread=True)
+            historical_stock_data_processor.close_driver()
+
+        # # Ask the user if they want to get finantial historical market data direct form b3 source
+        # stock_processor = StockProcessor()
+        # run_stock_processor = 'Y'
+        # prompt = 'Want to update stock historical data? (YES/NO): '
+        # # run_stock_processor = stock_processor.timed_input(prompt)
+        # if run_stock_processor.strip().upper().startswith('Y'):
+        #     stock_processor.main(thread=True)
+        # stock_processor.close_driver()
+
+
 
 
     except Exception as e:

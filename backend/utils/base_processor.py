@@ -48,10 +48,11 @@ class BaseProcessor:
         results = []
         try:
             batches = self._split_batches(data, self.config.max_workers)
-            print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in up to {self.config.max_workers} simultaneous workers of up to {self.config.batch_size} items each')
             if thread:
+                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each throught {self.config.max_workers} simultaneous workers')
                 results = self._process_with_threads(batches)
             else:
+                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each')
                 results = self._process_sequentially(batches)
         except Exception as e:
             self.log_error(e)
@@ -60,7 +61,12 @@ class BaseProcessor:
             processed_batch = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
         except Exception as e:
             # self.log_error(e)
-            processed_batch = results
+            try:
+                # try to flatten
+                flat_results = [df for sublist in results for df in sublist]
+                processed_batch = pd.concat(flat_results, ignore_index=True)
+            except Exception as e:
+                processed_batch = results
 
         return processed_batch
 
@@ -101,7 +107,8 @@ class BaseProcessor:
 
                 for future in as_completed(futures):
                     try:
-                        results.append(future.result())
+                        result = future.result()
+                        results.append(result)
                     except Exception as e:
                         self.log_error(f"Error in thread: {e}")
         except Exception as e:
@@ -374,7 +381,7 @@ class BaseProcessor:
         
         return text
 
-    def text(self, xpath, driver_wait):
+    def text(self, xpath, driver=None, driver_wait=None):
         """
         Encontra e recupera o texto de um elemento da web usando o xpath e o objeto de espera fornecido.
 
@@ -385,6 +392,9 @@ class BaseProcessor:
         Returns:
         str: O texto do elemento ou uma string vazia se ocorrer uma exceção.
         """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
         try:
             element = self.wait_forever(driver_wait, xpath)
             return element.text
@@ -392,7 +402,7 @@ class BaseProcessor:
             self.log_error(e)
             return ''
 
-    def click(self, xpath, driver_wait):
+    def click(self, xpath, driver=None, driver_wait=None):
         """
         Encontra e clica em um elemento da web usando o xpath e o objeto de espera fornecido.
 
@@ -403,6 +413,9 @@ class BaseProcessor:
         Returns:
         bool: True se o elemento foi encontrado e clicado, False caso contrário.
         """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
         try:
             element = self.wait_forever(driver_wait, xpath)
             element.click()
@@ -411,7 +424,7 @@ class BaseProcessor:
             self.log_error(e)
             return False
 
-    def choose(self, xpath, driver, driver_wait):
+    def choose(self, xpath, driver=None, driver_wait=None):
         """
         Encontra e seleciona um elemento da web usando o xpath e o objeto de espera fornecido.
 
@@ -423,6 +436,9 @@ class BaseProcessor:
         Returns:
         int: O valor da opção selecionada ou uma string vazia se ocorrer uma exceção.
         """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
         try:
             element = self.wait_forever(driver_wait, xpath)
             element.click()
@@ -435,14 +451,49 @@ class BaseProcessor:
             self.log_error(e)
             return ''
 
-    def select(self, xpath, text, driver, driver_wait):
-        element = self.wait_forever(driver_wait, xpath, max_attempts=3)
-        select = Select(driver.find_element(By.XPATH, xpath))
-        select.select_by_visible_text(text)
+    def get_options(self, xpath, driver=None, driver_wait=None):
+        """
+        Encontra e retorna os elementos da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para selecionar.
+        - driver (webdriver.Chrome): O objeto driver Chrome a ser usado.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        int: O valor da opção selecionada ou uma string vazia se ocorrer uma exceção.
+        """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
+        try:
+            element = self.wait_forever(driver_wait, xpath, max_retries=1)
+            element.click()
+            select = Select(driver.find_element(By.XPATH, xpath))
+            options = [int(option.text) for option in select.options]
+            return options
+        except Exception as e:
+            # self.log_error(e)
+            return ''
+
+    def select(self, xpath, text, driver=None, driver_wait=None):
+        '''
+        '''
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+        select = ''
+
+        try:
+
+            element = self.wait_forever(driver_wait, xpath, max_attempts=3)
+            select = Select(driver.find_element(By.XPATH, xpath))
+            select.select_by_visible_text(text)
+        except Exception as e:
+            self.log_error(e)
 
         return select
 
-    def raw_text(self, xpath, driver_wait):
+    def raw_text(self, xpath, driver=None, driver_wait=None):
         """
         Encontra e recupera o HTML bruto de um elemento da web usando o xpath e o objeto de espera fornecido.
 
@@ -453,6 +504,9 @@ class BaseProcessor:
         Returns:
         str: O HTML bruto do elemento ou uma string vazia se ocorrer uma exceção.
         """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
         try:
             element = self.wait_forever(driver_wait, xpath)
             return element.get_attribute("innerHTML")
@@ -460,7 +514,7 @@ class BaseProcessor:
             self.log_error(e)
             return ''
 
-    def wait_forever(self, driver_wait, xpath, max_attempts=None):
+    def wait_forever(self, driver_wait, xpath, max_retries=None):
         """
         Espera indefinidamente até que o elemento da web localizado pelo xpath seja encontrado.
 
@@ -472,14 +526,15 @@ class BaseProcessor:
         WebElement: O elemento da web encontrado.
         """
         attempt = 0
+        max_retries = max_retries or self.config.max_retries 
         while True:
             try:
                 element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
                 return element
             except Exception as e:
                 attempt += 1
-                if max_attempts and attempt >= max_attempts:
-                    raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_attempts} attempts.") from e
+                if max_retries and attempt >= max_retries:
+                    raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_retries} attempts.") from e
                 time.sleep(self.config.wait_time)
 
     def subtract_lists(self, list1, list2):
@@ -724,8 +779,7 @@ class BaseProcessor:
         """
         db_filepath = db_filepath or self.config.metadados_filepath
         database_name = os.path.basename(db_filepath)
-        primary_key = self._get_primary_key(table_name, database_name)
-        primary_key_first = primary_key.split(',')[0]
+        primary_keys = self._get_primary_key(table_name, database_name)
         dataframes = []
 
         with self.db_lock:
@@ -737,10 +791,13 @@ class BaseProcessor:
                 with sqlite3.connect(db_filepath) as conn:
                     cursor = conn.cursor()
                     if table_name:
-                        cursor.execute(f"SELECT COUNT({primary_key_first}) FROM {table_name}")
-                    elif query:
-                        cursor.execute(f"SELECT COUNT(*) FROM ({query})")
-                    total_rows = cursor.fetchone()[0]
+                        try:
+                            cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
+                            total_rows = cursor.fetchone()[0]
+
+                        except Exception as e:
+                            self._initialize_table(db_filepath, database_name, table_name)
+                            total_rows = 0
 
                     batch_size = self.config.chunk_size
                     number_of_batches = (total_rows // batch_size) + 1
@@ -806,7 +863,7 @@ class BaseProcessor:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
 
-            primary_key = self._get_primary_key(table_name, database_name)
+            primary_keys = self._get_primary_key(table_name, database_name)
 
             # Acquire the lock to ensure thread safety
             with self.db_lock:
@@ -814,7 +871,7 @@ class BaseProcessor:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     cursor = conn.cursor()
 
-                    sql = self._get_sql_statement(dataframe, primary_key, table_name)
+                    sql = self._get_sql_statement(dataframe, primary_keys, table_name)
 
                     dataframe = self._prepare_dataframe(dataframe)
 
@@ -829,6 +886,7 @@ class BaseProcessor:
 
         except Exception as e:
             print(dataframe.dtypes)
+            print(sql)
             dataframe.to_csv('dataframe.csv', index=False)
             self.log_error(f"Error saving to database: {e}")
 
@@ -862,28 +920,32 @@ class BaseProcessor:
                         primary_keys.extend(key.strip() for key in keys_in_parentheses)
 
 
-            primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
+            # primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
 
         except Exception as e:
             self.log_error(e)
 
-        return primary_key
+        return primary_keys
 
-    def _get_sql_statement(self, dataframe, primary_key, table_name):
+    def _get_sql_statement(self, dataframe, primary_keys, table_name):
         """
         """
         sql = ''
         try:
-            # Prepare the SQL query for INSERT ... ON CONFLICT ... DO UPDATE
-            columns = dataframe.columns.tolist()
-            placeholders = ", ".join(["?" for _ in columns])
-            updates = ", ".join([f"{col}=excluded.{col}" for col in columns if col != f'{primary_key}'])  # Exclude primary key
-            sql = f"""
-            INSERT INTO {table_name} ({", ".join(columns)})
-            VALUES ({placeholders})
-            ON CONFLICT({primary_key}) DO UPDATE SET
-            {updates};
-            """
+            f_fields = '(' + ', '.join([f for f in dataframe.columns]) + ')'
+            f_values = '(' + ', '.join(['?'] * len(dataframe.columns)) + ')'
+            f_primary_keys = f"({', '.join(primary_keys)})"
+            f_update_set = ', '.join([f"{f} = excluded.{f}" for f in dataframe.columns if f not in primary_keys])
+
+            # Construção do SQL
+            sql = 'INSERT INTO ' + table_name + ' '
+            sql += f_fields
+            sql += ' VALUES ' + f_values
+            sql += ' ON CONFLICT ' + f_primary_keys
+            if f_update_set:
+                sql += ' DO UPDATE SET ' + f_update_set
+            else:
+                sql += ' DO NOTHING'
         except Exception as e:
             pass
 

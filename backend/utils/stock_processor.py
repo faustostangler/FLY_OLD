@@ -131,14 +131,14 @@ class StockProcessor(BaseProcessor):
                                 continue
 
                             # Rename Columns and Drop the first and last rows
-                            df.columns = self.config.stock_columns
+                            df.columns = self.config.historical_columns
                             df = df[1:-1].reset_index(drop=True)  # Reset index after dropping rows
 
                             df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
                             df['company_ticker'] = company_ticker
                             df['ticker'] = ticker
 
-                            df = df[self.config.stock_all_columns]
+                            df = df[self.config.historical_all_columns]
 
                             processed_batch.append(df)
                             
@@ -149,7 +149,7 @@ class StockProcessor(BaseProcessor):
                         'company_ticker': company_ticker,
                         'date': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
                     }
-                    df = pd.DataFrame([new_row], columns=self.config.stock_all_columns)
+                    df = pd.DataFrame([new_row], columns=self.config.historical_all_columns)
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                     df = df.fillna('')
                     processed_batch.append(df)
@@ -220,7 +220,7 @@ class StockProcessor(BaseProcessor):
                 self.log_error(f"Error processing row {i}: {e}")
 
         # Combine all processed DataFrames into a single DataFrame
-        results = pd.concat(processed_batch, ignore_index=True) if processed_batch else pd.DataFrame(columns=self.config.stock_all_columns)
+        results = pd.concat(processed_batch, ignore_index=True) if processed_batch else pd.DataFrame(columns=self.config.historical_all_columns)
         return results
 
     def _fetch_html(self, url):
@@ -263,7 +263,7 @@ class StockProcessor(BaseProcessor):
 
     def _parse_table_to_dataframe(self, table, year, month, company_ticker):
         """Convert HTML table to a DataFrame."""
-        result = pd.DataFrame(columns=self.config.stock_all_columns)
+        result = pd.DataFrame(columns=self.config.historical_all_columns)
         try:
             table_html = str(table).replace('.', '').replace(',', '.')
             html_string = StringIO(table_html)
@@ -273,13 +273,13 @@ class StockProcessor(BaseProcessor):
             ticker_row = df.columns[0]
             ticker = self._extract_ticker(ticker_row)
 
-            df.columns = self.config.stock_columns
+            df.columns = self.config.historical_columns
             df = df[1:-1].reset_index(drop=True)
             df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"{year}-{month}-{x.strip()}"))
             df['company_ticker'] = company_ticker
             df['ticker'] = ticker
 
-            result = df[self.config.stock_all_columns]
+            result = df[self.config.historical_all_columns]
         except Exception as e:
             self.log_error(f"Table parsing failed: {e}")
 
@@ -298,13 +298,13 @@ class StockProcessor(BaseProcessor):
 
     def _create_empty_dataframe(self, company_ticker, year, month):
         """Create an empty DataFrame for missing data."""
-        result = pd.DataFrame(columns=self.config.stock_all_columns)
+        result = pd.DataFrame(columns=self.config.historical_all_columns)
         try:
             new_row = {
                 'company_ticker': company_ticker,
                 'date': pd.to_datetime(f'{year}-{month}-01', format='%Y-%m-%d')
             }
-            df = pd.DataFrame([new_row], columns=self.config.stock_all_columns)
+            df = pd.DataFrame([new_row], columns=self.config.historical_all_columns)
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             result = df.fillna('')
         except Exception as e:
@@ -383,11 +383,11 @@ class StockProcessor(BaseProcessor):
             if all_results:
                 processed_batch = pd.concat(all_results, ignore_index=True)
             else:
-                processed_batch = pd.DataFrame(columns=self.config.stock_all_columns)
+                processed_batch = pd.DataFrame(columns=self.config.historical_all_columns)
 
         except Exception as e:
             self.log_error(f"Error during threaded batch processing: {e}")
-            processed_batch = pd.DataFrame(columns=self.config.stock_all_columns)
+            processed_batch = pd.DataFrame(columns=self.config.historical_all_columns)
 
         return processed_batch
 
@@ -419,7 +419,7 @@ class StockProcessor(BaseProcessor):
 
             # Load necessary data
             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            stock_info = self.load_data(table_name=self.config.stock_table, db_filepath=self.config.stock_filepath)
+            stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
             # Identify scrape targets
             scrape_targets = self.get_scrape_targets(company_info, stock_info)
@@ -429,7 +429,7 @@ class StockProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.stock_table, db_filepath=self.config.stock_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
@@ -445,7 +445,7 @@ class StockProcessor(BaseProcessor):
             # self.driver, self.driver_wait = self._initialize_driver()
 
             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            stock_info = self.load_data(table_name=self.config.stock_table, db_filepath=self.config.stock_filepath)
+            stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
             scrape_targets = self.get_scrape_targets(company_info, stock_info)
 
@@ -470,7 +470,7 @@ class StockProcessor(BaseProcessor):
                     processed_batch = self.main_sequential(batch, progress)
 
                 if not processed_batch.empty:
-                    self.save_to_db(dataframe=processed_batch, table_name=self.config.stock_table, db_filepath=self.config.stock_filepath)
+                    self.save_to_db(dataframe=processed_batch, table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
                 # stock_raw = self.scrape_url(scrape_targets)
 
