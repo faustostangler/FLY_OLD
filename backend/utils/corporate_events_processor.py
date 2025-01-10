@@ -361,7 +361,6 @@ class CorporateEventsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            thread=False
             processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             if not processed_batch.empty:
