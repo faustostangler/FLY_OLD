@@ -418,7 +418,11 @@ class BaseProcessor:
 
         try:
             element = self.wait_forever(driver_wait, xpath)
+
+            time.sleep(self.config.wait_time/10)
             element.click()
+            time.sleep(self.config.wait_time/10)
+
             return True
         except Exception as e:
             self.log_error(e)
@@ -447,6 +451,33 @@ class BaseProcessor:
             highest_option = str(max(options))
             select.select_by_value(highest_option)
             return int(highest_option)
+        except Exception as e:
+            self.log_error(e)
+            return ''
+
+    def choose_by_value(self, xpath, value, driver=None, driver_wait=None):
+        """
+        Encontra e seleciona um elemento da web usando o xpath e o objeto de espera fornecido.
+
+        Parameters:
+        - xpath (str): O xpath do elemento para selecionar.
+        - driver (webdriver.Chrome): O objeto driver Chrome a ser usado.
+        - driver_wait (WebDriverWait): O objeto de espera para encontrar o elemento.
+
+        Returns:
+        int: O valor da opção selecionada ou uma string vazia se ocorrer uma exceção.
+        """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
+        try:
+            element = self.wait_forever(driver_wait, xpath)
+            element.click()
+            select = Select(driver.find_element(By.XPATH, xpath))
+            # options = [option.text for option in select.options]
+            select.select_by_value(value)
+            self.click('/html/body')
+            return value
         except Exception as e:
             self.log_error(e)
             return ''
@@ -956,8 +987,8 @@ class BaseProcessor:
         """
         try:
             text_columns = ['version']
-            date_columns = ['quarter', 'sent_date', 'date']
-            numeric_columns = []
+            date_columns = ['quarter', 'sent_date', 'date', 'ex_date']
+            numeric_columns = ['price_or_factor']
 
             # Replace NaN with None for SQLite compatibility
             dataframe = dataframe.where(pd.notnull(dataframe), None)

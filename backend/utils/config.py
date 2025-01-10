@@ -60,47 +60,76 @@ class Config:
 
         # Requests
         self.USER_AGENTS = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; AS; rv:11.0) like Gecko",
-            "Mozilla/5.0 (Windows NT 5.1; rv:36.0) Gecko/20100101 Firefox/36.0",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/83.0.478.37",
-            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (iPad; CPU OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.4 Safari/605.1.15",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:74.0) Gecko/20100101 Firefox/74.0",
-            "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:57.0) Gecko/20100101 Firefox/57.0",
-            "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/53.0",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; AS; rv:11.0) like Gecko",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36",
-            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:55.0) Gecko/20100101 Firefox/55.0",
-            "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.140 Safari/537.36 Edge/17.17134"
+            # Chrome (Windows, macOS, Linux, Android)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36",
+            "Mozilla/5.0 (Android 13; Mobile; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Mobile Safari/537.36",
+
+            # Firefox (Windows, macOS, Linux, Android)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1; rv:115.0) Gecko/20100101 Firefox/115.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0",
+            "Mozilla/5.0 (Android 13; Mobile; SM-S908B; rv:115.0) Gecko/115.0 Firefox/115.0",
+
+            # Safari (macOS, iOS)
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPad; CPU OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+
+            # Microsoft Edge (Windows, macOS)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Edg/114.0.1823.82",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Edg/114.0.1823.82",
+
+            # Brave (Windows, macOS, Linux)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Brave/1.57.57",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Brave/1.57.57",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Brave/1.57.57",
+
+            # Opera (Windows, macOS)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 OPR/99.0.4788.88",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 OPR/99.0.4788.88",
+
+            # Samsung Internet (Android)
+            "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/22.0 Chrome/114.0.5735.199 Mobile Safari/537.36",
+
+            # Vivaldi Browser (Desktop and Android)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Vivaldi/6.1.3035.111",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Vivaldi/6.1.3035.111",
+            "Mozilla/5.0 (Android 13; Mobile; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Vivaldi/6.1.3035.111",
+
+            # Yandex Browser (Russia and CIS)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 YaBrowser/23.7.3.652 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 YaBrowser/23.7.3.652 Safari/537.36",
+            "Mozilla/5.0 (Android 13; Mobile; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 YaBrowser/23.7.3.652 Mobile Safari/537.36",
+
+            # Xbox and PlayStation Browsers
+            "Mozilla/5.0 (Xbox; U; Windows NT 10.0; WOW64; en-US) AppleWebKit/537.36 (KHTML, like Gecko) Edge/44.18363.8131",
+            "Mozilla/5.0 (PlayStation 5; AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36",
+
+            # Samsung Galaxy Tablet (Android)
+            "Mozilla/5.0 (Linux; Android 13; SM-T970) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36",
+
+            # Googlebot Mobile and Desktop (SEO Testing)
+            "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Mobile Safari/537.36 Googlebot/2.1",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199 Safari/537.36 Googlebot/2.1"
         ]
+
         self.REFERERS = [
             'https://www.google.com/',
             'https://www.bing.com/',
-            'https://www.yahoo.com/',
+            'https://www.duckduckgo.com/',
             'https://www.facebook.com/',
             'https://twitter.com/',
             'https://www.reddit.com/',
             'https://www.youtube.com/',
             'https://www.linkedin.com/',
             'https://www.instagram.com/',
-            'https://www.pinterest.com/',
+            'https://www.tiktok.com/',
             'https://www.wikipedia.org/',
             'https://www.amazon.com/',
             'https://www.ebay.com/',
-            'https://www.craigslist.org/',
+            'https://www.alibaba.com/',
             'https://www.github.com/',
             'https://stackoverflow.com/',
             'https://www.quora.com/',
@@ -108,12 +137,42 @@ class Config:
             'https://www.netflix.com/',
             'https://www.twitch.tv/',
             'https://www.spotify.com/',
-            'https://www.tumblr.com/',
             'https://www.medium.com/',
             'https://www.dropbox.com/',
-            'https://www.paypal.com/'
+            'https://www.paypal.com/',
+            'https://www.apple.com/',
+            'https://www.microsoft.com/',
+            'https://www.adobe.com/'
         ]
-        self.LANGUAGES = ['en-US;q=1.0', 'es-ES;q=0.9', 'fr-FR;q=0.8', 'de-DE;q=0.7', 'it-IT;q=0.6', 'pt-BR;q=0.9', 'ja-JP;q=0.8', 'zh-CN;q=0.7', 'ko-KR;q=0.6', 'ru-RU;q=0.9', 'ar-SA;q=0.8', 'hi-IN;q=0.7', 'tr-TR;q=0.6', 'nl-NL;q=0.9', 'sv-SE;q=0.8', 'pl-PL;q=0.7', 'fi-FI;q=0.6', 'da-DK;q=0.9', 'no-NO;q=0.8', 'hu-HU;q=0.7', 'ro-RO;q=0.6', 'cs-CZ;q=0.9', 'el-GR;q=0.8', 'th-TH;q=0.7', 'id-ID;q=0.6']
+
+        self.LANGUAGES = [
+            'en-US;q=1.0',  # English (United States)
+            'en-GB;q=0.9',  # English (United Kingdom)
+            'es-ES;q=0.9',  # Spanish (Spain)
+            'es-MX;q=0.8',  # Spanish (Mexico)
+            'fr-FR;q=0.9',  # French (France)
+            'de-DE;q=0.9',  # German (Germany)
+            'it-IT;q=0.8',  # Italian (Italy)
+            'pt-BR;q=0.9',  # Portuguese (Brazil)
+            'pt-PT;q=0.8',  # Portuguese (Portugal)
+            'ja-JP;q=0.8',  # Japanese
+            'zh-CN;q=0.8',  # Chinese (Simplified)
+            'zh-TW;q=0.7',  # Chinese (Traditional)
+            'ko-KR;q=0.8',  # Korean
+            'ru-RU;q=0.9',  # Russian
+            'ar-SA;q=0.8',  # Arabic (Saudi Arabia)
+            'hi-IN;q=0.8',  # Hindi (India)
+            'tr-TR;q=0.8',  # Turkish
+            'nl-NL;q=0.8',  # Dutch (Netherlands)
+            'sv-SE;q=0.8',  # Swedish (Sweden)
+            'pl-PL;q=0.8',  # Polish
+            'da-DK;q=0.8',  # Danish (Denmark)
+            'no-NO;q=0.8',  # Norwegian
+            'cs-CZ;q=0.8',  # Czech (Czech Republic)
+            'el-GR;q=0.8',  # Greek
+            'th-TH;q=0.8',  # Thai
+            'id-ID;q=0.8'   # Indonesian
+        ]
   
         # Company Info from B3
         self.companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"  # URL for the B3 companies search page
@@ -151,6 +210,15 @@ class Config:
         self.historical_columns = ['date', 'stock type', 'trades', 'relative trades %', 'quantity', 'volume', 'relative volume %', 'open', 'low', 'high', 'average', 'close']
         self.historical_columns = ['date', 'stock_type', 'trades', 'relative_trades_percent', 'quantity', 'volume', 'relative_volume_percent', 'open', 'low', 'high', 'average', 'close']
         self.historical_all_columns = ['ticker', 'ticker_type'] + self.historical_columns
+
+        self.corporate_events_data_table = 'corporate_events_data'
+        self.corporate_events_data_columns = ['ticker', 'cvm_code', 'isin_code', 'source', 'corporate_action', 'ex_date', 'price_or_factor', ]
+
+        ['dividends_in_assets', 'isin_code', 'deliberated_on', 'transactions_up_to', 'percentage_grouping_factor', 'issued_asset', 'observation']
+
+        self.distribution_events_data_table = 'distribution_events_data'
+        self.distribution_events_data_columns = ['asset_type', 'approval_date', 'income_amount', 'income_per_unit_or_thousand', 'income_type', 'last_day_with', 'last_with_price_date', 'last_with_price', 'price_per_unit_or_thousand', 'income_price_percentage']
+
 
         # Math settings
         self.statements_file_math = 'math'
@@ -341,10 +409,23 @@ class Config:
                         PRIMARY KEY (ticker, date)
                                     )
                 """, 
+                self.corporate_events_data_table: """
+                    CREATE TABLE IF NOT EXISTS corporate_events_data (
+                        ticker TEXT,
+                        cvm_code TEXT,
+                        isin_code TEXT,
+                        source TEXT,
+                        corporate_action TEXT,
+                        ex_date TEXT,
+                        price_or_factor REAL,
+                        PRIMARY KEY (isin_code, ex_date, corporate_action)
+                    );
+                """, 
+
             },
             self.initial_database: {
                 self.initial_table: """
-                    CREATE TABLE IF NOT EXISTS {table_name} (
+                    CREATE TABLE IF NOT EXISTS statements_initial (
                         nsd INTEGER,
                         sector TEXT,
                         subsector TEXT,
@@ -363,7 +444,7 @@ class Config:
             },
             self.final_database: {
                 self.final_table: """
-                    CREATE TABLE IF NOT EXISTS {table_name} (
+                    CREATE TABLE IF NOT EXISTS statements_processed (
                         nsd INTEGER,
                         sector TEXT,
                         subsector TEXT,

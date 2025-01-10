@@ -49,6 +49,7 @@ if __name__ == '__main__':
         # run_corporate_events_processor = corporate_events_processor.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith('Y'):
             corporate_events_processor = CorporateEventsProcessor()
+            corporate_events_processor.close_driver()
             corporate_events_processor.main(thread=True)
             corporate_events_processor.close_driver()
 
