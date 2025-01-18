@@ -2,7 +2,7 @@ from utils.company_processor import CompanyProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
 from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
-from utils.historical_stock_data_processor import HistoricalStockDataProcessor
+from utils.corporate_events_processor import CorporateEventsProcessor
 
 if __name__ == '__main__':
     try:
@@ -35,22 +35,25 @@ if __name__ == '__main__':
             statements_processor.close_driver()
 
         # Ask the user if they want to get finantial historical stock data from b3
-        run_historical_stock_url_processor = 'Y'
+        run_historical_stock_url_processor = 'N'
         prompt = 'Want to update historical stock market data? (YES/NO): '
-        # run_historical_stock_url_processor = market_processor.timed_input(prompt)
+        # run_historical_stock_url_processor = historical_stock_url_processor.timed_input(prompt)
         if run_historical_stock_url_processor.strip().upper().startswith('Y'):
             historical_stock_url_processor = HistoricalStockUrlProcessor()
             historical_stock_url_processor.main(thread=True)
             historical_stock_url_processor.close_driver()
 
-        # Ask the user if they want to get finantial historical stock data from b3
-        run_historical_stock_data_processor = 'N'
-        prompt = 'Want to update historical stock market data? (YES/NO): '
-        # run_historical_stock_data_processor = market_processor.timed_input(prompt)
-        if run_historical_stock_data_processor.strip().upper().startswith('Y'):
-            historical_stock_data_processor = HistoricalStockDataProcessor()
-            historical_stock_data_processor.main(thread=True)
-            historical_stock_data_processor.close_driver()
+        # Ask the user if they want to get corporate events from b3
+        run_corporate_events_processor = 'Y'
+        prompt = 'Want to update corporate events? (YES/NO): '
+        # run_corporate_events_processor = corporate_events_processor.timed_input(prompt)
+        if run_corporate_events_processor.strip().upper().startswith('Y'):
+            corporate_events_processor = CorporateEventsProcessor()
+            corporate_events_processor.close_driver()
+            corporate_events_processor.main(thread=False)
+            corporate_events_processor.close_driver()
+
+
 
         # # Ask the user if they want to get finantial historical market data direct form b3 source
         # stock_processor = StockProcessor()

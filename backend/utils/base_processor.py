@@ -28,12 +28,17 @@ import requests
 import threading
 import pyautogui
 import inspect
+import warnings
+import urllib3
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.config import Config
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=FutureWarning, module='pandas')
 class BaseProcessor:
     def __init__(self):
         self.inspect = inspect
@@ -52,7 +57,7 @@ class BaseProcessor:
                 print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each throught {self.config.max_workers} simultaneous workers')
                 results = self._process_with_threads(batches)
             else:
-                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each')
+                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.max_workers} items each')
                 results = self._process_sequentially(batches)
         except Exception as e:
             self.log_error(e)
@@ -1096,3 +1101,84 @@ class BaseProcessor:
                 # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
                 pass
             time.sleep(wait_time)  # Wait before retrying
+
+class TemplateProcessor(BaseProcessor):
+    '''
+    docstrings
+    '''
+    def __init__(self):
+        '''
+        docstrings
+        '''
+        super().__init__()
+        self.db_lock = Lock()  # Initialize a threading Lock
+
+        # # Initialize the WebDriver
+        # self.driver, self.driver_wait = self._initialize_driver()
+
+    def process_instance(self, sub_batch, progress):
+        """
+        Process a single batch by delegating 
+        from abstract base_processor method 
+        to this class process_batch (true process info method) 
+        via this process_instance method (create instance methos).
+        
+        sub_batch
+        progress
+
+        return result from process_batch
+        """
+        try:
+            extra_info = [f"Worker {progress['thread_id']}", ' '.join(sub_batch)]
+            self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
+            # Delegate to process_batch for the actual batch processing
+            result = self.process_batch(sub_batch, progress)
+
+        except Exception as e:
+            pass
+
+        return result
+
+    def process_batch(self, sub_batch, progress):
+        '''
+        '''
+        result = ''
+
+        try:
+            pass
+        except Exception as e:
+            self.log_error(e)
+
+        return result
+
+    def main(self, thread=True):
+        '''
+        docstring
+        '''
+        try:
+            # Load existing information
+            table_name = ''
+            db_filepath = ''
+            data_1 = self.load_data(table_name=table_name, db_filepath='')
+            data_2 = self.load_data()
+
+            # Fetch Scrape targets
+            scrape_targets = ''
+
+            # if no scrape_targets, optimize db and return True
+            if scrape_targets:
+                if scrape_targets.size == 0:  # Check if the array is empty
+                    self.db_optimize(self.config.metadados_filepath)
+                    return True
+
+            # Process targets using threading or sequential logic
+            processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+
+            # save/update db
+            if not processed_batch.empty:
+                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.metadados_filepath)
+
+        except Exception as e:
+            self.log_error(e)
+
+        return True

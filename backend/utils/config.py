@@ -56,7 +56,7 @@ class Config:
         ]
         self.chrome_path_64 = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
         self.chrome_path_32 = r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
-
+        self.joint = ' - '
 
         # Requests
         self.USER_AGENTS = [
@@ -198,27 +198,9 @@ class Config:
         self.year_end_accounts = ['3', '4']
         self.cumulative_quarter_accounts = ['6', '7']
 
-        # B3 Stock Settings
-        self.historical_columns = ["day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
-        self.historical_all_columns = ["company_ticker", "ticker", "day", "type", "trades", "tradeshare", "quantity", "volume", "volshare", "open", "low", "high", "average", "close"]
-
-        self.historical_data = 'historical_data'
-        self.historical_columns_both = ['company_name', 'sector', 'subsector', 'segment']
-        self.historical_columns_new = ['cvm_code', 'ticker', 'ticker_codes', 'isin_codes', 'trading_name', 'listing', 'activity', 'registrar', 'cnpj', 'website']
-
-        self.historical_tickers_urls_table = 'historical_tickers_urls'
-        self.historical_columns = ['date', 'stock type', 'trades', 'relative trades %', 'quantity', 'volume', 'relative volume %', 'open', 'low', 'high', 'average', 'close']
-        self.historical_columns = ['date', 'stock_type', 'trades', 'relative_trades_percent', 'quantity', 'volume', 'relative_volume_percent', 'open', 'low', 'high', 'average', 'close']
-        self.historical_all_columns = ['ticker', 'ticker_type'] + self.historical_columns
-
-        self.corporate_events_data_table = 'corporate_events_data'
-        self.corporate_events_data_columns = ['ticker', 'cvm_code', 'isin_code', 'source', 'corporate_action', 'ex_date', 'price_or_factor', ]
-
-        ['dividends_in_assets', 'isin_code', 'deliberated_on', 'transactions_up_to', 'percentage_grouping_factor', 'issued_asset', 'observation']
-
-        self.distribution_events_data_table = 'distribution_events_data'
-        self.distribution_events_data_columns = ['asset_type', 'approval_date', 'income_amount', 'income_per_unit_or_thousand', 'income_type', 'last_day_with', 'last_with_price_date', 'last_with_price', 'price_per_unit_or_thousand', 'income_price_percentage']
-
+        # Stock Settings ['Date', 'Close', 'Dividends', 'High', 'Low', 'Open', 'Stock Splits', 'Volume']
+        self.historical_stock_data_table = 'historical_data'
+        self.historical_stock_data_columns = ['date', 'close', 'dividends', 'high', 'low', 'open', 'stock_splits', 'volume']
 
         # Math settings
         self.statements_file_math = 'math'
@@ -345,6 +327,17 @@ class Config:
             '91': 'Cotas de Fundos de Investimento em Previdência'
         }
 
+        # Create a mapping dictionary for stock types
+        self.stock_type_map = {
+            'OR': {'code': '3', 'description': 'Ações Ordinárias (ON)'},
+            'PR': {'code': '4', 'description': 'Ações Preferenciais (PN)'},
+            'PA': {'code': '5', 'description': 'Ações Preferenciais Classe A (PNA)'},
+            'PB': {'code': '6', 'description': 'Ações Preferenciais Classe B (PNB)'},
+            'PC': {'code': '7', 'description': 'Ações Preferenciais Classe C (PNC)'},
+            'PD': {'code': '8', 'description': 'Ações Preferenciais Classe D (PND)'},
+            'RS': {'code': '9', 'description': 'Recibos de Subscrição'},
+        }
+
         # App database schemas
         self.schema_definitions = {
             self.metadados_database: {
@@ -381,47 +374,20 @@ class Config:
                         reason TEXT
                     )
                 """, 
-                self.historical_tickers_urls_table: """
-                    CREATE TABLE IF NOT EXISTS historical_tickers_urls (
-                        ticker TEXT,
-                        year TEXT, 
-                        month TEXT, 
-                        url TEXT,
-                        PRIMARY KEY (ticker, url)
-                    )
-                """,
-                self.historical_data: """
-                    CREATE TABLE IF NOT EXISTS historical_data (
-                        ticker TEXT,
-                        ticker_type TEXT,
+                self.historical_stock_data_table: """
+                    CREATE TABLE IF NOT EXISTS stock_data (
                         date TEXT,
-                        stock_type TEXT,
-                        trades INTEGER,
-                        relative_trades_percent REAL,
-                        quantity INTEGER,
-                        volume REAL,
-                        relative_volume_percent REAL,
-                        open REAL,
-                        low REAL,
-                        high REAL,
-                        average REAL,
                         close REAL,
-                        PRIMARY KEY (ticker, date)
-                                    )
-                """, 
-                self.corporate_events_data_table: """
-                    CREATE TABLE IF NOT EXISTS corporate_events_data (
+                        dividends REAL,
+                        high REAL,
+                        low REAL,
+                        open REAL,
+                        stock_splits INTEGER,
+                        volume INTEGER,
                         ticker TEXT,
-                        cvm_code TEXT,
-                        isin_code TEXT,
-                        source TEXT,
-                        corporate_action TEXT,
-                        ex_date TEXT,
-                        price_or_factor REAL,
-                        PRIMARY KEY (isin_code, ex_date, corporate_action)
-                    );
-                """, 
-
+                        PRIMARY KEY (date, ticker)
+                    )
+                """
             },
             self.initial_database: {
                 self.initial_table: """
