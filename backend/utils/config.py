@@ -41,9 +41,12 @@ class Config:
         # batches and other numbers
         cpu = os.cpu_count()
         self.batch_size = cpu * 10 # 250  # Batch size for data processing
-        self.max_workers = int(cpu * 1.5) + (1 if (cpu * 1.5) % 1 > 0 else 0) # ceil
+        cpu_factor = 1
+        self.max_workers = int(cpu * cpu_factor) + (1 if (cpu * cpu_factor) % 1 > 0 else 0) # ceil
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 100000
+        self.stock_data_start_date = '1960-01-01'
+        self.update_days = 2
 
         # Selenium settings
         self.wait_time = 2  # Wait time for Selenium operations
@@ -199,9 +202,9 @@ class Config:
         self.cumulative_quarter_accounts = ['6', '7']
 
         # Stock Settings ['Date', 'Close', 'Dividends', 'High', 'Low', 'Open', 'Stock Splits', 'Volume']
-        self.historical_stock_data_table = 'historical_data'
-        self.historical_stock_data_columns = ['date', 'close', 'dividends', 'high', 'low', 'open', 'stock_splits', 'volume']
-
+        self.historical_stock_data_table = 'stock_data'
+        self.historical_stock_data_columns = ['date', 'close', 'high', 'low', 'open', 'volume', 'stock_splits', 'dividends']
+        self.historical_stock_data_all_columns = ['company_name', 'ticker', 'ticker_code'] + self.historical_stock_data_columns
         # Math settings
         self.statements_file_math = 'math'
 
@@ -375,7 +378,10 @@ class Config:
                     )
                 """, 
                 self.historical_stock_data_table: """
-                    CREATE TABLE IF NOT EXISTS stock_data (
+                    CREATE TABLE stock_data (
+                        company_name TEXT,
+                        ticker TEXT,
+                        ticker_code TEXT,
                         date TEXT,
                         close REAL,
                         dividends REAL,
@@ -384,8 +390,7 @@ class Config:
                         open REAL,
                         stock_splits INTEGER,
                         volume INTEGER,
-                        ticker TEXT,
-                        PRIMARY KEY (date, ticker)
+                        PRIMARY KEY (company_name, ticker_code, date)
                     )
                 """
             },

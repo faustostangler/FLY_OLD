@@ -2,7 +2,7 @@ from utils.company_processor import CompanyProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
 from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
-from utils.corporate_events_processor import CorporateEventsProcessor, old_CorporateEventsProcessor, old_CorporateEventsMerger
+from utils.corporate_events_processor import CorporateEventsProcessor
 
 if __name__ == '__main__':
     try:
@@ -49,7 +49,7 @@ if __name__ == '__main__':
         # run_corporate_events_processor = corporate_events_processor.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith('Y'):
             corporate_events_processor = CorporateEventsProcessor()
-            corporate_events_processor.main(thread=False)
+            corporate_events_processor.main(thread=True)
 
             # corporate_events_merger = CorporateEventsMerger()
             # corporate_events_merger.main(thread=False)
