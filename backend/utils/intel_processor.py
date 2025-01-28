@@ -25,10 +25,6 @@ class IntelProcessor(BaseProcessor):
             'Demonstração de Fluxo de Caixa': intel.section_6_criteria,
             'Demonstração de Valor Adiconado': intel.section_7_criteria,
         }
-        print('debug standardization_sections')
-
-        # # Initialize the WebDriver
-        # self.driver, self.driver_wait = self._initialize_driver()
 
     def process_instance(self, sub_batch, progress):
         """
@@ -77,8 +73,10 @@ class IntelProcessor(BaseProcessor):
                 self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath, alert=False)
 
                 extra_info = [company]
-                self.print_info(i, len(companies), start_time, extra_info)
+                self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
 
+                print('debug break')
+                break
         except Exception as e:
             self.log_error(e)
 
@@ -108,8 +106,8 @@ class IntelProcessor(BaseProcessor):
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
-                extra_info = [sector, subsector, segment, company_name, section_name.upper()]
-                self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=1)
+                # extra_info = [sector, subsector, segment, company_name, section_name.upper()]
+                # self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=1)
 
         except Exception as e:
             print(f'criteria error {e}')
@@ -242,13 +240,14 @@ class IntelProcessor(BaseProcessor):
         
         return df, section_name, account, description
 
-    def adjust_columns(self, df):
+    def adjust_columns(self, df0):
         '''
         docstring
         '''
         try:
             # Step 1: Drop rows where 'account_standard' is empty or NaN
-            df = df.dropna(subset=['account_standard'])
+            df = df0.dropna(subset=['account_standard'])
+
             df = df[df['account_standard'].str.strip() != '']
 
             # Step 2: Drop the unnecessary columns
@@ -268,25 +267,67 @@ class IntelProcessor(BaseProcessor):
 
         return df
 
+    def get_scrape_targets(self, existing_data, new_data):
+        """
+        Filters out existing primary keys from new data.
+        
+        Args:
+            existing_data (pd.DataFrame): Existing financial statements data.
+            new_data (pd.DataFrame): Newly scraped financial statements data.
+            
+        Returns:
+            pd.DataFrame: Filtered DataFrame containing only the new records.
+        """
+        # Define the primary key columns
+        primary_key_columns = self.config.statements_sheet_columns
+
+        try:
+            # Check if new_data is empty
+            if new_data.empty:
+                return existing_data
+
+            # Ensure the primary key columns exist in both datasets
+            if not all(col in existing_data.columns for col in primary_key_columns):
+                raise ValueError("Missing primary key columns in existing_data.")
+            if not all(col in new_data.columns for col in primary_key_columns):
+                raise ValueError("Missing primary key columns in new_data.")
+            
+            # Standardize data types for primary key columns
+            for col in primary_key_columns:
+                if col in existing_data.columns and col in new_data.columns:
+                    # Convert both columns to string (or other appropriate types)
+                    existing_data[col] = existing_data[col].astype(str)
+                    new_data[col] = new_data[col].astype(str)
+
+            # Merge on the primary key columns to identify new records
+            filtered_data = pd.merge(
+                existing_data,  # Full new_data
+                new_data[primary_key_columns],  # Only primary keys from existing_data
+                on=primary_key_columns,
+                how='left',
+                indicator=True
+            ).query("_merge == 'left_only'").drop(columns=['_merge'])
+            
+            return filtered_data
+
+        except Exception as e:
+            return pd.DataFrame()  # Return an empty DataFrame if an error occurs
+
     def main(self, thread=True):
         '''
         docstring
         '''
         try:
-            # # Load necessary data as scrape targets
-            # standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
-            # standart_statements.to_csv('standart_statements.csv', index=False)
-            # financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
-            # financial_statements[:50000].to_csv('financial_statements.csv', index=False)
+            # Load necessary data as scrape targets
+            standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+            financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
 
             # load statements and process intel
-            print('fast load debug scrape_targets')
-            financial_statements = pd.read_csv('financial_statements.csv')
-            scrape_targets = financial_statements
+            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.initial_filepath)
+                self.db_optimize(self.config.standart_filepath)
                 return True
 
             # Process targets using threading or sequential logic

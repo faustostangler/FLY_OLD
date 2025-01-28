@@ -53,17 +53,18 @@ class BaseProcessor:
         """
         results = []
         try:
-            if 'utils.intel_processor' not in module_name:
+            if 'utils.intel_processor' in module_name:
+                batches = self._split_batches_by_company(data, self.config.max_workers)
+            else: 
                 batches = self._split_batches(data, self.config.max_workers)
-            else: # forced no splitting for intel_processor
-                batches = [data]
 
             if thread:
-                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each throught {self.config.max_workers} simultaneous workers')
+                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.batch_size} batches of up to {1+int(data.shape[0]/self.config.max_workers)} items each throught {self.config.max_workers} simultaneous workers')
                 results = self._process_with_threads(batches)
             else:
-                print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.max_workers} items each')
+                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.max_workers} batches of up to {1+int(data.shape[0]/self.config.max_workers)} items each')
                 results = self._process_sequentially(batches)
+
         except Exception as e:
             self.log_error(e)
 
@@ -96,6 +97,42 @@ class BaseProcessor:
             self.log_error(e)
 
         return batches
+    
+    def _split_batches_by_company(self, data, num_workers):
+        '''
+        docstring
+        '''
+        batches = []
+        try:
+            # Get unique company names
+            unique_companies = data['company_name'].unique()
+            num_companies = len(unique_companies)
+            
+            # Handle case where there are fewer companies than workers
+            if num_companies < num_workers:
+                num_workers = num_companies  # Set number of workers to the number of companies
+
+            # Calculate batch size and remainder
+            batch_size = int(num_companies // num_workers)  # Integer division for batch size
+            remainder = num_companies % num_workers  # Calculate the remainder
+            
+            batches = []
+            start = 0
+
+            # Distribute companies across workers
+            for i in range(num_workers):
+                end = start + batch_size + (1 if i < remainder else 0)  # Add one extra if there's a remainder
+                batch_companies = unique_companies[start:end]
+                # Filter the original DataFrame for each batch
+                batch_data = data[data['company_name'].isin(batch_companies)]
+                batches.append(batch_data)
+                start = end
+
+        except Exception as e:
+            self.log_error(e)
+
+        return batches
+
     def _process_with_threads(self, batches):
         """
         Process batches with threading.
@@ -1029,7 +1066,17 @@ class BaseProcessor:
                 for col in date_columns:
                     if col in dataframe.columns:
                         # Convert column to datetime safely
-                        dataframe[col] = pd.to_datetime(dataframe[col], format='%Y-%m-%d', errors='coerce')
+                        try:
+                            # Attempt to convert the datetime with a stricter format
+                            dataframe[col] = pd.to_datetime(dataframe[col], format='%Y-%m-%d', errors='raise')
+                        except Exception as e_outer:
+                            try:
+                                # Handle ISO 8601 format like '2010-12-31T00:00:00'
+                                dataframe[col] = pd.to_datetime(dataframe[col], format='ISO8601', errors='raise')
+                            except Exception as e_inner:
+                                # Fallback to automatic inference of format
+                                dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
+                                self.print(e_outer, e_inner)
 
                         # Apply the conversion to ISO format
                         dataframe[col] = dataframe[col].apply(
