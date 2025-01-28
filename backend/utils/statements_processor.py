@@ -332,9 +332,6 @@ class StatementsProcessor(BaseProcessor):
         """
         Main method to process data.
         """
-        # # Initialize the WebDriver
-        # self.driver, self.driver_wait = self._initialize_driver()
-
         try:
             # Load necessary data
             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)

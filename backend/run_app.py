@@ -1,8 +1,10 @@
 from utils.company_processor import CompanyProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
+from utils.intel_processor import IntelProcessor
+
 from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
-from utils.corporate_events_processor import CorporateEventsProcessor
+from utils.corporate_events_processor import CorporateEventsProcessor, EventsStatementsProcessor
 
 if __name__ == '__main__':
     try:
@@ -34,22 +36,27 @@ if __name__ == '__main__':
             statements_processor.main(thread=True)
             statements_processor.close_driver()
 
-        # Ask the user if they want to get finantial historical stock data from b3
-        run_historical_stock_url_processor = 'N'
-        prompt = 'Want to update historical stock market data? (YES/NO): '
-        # run_historical_stock_url_processor = historical_stock_url_processor.timed_input(prompt)
-        if run_historical_stock_url_processor.strip().upper().startswith('Y'):
-            historical_stock_url_processor = HistoricalStockUrlProcessor()
-            historical_stock_url_processor.main(thread=True)
-            historical_stock_url_processor.close_driver()
+
+        # Ask the user if they want to sstandardize the statements
+        run_intel_processor = 'Y'
+        prompt = 'Want to standardize statements information? (YES/NO): '
+        # run_statements_processor = statements_processor.timed_input(prompt)
+        if run_intel_processor.strip().upper().startswith('Y'):
+            intel_processor = IntelProcessor()
+            intel_processor.main(thread=False)
+
+
+
 
         # Ask the user if they want to get corporate events from b3
         run_corporate_events_processor = 'Y'
         prompt = 'Want to update corporate events? (YES/NO): '
         # run_corporate_events_processor = corporate_events_processor.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith('Y'):
-            corporate_events_processor = CorporateEventsProcessor()
-            corporate_events_processor.main(thread=True)
+            # corporate_events_processor = CorporateEventsProcessor()
+            # corporate_events_processor.main(thread=True)
+            events_states_processor = EventsStatementsProcessor()
+            events_states_processor.main(thread=True)
 
             # corporate_events_merger = CorporateEventsMerger()
             # corporate_events_merger.main(thread=False)

@@ -30,6 +30,7 @@ import pyautogui
 import inspect
 import warnings
 import urllib3
+import json
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -52,7 +53,11 @@ class BaseProcessor:
         """
         results = []
         try:
-            batches = self._split_batches(data, self.config.max_workers)
+            if 'utils.intel_processor' not in module_name:
+                batches = self._split_batches(data, self.config.max_workers)
+            else: # forced no splitting for intel_processor
+                batches = [data]
+
             if thread:
                 print(f'From {module_name.split(".")[-1]}: downloading {data.shape[0]} items in {1+int(data.shape[0]/self.config.max_workers)} batches of up to {self.config.batch_size} items each throught {self.config.max_workers} simultaneous workers')
                 results = self._process_with_threads(batches)
@@ -79,12 +84,18 @@ class BaseProcessor:
         """Split data into batches."""
         batches = []
         try:
-            batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+            # # split with limit as batch_size
+            # batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+
+            # split with limit as batch count
+            batch_size = min(batch_size, len(data))  # Ensure batch_size doesn't exceed data length
+            chunk_size = (len(data) + batch_size - 1) // batch_size  # Equivalent to ceil(len(data) / batch_size)
+            batches = [data[i * chunk_size:(i + 1) * chunk_size] for i in range(batch_size)]
+
         except Exception as e:
             self.log_error(e)
 
         return batches
-
     def _process_with_threads(self, batches):
         """
         Process batches with threading.
@@ -828,7 +839,13 @@ class BaseProcessor:
                     cursor = conn.cursor()
                     if table_name:
                         try:
-                            cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
+                            if query:
+                                # Adjust query to count rows based on filters
+                                count_query = f"SELECT COUNT(*) FROM ({query})"
+                                cursor.execute(count_query, params)
+                            else:
+                                # Default to counting all rows in the table
+                                cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
                             total_rows = cursor.fetchone()[0]
 
                         except Exception as e:
@@ -885,7 +902,7 @@ class BaseProcessor:
             except Exception as e:
                 self.log_error(e)
 
-    def save_to_db(self, dataframe, table_name=None, db_filepath=None):
+    def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True):
         """
         Save or update a DataFrame in a SQLite database table.
 
@@ -918,7 +935,8 @@ class BaseProcessor:
                     cursor.executemany(sql, data_tuples)
 
                     conn.commit()
-            print(f'Saved {database_name}')
+            if alert:
+                print(f'Saved {database_name}')
 
         except Exception as e:
             print(dataframe.dtypes)
@@ -1062,7 +1080,6 @@ class BaseProcessor:
         except sqlite3.Error as e:
             self.log_error(f"An error occurred during database optimization: {e}")
 
-
     # WEB & REQUESTS
     def header_random(self):
         """Generate random HTTP headers for requests."""
@@ -1102,6 +1119,24 @@ class BaseProcessor:
                 pass
             time.sleep(wait_time)  # Wait before retrying
 
+    # OTHER NOT CLASSIFIED YET
+    def explode_company(self, company_info):
+
+        def process_ticker_isin(row):
+            ticker_codes = json.loads(row['ticker_codes']) if row['ticker_codes'] else []
+            isin_codes = json.loads(row['isin_codes']) if row['isin_codes'] else []
+            ticker_isin = [pair for pair in sorted(list(zip(ticker_codes, isin_codes)), key=lambda x: x[0]) if 'ACN' in pair[1]]
+            return ticker_isin
+
+        company_info['ticker_isin'] = company_info.apply(process_ticker_isin, axis=1)
+        mask = company_info['ticker_isin'].apply(lambda x: len(x) > 0)
+        company_info = company_info[mask]
+
+        company_info = company_info.explode('ticker_isin')
+        company_info[['ticker_code', 'isin_code']] = pd.DataFrame(company_info['ticker_isin'].tolist(), index=company_info.index)
+        company_info = company_info.drop(columns=['ticker_isin'])
+
+        return company_info
 class TemplateProcessor(BaseProcessor):
     '''
     docstrings
@@ -1121,7 +1156,7 @@ class TemplateProcessor(BaseProcessor):
         Process a single batch by delegating 
         from abstract base_processor method 
         to this class process_batch (true process info method) 
-        via this process_instance method (create instance methos).
+        via this process_instance method (create instance method).
         
         sub_batch
         progress

@@ -18,7 +18,6 @@ import warnings
 import ast
 import sqlite3
 import yfinance as yf
-import json
 import sys
 import io
 
@@ -47,7 +46,7 @@ class CorporateEventsProcessor(BaseProcessor):
         Process a single batch by delegating 
         from abstract base_processor method 
         to this class process_batch (true process info method) 
-        via this process_instance method (create instance methos).
+        via this process_instance method (create instance method).
         
         sub_batch
         progress
@@ -129,21 +128,9 @@ class CorporateEventsProcessor(BaseProcessor):
         historical_data_primary_key_columns = ['company_name', 'ticker', 'ticker_code']
         merging_columns = historical_data_primary_key_columns + ['date']
 
-        def process_ticker_isin(row):
-            ticker_codes = json.loads(row['ticker_codes']) if row['ticker_codes'] else []
-            isin_codes = json.loads(row['isin_codes']) if row['isin_codes'] else []
-            ticker_isin = [pair for pair in sorted(list(zip(ticker_codes, isin_codes)), key=lambda x: x[0]) if 'ACN' in pair[1]]
-            return ticker_isin
-
         try:
             # prepare company_info
-            company_info['ticker_isin'] = company_info.apply(process_ticker_isin, axis=1)
-            mask = company_info['ticker_isin'].apply(lambda x: len(x) > 0)
-            company_info = company_info[mask]
-
-            company_info = company_info.explode('ticker_isin')
-            company_info[['ticker_code', 'isin_code']] = pd.DataFrame(company_info['ticker_isin'].tolist(), index=company_info.index)
-            company_info = company_info.drop(columns=['ticker_isin'])
+            company_info = self.explode_company(company_info)
 
             # prepare historical_data
             try:
@@ -217,6 +204,210 @@ class CorporateEventsProcessor(BaseProcessor):
             # save/update db
             if not processed_batch.empty:
                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
+
+        except Exception as e:
+            self.log_error(e)
+
+        return True
+
+class EventsStatementsProcessor(BaseProcessor):
+    '''
+    definitions
+    '''
+    def __init__(self):
+        '''
+        definitions
+        '''
+        super().__init__()
+        self.db_lock = Lock()  # Initialize a threading Lock
+
+    def main(self, thread=True):
+        '''
+        definitions
+        '''
+        index_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version']
+        pivot_columns = ['account', 'description', 'frame', 'type']
+        
+        try:
+            # load existing company_info data
+            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            company_info_exploded = self.explode_company(company_info)
+
+            # loop companies, load stock_market data and statements_data per company
+            start_time = time.time()
+            for i, row in company_info_exploded.iterrows():
+                company_name = row['company_name']
+                ticker = row['ticker']
+                ticker_code = row['ticker_code']
+
+                if ticker != 'BBAS':
+                    continue
+                # company stock_data
+                table_name = self.config.historical_stock_data_table
+                db_filepath = self.config.metadados_filepath
+                sql_stock_data = '''SELECT *
+                            FROM stock_data
+                            WHERE ticker_code = ?'''
+
+                company_stock_data = self.load_data(table_name=table_name, query=sql_stock_data, params=(ticker_code,), db_filepath=db_filepath)
+                company_stock_data = company_stock_data.dropna(subset=['date'])
+                if not company_stock_data.empty:
+                    company_splits = company_stock_data[['company_name', 'ticker', 'ticker_code', 'date', 'stock_splits']].query("stock_splits != 0")
+                    company_stock_data.to_csv(f'{ticker_code}_company_stock_data.csv')
+                    company_splits.to_csv(f'{ticker_code}_company_splits.csv')
+
+                # comapny statement_data
+                table_name = self.config.initial_table  # 'statements_initial'
+                db_filepath = self.config.initial_filepath  # Path to the database
+                sql_statement_data = "SELECT * FROM statements_initial WHERE company_name = ?"
+                company_statements_all_data = self.load_data(table_name=table_name, query=sql_statement_data, params=(company_name,), db_filepath=db_filepath)
+                if not company_statements_all_data.empty:
+                    # Convert 'quarter' to datetime for correct sorting and filtering (if not already)
+                    company_statements_all_data['quarter'] = pd.to_datetime(company_statements_all_data['quarter'])
+
+                    # Find the maximum version for each quarter
+                    latest_versions = company_statements_all_data.groupby('quarter')['version'].max().reset_index()
+
+                    # Merge with the original DataFrame to keep only rows with the latest version
+                    company_statements_all_data = company_statements_all_data.merge(latest_versions, on=['quarter', 'version'])
+
+                    # only stock to match splits
+                    company_statements_stock_data = company_statements_all_data[company_statements_all_data['account'].str.startswith(self.config.stock_start)]
+
+                    ### Dados da Empresa
+
+                    company_statements_stock_data_pivot = company_statements_stock_data.pivot_table(
+                        index=index_columns,  # Use main_columns as the index
+                        columns=pivot_columns,  # Pivot on 'account'
+                        values='value',  # Use 'value' as data
+                        aggfunc='first'  # Use 'first' to handle duplicates
+                    ).reset_index()
+
+                    # Flatten columns if needed
+                    company_statements_stock_data_pivot.columns = [f"{col[0]}{self.config.joint}{col[1]}{self.config.joint}{col[2]}{self.config.joint}{col[3]}" if isinstance(col, tuple) and col[0].startswith(self.config.stock_start) else col[0] for col in company_statements_stock_data_pivot.columns]
+                    # company_statements_stock_data_pivot.columns = [self.config.joint.join([str(part) for part in col if part]) if isinstance(col, tuple) and col[0].startswith(self.config.stock_start) else col for col in company_statements_stock_data_pivot.columns]
+
+                    company_statements_stock_data_pivot.to_csv(f'{ticker_code}_company_statements_stock_data_pivot.csv')
+
+                    # start magic for Dados da Empresa
+                    splits = company_splits.copy()
+                    statements = company_statements_stock_data_pivot.copy()
+                    stock_data = company_stock_data.copy()
+
+                    # Ensure date columns are in datetime format
+                    splits['date'] = pd.to_datetime(splits['date'])
+                    statements['quarter'] = pd.to_datetime(statements['quarter'])
+                    stock_data['date'] = pd.to_datetime(stock_data['date'])
+
+                    # Get the relevant columns for updates
+                    columns_to_update = [col for col in statements.columns if col.startswith(self.config.stock_start)]
+
+                    # Align the daily dates with the stock data dates
+                    daily_dates = stock_data[['date']].drop_duplicates()
+
+                    # Expand statements to include daily rows matching stock_data dates
+                    statements_daily = pd.merge(daily_dates, statements, left_on='date', right_on='quarter', how='left')
+
+                    # Apply forward-fill and back-fill logic for daily rows
+                    statements_daily = statements_daily.bfill().ffill()
+
+                    # Sort split dates for BBAS3
+                    split_dates = splits[splits['ticker_code'] == 'BBAS3'].sort_values('date')
+
+                    # Iterate over each split date and assign values
+                    for i, split_row in split_dates.iterrows():
+                        split_date = split_row['date']
+                        
+                        # Find the current and next quarters
+                        current_quarter = statements.loc[statements['quarter'] < split_date, 'quarter'].max()
+                        next_quarter = statements.loc[statements['quarter'] >= split_date, 'quarter'].min()
+
+                        # Skip updates if the next quarter doesn't exist
+                        if pd.isna(next_quarter):
+                            # print(f"Skipping split date {split_date}: No next quarter available.")
+                            continue
+
+                        # Apply values before the split date (current quarter)
+                        if not pd.isna(current_quarter):  # Ensure current_quarter exists
+                            for col in columns_to_update:
+                                statements_daily.loc[statements_daily['date'] < split_date, col] = (
+                                    statements.loc[statements['quarter'] == current_quarter, col].values[0]
+                                )
+
+                        # Apply values after the split date (next quarter)
+                        for col in columns_to_update:
+                            if not statements.loc[statements['quarter'] == next_quarter, col].empty:
+                                filtered_data = statements.loc[statements['quarter'] == next_quarter, col]
+                                statements_daily.loc[statements_daily['date'] >= split_date, col] = (
+                                    statements.loc[statements['quarter'] == next_quarter, col].values[0]
+                                )
+
+                    statements_daily.to_csv(f'{ticker_code}_company_statements_stock_data_pivot_updated.csv', index=False)
+
+
+                    ### DFs Individuais and DFs Consolidadas
+                # Process other groups: 'DFs Individuais' and 'DFs Consolidadas'
+                for group_type in ['DFs Individuais', 'DFs Consolidadas']:
+                    group_statements = company_statements_all_data[company_statements_all_data['type'] == group_type]
+
+                    group_statements_pivot = group_statements.pivot_table(
+                        index=index_columns,
+                        columns=pivot_columns,
+                        values='value',
+                        aggfunc='first'
+                    ).reset_index()
+
+                    group_statements_pivot.columns = [self.config.joint.join([str(part) for part in col if part]) if isinstance(col, tuple) else col for col in group_statements_pivot.columns]
+
+                    group_statements.to_csv('group_statements.csv')
+                    group_statements_pivot.to_csv('group_statements_pivot.csv')
+
+                    # Ensure date columns are in consistent datetime format
+                    group_statements_pivot['quarter'] = pd.to_datetime(group_statements_pivot['quarter'])
+
+                    # Merge group_statements_pivot with daily dates
+                    group_statements_daily = pd.merge(
+                        daily_dates,
+                        group_statements_pivot,
+                        left_on='date',
+                        right_on='quarter',
+                        how='left'
+                    )
+
+                    # Apply forward-fill and back-fill logic to propagate missing values
+                    group_statements_daily = group_statements_daily.bfill().ffill()
+
+
+
+
+
+
+                    # now merge everything together
+
+                    # Ensure date columns are in consistent datetime format
+                    statements_daily['date'] = pd.to_datetime(statements_daily['date'])
+                    group_statements_pivot['quarter'] = pd.to_datetime(group_statements_pivot['quarter'])
+
+                    # Merge group_statements_pivot with statements_daily
+                    merged_statements = pd.merge(
+                        statements_daily,
+                        group_statements_pivot,
+                        left_on='date',
+                        right_on='quarter',
+                        how='outer'
+                    )
+
+                    # Fill missing values if necessary
+                    merged_statements = merged_statements.bfill().ffill()
+
+                    # Save the merged result
+                    merged_statements.to_csv(f'{ticker_code}_merged_statements_daily.csv', index=False)
+
+
+
+
+                extra_info = [i, company_name, ticker]
+                self.print_info(i, len(company_info), start_time, extra_info)
 
         except Exception as e:
             self.log_error(e)

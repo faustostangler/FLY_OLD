@@ -4,6 +4,10 @@ class Config:
     def __init__(self):
         self.initial_database = 'statements initial.db'
         self.initial_table = 'statements_initial'
+
+        self.standart_database = 'statements standart.db'
+        self.standart_table = 'statements_standart'
+
         self.final_database = 'statements final.db'
         self.final_table = 'statements_processed'
 
@@ -38,15 +42,24 @@ class Config:
         self.stock_filepath = os.path.join(self.data_folder, self.stock_database)
         self.backup_db = f"{self.stock_database.split('.')[0]} {self.backup_name}.{self.stock_database.split('.')[-1]}"
 
+        self.standart_filepath = os.path.join(self.data_folder, self.standart_database)
+        self.backup_standart_db = f"{self.standart_database.split('.')[0]} {self.backup_name}.{self.standart_database.split('.')[-1]}"
+
+        self.final_filepath = os.path.join(self.data_folder, self.final_database)
+        self.backup_final_db = f"{self.final_database.split('.')[0]} {self.backup_name}.{self.final_database.split('.')[-1]}"
+
         # batches and other numbers
         cpu = os.cpu_count()
         self.batch_size = cpu * 10 # 250  # Batch size for data processing
-        cpu_factor = 1
+        cpu_factor = 2
         self.max_workers = int(cpu * cpu_factor) + (1 if (cpu * cpu_factor) % 1 > 0 else 0) # ceil
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 100000
         self.stock_data_start_date = '1960-01-01'
         self.update_days = 2
+        self.joint = ' - '
+        self.joint2 = ' | '
+        self.stock_start = '00.'
 
         # Selenium settings
         self.wait_time = 2  # Wait time for Selenium operations
@@ -59,7 +72,6 @@ class Config:
         ]
         self.chrome_path_64 = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
         self.chrome_path_32 = r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
-        self.joint = ' - '
 
         # Requests
         self.USER_AGENTS = [
@@ -397,6 +409,25 @@ class Config:
             self.initial_database: {
                 self.initial_table: """
                     CREATE TABLE IF NOT EXISTS statements_initial (
+                        nsd INTEGER,
+                        sector TEXT,
+                        subsector TEXT,
+                        segment TEXT,
+                        company_name TEXT,
+                        quarter TEXT,
+                        version TEXT,
+                        type TEXT,
+                        frame TEXT,
+                        account TEXT,
+                        description TEXT,
+                        value REAL,
+                        PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
+                    )
+                """
+            },
+            self.standart_database: {
+                self.standart_table: """
+                    CREATE TABLE IF NOT EXISTS statements_standart (
                         nsd INTEGER,
                         sector TEXT,
                         subsector TEXT,

@@ -235,19 +235,19 @@ class StandardizedReport:
         
         return df
 
-    def apply_criteria_tree(self, df, criteria_tree, sector, section_name, output_file='output.txt'):
+    def apply_section_criteria(self, df, section_criteria, sector, section_name, output_file='output.txt'):
         """
         Main function to apply a criteria tree to the DataFrame.
 
         Parameters:
             df (pd.DataFrame): The DataFrame to be modified.
-            criteria_tree (list): List of criteria in a tree format.
+            section_criteria (list): List of criteria in a tree format.
             output_file (str): Path to the output file.
 
         Returns:
             pd.DataFrame: The modified DataFrame after applying all criteria.
         """
-        for criteria in criteria_tree:
+        for criteria in section_criteria:
             df = self.apply_criteria(df, criteria, sector, section_name, output_file=output_file)
 
         return df
@@ -282,13 +282,13 @@ class StandardizedReport:
             total_sections = len(standardization_sections)
 
             # Loop through each section in the standardization pack
-            for i, (section_name, criteria_tree) in enumerate(standardization_sections.items()):
+            for i, (section_name, section_criteria) in enumerate(standardization_sections.items()):
                 extra_info = [sector, section_name]
                 system.print_info(i, total_sections, start_time, extra_info)
 
                 # Call the apply_criteria_to_dataframe method for each section
                 try:
-                    df = self.apply_criteria_tree(df, criteria_tree, sector, section_name)
+                    df = self.apply_section_criteria(df, section_criteria, sector, section_name)
                 except Exception as e:
                     print(f'Error during generate_standard_financial_statements section {section_name}: {e}')
 
