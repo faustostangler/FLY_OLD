@@ -72,11 +72,9 @@ class IntelProcessor(BaseProcessor):
                 # save db
                 self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath, alert=False)
 
-                extra_info = [company]
+                extra_info = [progress['thread_id'], progress['batch_index'], company]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
 
-                print('debug break')
-                break
         except Exception as e:
             self.log_error(e)
 
@@ -106,8 +104,8 @@ class IntelProcessor(BaseProcessor):
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
-                # extra_info = [sector, subsector, segment, company_name, section_name.upper()]
-                # self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=1)
+                extra_info = [progress['thread_id'], progress['batch_index'], sector, subsector, segment, company_name, section_name.upper()]
+                self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=3)
 
         except Exception as e:
             print(f'criteria error {e}')
@@ -131,7 +129,7 @@ class IntelProcessor(BaseProcessor):
             for i, criteria_item in enumerate(section_criteria):
                 df, section_name, account, description = self.apply_criteria(df, section_name, criteria_item, output_file=output_file)
                 # extra_info = [section_name.upper(), account, description]
-                # self.print_info(i, len(section_criteria), start_time, extra_info, indent_level=2)
+                # self.print_info(i, len(section_criteria), start_time, extra_info, indent_level=4)
 
         except Exception as e:
             self.print_info(e)
@@ -187,7 +185,7 @@ class IntelProcessor(BaseProcessor):
             }
 
             crits = []
-
+            
             # Apply each filter to the mask
             for filter_column, filter_condition, filter_value in filters:
                 crits.append([filter_column, filter_condition, filter_value])
@@ -198,7 +196,8 @@ class IntelProcessor(BaseProcessor):
                         filter_value = [filter_value]
 
                 # df_column_lower = df[filter_column].str.lower() if df[filter_column].dtype == 'O' else df[filter_column]
-                df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
+                # df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
+                df_column_lower = df[filter_column].astype(str).str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
 
                 # Apply the filter condition using the mapping
                 if filter_condition in condition_map:
@@ -280,7 +279,7 @@ class IntelProcessor(BaseProcessor):
         """
         # Define the primary key columns
         primary_key_columns = self.config.statements_sheet_columns
-
+        result = pd.DataFrame()
         try:
             # Check if new_data is empty
             if new_data.empty:
@@ -299,19 +298,26 @@ class IntelProcessor(BaseProcessor):
                     existing_data[col] = existing_data[col].astype(str)
                     new_data[col] = new_data[col].astype(str)
 
-            # Merge on the primary key columns to identify new records
-            filtered_data = pd.merge(
-                existing_data,  # Full new_data
-                new_data[primary_key_columns],  # Only primary keys from existing_data
-                on=primary_key_columns,
-                how='left',
-                indicator=True
-            ).query("_merge == 'left_only'").drop(columns=['_merge'])
-            
-            return filtered_data
+            chunk_size = self.config.chunk_size * 10
+            result = pd.concat(
+                (
+                    pd.merge(
+                        existing_data.iloc[i:i + chunk_size], 
+                        new_data[primary_key_columns],  
+                        on=primary_key_columns,  
+                        how='left',  
+                        indicator=True
+                    ).query("_merge == 'left_only'").drop(columns=['_merge'])
+                    for i in range(0, len(existing_data), chunk_size)
+                ),
+                ignore_index=True
+            )
+
 
         except Exception as e:
-            return pd.DataFrame()  # Return an empty DataFrame if an error occurs
+            self.log_error(e)
+
+        return result
 
     def main(self, thread=True):
         '''
@@ -319,8 +325,8 @@ class IntelProcessor(BaseProcessor):
         '''
         try:
             # Load necessary data as scrape targets
-            standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
             financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
 
             # load statements and process intel
             scrape_targets = self.get_scrape_targets(financial_statements, standart_statements)
