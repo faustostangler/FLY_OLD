@@ -9,7 +9,7 @@ from utils.corporate_events_processor import CorporateEventsProcessor, EventsSta
 if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
-        run_company_processor = 'Y'
+        run_company_processor = 'N'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
@@ -24,7 +24,6 @@ if __name__ == '__main__':
         if run_nsd_processor.strip().upper().startswith('Y'):
             nsd_processor = NsdProcessor()
             nsd_processor.main(thread=True)
-            nsd_processor.close_driver()
 
         # Ask the user if they want to get finantial statements
         run_statements_processor = 'Y'

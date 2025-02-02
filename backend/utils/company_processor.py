@@ -108,23 +108,26 @@ class CompanyProcessor(BaseProcessor):
         """
         Process a single batch by delegating to process_batch.
         """
+
+        driver, driver_wait = self._initialize_driver()
+
         result = pd.DataFrame()
 
         try:
-            result = self.process_batch(sub_batch, progress)
+            result = self.process_batch(sub_batch, progress, driver, driver_wait)
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
 
+        self.close_driver(driver)
+
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, progress, driver, driver_wait):
         """
         Process a batch of company data by scraping details.
         """
         processed_data = []
         start_time = time.time()
-
-        driver, driver_wait = self._initialize_driver()
 
         for i, (_, row) in enumerate(sub_batch.iterrows()):
             try:
@@ -141,8 +144,6 @@ class CompanyProcessor(BaseProcessor):
 
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
-
-        self.close_driver(driver)
 
         result = pd.DataFrame(processed_data)
 
@@ -284,7 +285,7 @@ class CompanyProcessor(BaseProcessor):
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(local_companies[:-200], web_companies)
+            scrape_targets = self.get_scrape_targets(local_companies, web_companies)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
@@ -292,7 +293,6 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
-            thread = False # always false
             processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data

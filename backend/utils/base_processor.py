@@ -393,7 +393,7 @@ class BaseProcessor:
                 self.log_error(str(dynamic_error))
                 return None, None
     
-    def close_driver(self, driver=None):
+    def close_driver(self, driver=None, driver_wait=None):
         """
         Safely quits the Selenium WebDriver instance.
         """
@@ -401,8 +401,8 @@ class BaseProcessor:
         driver_wait = driver_wait or self.driver_wait
 
         try:
-            if self.driver:
-                self.driver.quit()
+            if driver:
+                driver.quit()
         except Exception as e:
             pass
 
@@ -458,7 +458,7 @@ class BaseProcessor:
             self.log_error(e)
             return ''
 
-    def click(self, xpath, driver=None, driver_wait=None):
+    def click(self, xpath, driver_wait=None):
         """
         Encontra e clica em um elemento da web usando o xpath e o objeto de espera fornecido.
 
@@ -469,7 +469,6 @@ class BaseProcessor:
         Returns:
         bool: True se o elemento foi encontrado e clicado, False caso contrário.
         """
-        driver = driver or self.driver
         driver_wait = driver_wait or self.driver_wait
 
         try:
