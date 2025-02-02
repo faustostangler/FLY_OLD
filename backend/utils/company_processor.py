@@ -18,6 +18,9 @@ class CompanyProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize driver and other resources
+        self.driver, self.driver_wait = self._initialize_driver()
+
     def get_web_companies(self):
         '''
         '''
@@ -108,34 +111,38 @@ class CompanyProcessor(BaseProcessor):
         """
         Process a single batch by delegating to process_batch.
         """
-
-        driver, driver_wait = self._initialize_driver()
-
         result = pd.DataFrame()
 
         try:
-            result = self.process_batch(sub_batch, progress, driver, driver_wait)
+            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+            batch_processor = CompanyProcessor()
+
+            # Delegate to process_batch for the actual batch processing
+            result = batch_processor.process_batch(sub_batch, progress)
+
+            # Clean up driver after processing
+            batch_processor.close_driver()
+
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-
-        self.close_driver(driver)
+            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
-    def process_batch(self, sub_batch, progress, driver, driver_wait):
+    def process_batch(self, sub_batch, progress):
         """
         Process a batch of company data by scraping details.
         """
         processed_data = []
-        start_time = time.time()
 
+        start_time = time.time()
         for i, (_, row) in enumerate(sub_batch.iterrows()):
             try:
                 company_name = row['company_name']
                 company_info = row.to_dict()  # Convert the row to a dictionary for processing
 
                 # Fetch and process company details
-                company_data = self._fetch_and_process_company(company_name, company_info, driver, driver_wait)
+                company_data = self._fetch_and_process_company(company_name, company_info)
                 processed_data.append(company_data)
 
                 # Log progress
@@ -149,30 +156,30 @@ class CompanyProcessor(BaseProcessor):
 
         return result
 
-    def _fetch_and_process_company(self, company_name, company_info, driver, driver_wait):
+    def _fetch_and_process_company(self, company_name, company_info):
         """
         Fetch and process details for a single company.
         """
         try:
             self.test_internet()
-            driver.get(self.config.company_url)
+            self.driver.get(self.config.company_url)
 
             # Search for the company
             search_field_xpath = '//*[@id="keyword"]'
-            self._search_company(company_name, search_field_xpath, driver, driver_wait)
+            self._search_company(company_name, search_field_xpath)
 
             # Extract details
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             cards = soup.find_all('div', class_='card-body')
 
             for card in cards:
                 card_ticker = self.clean_text(card.find('h5', class_='card-title2').text)
                 if card_ticker == company_info['ticker']:
                     card_xpath = f'//h5[text()="{card_ticker}"]'
-                    self.click(card_xpath, driver_wait)
+                    self.click(card_xpath, self.driver_wait)
 
                     # Extract additional company details
-                    company_soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    company_soup = BeautifulSoup(self.driver.page_source, 'html.parser')
                     company_details = self._extract_company_details(company_soup)
                     company_info.update(company_details)
                     break
@@ -182,12 +189,12 @@ class CompanyProcessor(BaseProcessor):
 
         return company_info
 
-    def _search_company(self, company_name, search_field_xpath, driver, driver_wait):
+    def _search_company(self, company_name, search_field_xpath):
         """
         Perform a search for a company using the search field on the page.
         """
         try:
-            search_field = self.wait_forever(driver_wait, search_field_xpath)
+            search_field = self.wait_forever(self.driver_wait, search_field_xpath)
             search_field.clear()
             search_field.send_keys(company_name)
             search_field.send_keys(Keys.RETURN)

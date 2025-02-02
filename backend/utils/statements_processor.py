@@ -62,23 +62,23 @@ class StatementsProcessor(BaseProcessor):
         """
         Process a single batch by delegating to process_batch.
         """
+        result = pd.DataFrame()  # Return an empty DataFrame on failure
+
         try:
             print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
             batch_processor = StatementsProcessor()
-
 
             # Delegate to process_batch for the actual batch processing
             result = batch_processor.process_batch(sub_batch, progress)
 
             # Clean up driver after processing
             batch_processor.close_driver()
-            return result
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
             self.close_driver()  # Ensure driver is closed even on errors
-            result = pd.DataFrame()  # Return an empty DataFrame on failure
-            return result
+
+        return result
 
     def process_batch(self, sub_batch, progress):
         """
@@ -347,6 +347,7 @@ class StatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
+            thread=False # always false
             processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data

@@ -201,3 +201,5 @@ class NsdProcessor(BaseProcessor):
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
+
+        return True

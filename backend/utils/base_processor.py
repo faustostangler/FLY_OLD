@@ -142,18 +142,20 @@ class BaseProcessor:
             total_batches = len(batches)
             start_time = time.time()
             total_scrape_size = sum(len(b) for b in batches)
+            cumulative = 0  # will keep track of the global start index for each batch
 
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 futures = []
                 for batch_index, batch in enumerate(batches):
                     progress = {
                         'batch_index': batch_index,
-                        'total_batches': total_batches,
-                        'batch_start': batch_index * self.config.batch_size,
+                        'total_batches': len(batches),
+                        'batch_start': cumulative,                          # actual starting index in the overall data,
                         'scrape_size': total_scrape_size, 
                         'start_time': start_time,
-                        'thread_id': batch_index % self.config.max_workers,  # Map batch index to thread pool ID
+                        'thread_id': batch_index % self.config.max_workers, # Map batch index to thread pool ID
                     }
+                    cumulative += len(batch)  # add the length of this batch for the next iteration
 
                     # Submit task with progress
                     futures.append(executor.submit(self.process_instance, batch, progress))
