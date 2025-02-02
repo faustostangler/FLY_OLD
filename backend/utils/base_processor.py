@@ -393,10 +393,13 @@ class BaseProcessor:
                 self.log_error(str(dynamic_error))
                 return None, None
     
-    def close_driver(self):
+    def close_driver(self, driver=None):
         """
         Safely quits the Selenium WebDriver instance.
         """
+        driver = driver or self.driver
+        driver_wait = driver_wait or self.driver_wait
+
         try:
             if self.driver:
                 self.driver.quit()

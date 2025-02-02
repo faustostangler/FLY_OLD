@@ -18,7 +18,7 @@ class CompanyProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
-    def get_all_companies(self):
+    def get_web_companies(self):
         '''
         '''
         try:
@@ -34,6 +34,8 @@ class CompanyProcessor(BaseProcessor):
                 pagination_xpath = '//*[@id="listing_pagination"]/pagination-template/ul'
                 nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
                 next_page_xpath = '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
+
+                self.driver, self.driver_wait = self._initialize_driver()
 
                 self.test_internet()
                 self.driver.get(self.config.companies_url)
@@ -55,12 +57,13 @@ class CompanyProcessor(BaseProcessor):
 
                     extra_info = [f'page {page + 1}']
                     self.print_info(i, total_pages + 1, start_time, extra_info)
-                    time.sleep(0.05)
+                    time.sleep(self.config.wait_time/50)
 
             except Exception as e:
                 self.config.log_error(e)
                 raw_code = []
 
+            self.close_driver()
 
             company_tickers = {}
 
@@ -121,13 +124,15 @@ class CompanyProcessor(BaseProcessor):
         processed_data = []
         start_time = time.time()
 
+        driver, driver_wait = self._initialize_driver()
+
         for i, (_, row) in enumerate(sub_batch.iterrows()):
             try:
                 company_name = row['company_name']
                 company_info = row.to_dict()  # Convert the row to a dictionary for processing
 
                 # Fetch and process company details
-                company_data = self._fetch_and_process_company(company_name, company_info)
+                company_data = self._fetch_and_process_company(company_name, company_info, driver, driver_wait)
                 processed_data.append(company_data)
 
                 # Log progress
@@ -137,32 +142,36 @@ class CompanyProcessor(BaseProcessor):
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
 
-        return pd.DataFrame(processed_data)
+        self.close_driver(driver)
 
-    def _fetch_and_process_company(self, company_name, company_info):
+        result = pd.DataFrame(processed_data)
+
+        return result
+
+    def _fetch_and_process_company(self, company_name, company_info, driver, driver_wait):
         """
         Fetch and process details for a single company.
         """
         try:
             self.test_internet()
-            self.driver.get(self.config.company_url)
+            driver.get(self.config.company_url)
 
             # Search for the company
             search_field_xpath = '//*[@id="keyword"]'
-            self._search_company(company_name, search_field_xpath)
+            self._search_company(company_name, search_field_xpath, driver, driver_wait)
 
             # Extract details
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             cards = soup.find_all('div', class_='card-body')
 
             for card in cards:
                 card_ticker = self.clean_text(card.find('h5', class_='card-title2').text)
                 if card_ticker == company_info['ticker']:
                     card_xpath = f'//h5[text()="{card_ticker}"]'
-                    self.click(card_xpath, self.driver_wait)
+                    self.click(card_xpath, driver_wait)
 
                     # Extract additional company details
-                    company_soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                    company_soup = BeautifulSoup(driver.page_source, 'html.parser')
                     company_details = self._extract_company_details(company_soup)
                     company_info.update(company_details)
                     break
@@ -172,17 +181,19 @@ class CompanyProcessor(BaseProcessor):
 
         return company_info
 
-    def _search_company(self, company_name, search_field_xpath):
+    def _search_company(self, company_name, search_field_xpath, driver, driver_wait):
         """
         Perform a search for a company using the search field on the page.
         """
         try:
-            search_field = self.wait_forever(self.driver_wait, search_field_xpath)
+            search_field = self.wait_forever(driver_wait, search_field_xpath)
             search_field.clear()
             search_field.send_keys(company_name)
             search_field.send_keys(Keys.RETURN)
         except Exception as e:
             self.log_error(f"Error searching for company {company_name}: {e}")
+
+        return True
 
     def _extract_company_details(self, company_soup):
         """
@@ -211,11 +222,11 @@ class CompanyProcessor(BaseProcessor):
 
             # Extract relevant data fields
             cnpj_element = company_info.find(text='CNPJ')
-            company_details['cnpj'] = re.sub(r'\D', '', cnpj_element.find_next('p', class_='card-linha').text) if cnpj_element else ''
+            cnpj = re.sub(r'\D', '', cnpj_element.find_next('p', class_='card-linha').text) if cnpj_element else ''
 
             # Additional fields like activity, website, etc.
             activity_element = company_info.find(text='Atividade Principal')
-            company_details['activity'] = activity_element.find_next('p', class_='card-linha').text if activity_element else ''
+            activity = activity_element.find_next('p', class_='card-linha').text if activity_element else ''
 
             # Additional processing for sector and listing
             sector_element = company_info.find(text='Classificação Setorial')
@@ -247,19 +258,17 @@ class CompanyProcessor(BaseProcessor):
                 "registrar": registrar,
             }
 
-
-
         except Exception as e:
             self.log_error(f"Error extracting company details: {e}")
 
         return company_details
 
-    def get_scrape_targets(self, existing_companies, all_companies):
+    def get_scrape_targets(self, local_companies, web_companies):
         '''
         '''
         result = []
         try:
-            result = all_companies[~all_companies['company_name'].isin(existing_companies['company_name'])]
+            result = web_companies[~web_companies['company_name'].isin(local_companies['company_name'])]
         except Exception as e:
             self.log_error(e)
 
@@ -269,15 +278,13 @@ class CompanyProcessor(BaseProcessor):
         """
         Main method to process data.
         """
-        self.driver, self.driver_wait = self._initialize_driver()
-
         try:
             # Load existing and new companies
-            existing_companies = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            all_companies = self.get_all_companies()
+            local_companies = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            web_companies = self.get_web_companies()
             
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(existing_companies, all_companies)
+            scrape_targets = self.get_scrape_targets(local_companies[:-200], web_companies)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
@@ -285,6 +292,7 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
+            thread = False # always false
             processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data

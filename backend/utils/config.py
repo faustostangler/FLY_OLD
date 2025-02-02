@@ -51,7 +51,7 @@ class Config:
         # batches and other numbers
         cpu = os.cpu_count()
         self.batch_size = cpu * 10 # 250  # Batch size for data processing
-        cpu_factor = 2
+        cpu_factor = 1
         self.max_workers = int(cpu * cpu_factor) + (1 if (cpu * cpu_factor) % 1 > 0 else 0) # ceil
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 100000
