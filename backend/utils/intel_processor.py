@@ -44,7 +44,7 @@ class IntelProcessor(BaseProcessor):
             
             # Delegate to process_batch for the actual batch processing
             result = intel_processor.process_batch(sub_batch, progress)
-            self.save_to_db(dataframe=result, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
 
             # Clean up driver after processing
             intel_processor.close_driver()
@@ -76,6 +76,7 @@ class IntelProcessor(BaseProcessor):
 
                 # sanitize db
                 result = self.adjust_columns(result)
+                self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
 
                 extra_info = [progress['thread_id'], progress['batch_index'], company]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
@@ -334,6 +335,9 @@ class IntelProcessor(BaseProcessor):
         docstring
         '''
         try:
+            # optimize db before return
+            self.db_optimize(self.config.standart_filepath)
+
             # Load necessary data as scrape targets
             financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
             # # pre-debug
@@ -361,6 +365,9 @@ class IntelProcessor(BaseProcessor):
             # Save processed data
             if not processed_data.empty:
                 self.save_to_db(dataframe=processed_data, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+
+            # optimize db before return
+            self.db_optimize(self.config.standart_filepath)
 
         except Exception as e:
             self.log_error(e)

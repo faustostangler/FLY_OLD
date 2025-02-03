@@ -828,8 +828,12 @@ class BaseProcessor:
         try:
             if not os.path.exists(db_filepath):
                 # print(f"Database '{database_name}' does not exist. Creating...")
-                with sqlite3.connect(db_filepath) as conn:
-                    pass  # Create the database file if it doesn't exist
+                with self._get_db_connection(db_filepath) as conn:
+                    # Create the database file if it doesn't exist
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
+                    conn.execute("PRAGMA temp_store=MEMORY;")
+                    conn.execute("PRAGMA locking_mode=EXCLUSIVE;")
 
                 if table_name:
                     self._initialize_table(db_filepath, database_name, table_name)
@@ -845,7 +849,7 @@ class BaseProcessor:
             for schema_table_name, schema_sql in schema_definitions.items():
                 # Handle dynamic table names for sectors
                 if schema_table_name in table_name or schema_table_name == table_name:
-                    with sqlite3.connect(db_filepath) as conn:
+                    with self._get_db_connection(db_filepath) as conn:
                         cursor = conn.cursor()
                         cursor.execute(schema_sql.format(table_name=table_name))
                         conn.commit()
@@ -855,11 +859,26 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
+    def _configure_db(self, db_filepath):
+        """Set persistent PRAGMA settings for the database."""
+        with sqlite3.connect(db_filepath) as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+        # print("Database configured successfully.")
+
+    def _get_db_connection(self, db_filepath):
+        """Return a new database connection with session-specific PRAGMA settings."""
+        conn = sqlite3.connect(db_filepath, check_same_thread=False)  # Allow multithreading
+        conn.execute("PRAGMA temp_store=MEMORY;")
+        conn.execute("PRAGMA locking_mode=NORMAL;")
+        return conn
+
     def prepare_db_conn(self, db):
         conn = ''
         return conn
 
-    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None):
+    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None):
+
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
         Dynamically creates databases and tables if they do not exist.
@@ -869,13 +888,17 @@ class BaseProcessor:
         primary_keys = self._get_primary_key(table_name, database_name)
         dataframes = []
 
+        max_retries = max_retries or self.config.max_retries
+
+        self._configure_db(db_filepath)
+        
         with self.db_lock:
             try:
                 # Ensure the database and table exist
                 self._initialize_database(db_filepath, database_name, table_name)
 
                 # Connect to the database and count total rows
-                with sqlite3.connect(db_filepath) as conn:
+                with self._get_db_connection(db_filepath) as conn:
                     cursor = conn.cursor()
                     if table_name:
                         try:
@@ -899,18 +922,29 @@ class BaseProcessor:
 
                     start_time = time.time()  # Start time for tracking progress
 
-                    # Define the worker function for reading batches
+                    # Define the worker function for reading batches with retry logic
                     def read_batch(offset, batch_number):
                         extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
                         self.print_info(batch_number, number_of_batches, start_time, extra_info)
-                        with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
-                            if query:
-                                paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                                return pd.read_sql_query(paginated_query, conn, params=params)
-                            elif table_name:
-                                paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
-                                return pd.read_sql_query(paginated_query, conn)
-                            return pd.DataFrame()
+
+                        attempt = 0
+                        while attempt < max_retries:
+                            try:
+                                with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
+                                    if query:
+                                        paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
+                                        return pd.read_sql_query(paginated_query, conn, params=params)
+                                    elif table_name:
+                                        paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
+                                        return pd.read_sql_query(paginated_query, conn)
+                                    return pd.DataFrame()
+                            except Exception as e:
+                                if "database is locked" in str(e):
+                                    attempt += 1
+                                    time.sleep(self.config.wait_time)
+                                else:
+                                    raise  # Raise other errors immediately
+                        raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
                     # Read data using multithreading
                     with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -942,7 +976,7 @@ class BaseProcessor:
             except Exception as e:
                 self.log_error(e)
 
-    def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True):
+    def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True, max_retries=None):
         """
         Save or update a DataFrame in a SQLite database table.
 
@@ -956,27 +990,39 @@ class BaseProcessor:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
 
+            max_retries = max_retries or self.config.max_retries
+
             primary_keys = self._get_primary_key(table_name, database_name)
 
             # Acquire the lock to ensure thread safety
             with self.db_lock:
-                with sqlite3.connect(db_filepath) as conn:
-                    conn.execute("PRAGMA journal_mode=WAL;")
-                    cursor = conn.cursor()
+                attempts = 0
+                while attempts < max_retries:
+                    try:
+                        with self._get_db_connection(db_filepath) as conn:
+                            conn.execute("PRAGMA journal_mode=WAL;")
+                            cursor = conn.cursor()
 
-                    sql = self._get_sql_statement(dataframe, primary_keys, table_name)
+                            sql = self._get_sql_statement(dataframe, primary_keys, table_name)
 
-                    dataframe = self._prepare_dataframe(dataframe)
+                            dataframe = self._prepare_dataframe(dataframe)
 
-                    # Convert the DataFrame to a list of tuples for executemany
-                    data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+                            # Convert the DataFrame to a list of tuples for executemany
+                            data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
 
-                    # Execute the batch operation
-                    cursor.executemany(sql, data_tuples)
+                            # Execute the batch operation
+                            cursor.executemany(sql, data_tuples)
 
-                    conn.commit()
-            if alert:
-                print(f'Saved {database_name}')
+                        conn.commit()
+                        if alert:
+                            print(f'Saved {database_name}')
+
+                    except Exception as e:
+                        if "database is locked" in str(e):
+                            attempts += 1
+                            time.sleep(self.config.wait_time)
+                        else:
+                            break  # Other error, break retry loop
 
         except Exception as e:
             print(dataframe.dtypes)
@@ -1113,17 +1159,20 @@ class BaseProcessor:
         try:
             # Acquire the lock to ensure thread safety
             with self.db_lock:
-                with sqlite3.connect(db_filepath) as conn:
+                with self._get_db_connection(db_filepath) as conn:
                     cursor = conn.cursor()
 
-                    # Run VACUUM to reduce file size and defragment the database
-                    cursor.execute("VACUUM")
+                    # Runs a WAL checkpoint to reduce WAL file size
+                    conn.execute("PRAGMA wal_checkpoint(FULL);")
 
                     # Run ANALYZE to update statistics for query optimization
                     cursor.execute("ANALYZE")
 
                     # Run REINDEX to rebuild indexes for better performance
                     cursor.execute("REINDEX")
+
+                    # Run VACUUM to reduce file size and defragment the database
+                    cursor.execute("VACUUM")
 
                     conn.commit()
 
