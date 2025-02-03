@@ -39,16 +39,24 @@ class IntelProcessor(BaseProcessor):
         return result from process_batch
         """
         try:
+            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+            intel_processor = IntelProcessor()
+            
             # Delegate to process_batch for the actual batch processing
-            result = self.process_batch(sub_batch, progress)
+            result = intel_processor.process_batch(sub_batch, progress)
+            self.save_to_db(dataframe=result, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
 
-            first = f"{sub_batch['company_name'].iloc[0]}"
-            last = f"{sub_batch['company_name'].iloc[-1]}"
-            extra_info = [f"Worker {progress['thread_id']}"]
-            self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
+            # Clean up driver after processing
+            intel_processor.close_driver()
+
+            # first = f"{sub_batch['company_name'].iloc[0]}"
+            # last = f"{sub_batch['company_name'].iloc[-1]}"
+            # extra_info = [f"Worker {progress['thread_id']}"]
+            # self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
 
         except Exception as e:
-            pass
+            self.log_error(f"Error in process_instance: {e}")
+            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
@@ -68,9 +76,6 @@ class IntelProcessor(BaseProcessor):
 
                 # sanitize db
                 result = self.adjust_columns(result)
-
-                # save db
-                self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath, alert=False)
 
                 extra_info = [progress['thread_id'], progress['batch_index'], company]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
@@ -104,7 +109,7 @@ class IntelProcessor(BaseProcessor):
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
-                extra_info = [progress['thread_id'], progress['batch_index'], sector, subsector, segment, company_name, section_name.upper()]
+                extra_info = [progress['thread_id'], progress['batch_index'], company_name, section_name.upper(), ]
                 self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=3)
 
         except Exception as e:
@@ -197,6 +202,7 @@ class IntelProcessor(BaseProcessor):
 
                 # df_column_lower = df[filter_column].str.lower() if df[filter_column].dtype == 'O' else df[filter_column]
                 # df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
+                # df_column_lower = df[filter_column].astype(str).str.lower().str.strip()
                 df_column_lower = df[filter_column].astype(str).str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
 
                 # Apply the filter condition using the mapping
@@ -230,11 +236,13 @@ class IntelProcessor(BaseProcessor):
             for sub in sub_criteria:
                 # Create a new mask for sub-criteria by filtering the df with 'startswith' of the current filtered results
                 sub_accounts = df.loc[mask, 'account'].unique()
-                sub_mask = df['account'].apply(lambda x: any(x.startswith(acct) for acct in sub_accounts))
+                # sub_mask = df['account'].apply(lambda x: any(x.startswith(acct) for acct in sub_accounts))
+                sub_mask = df['account'].astype(str).apply(lambda x: any(x.startswith(str(acct)) for acct in sub_accounts))
 
                 df, section_name, account, description = self.apply_criteria(df, section_name, sub, parent_mask=sub_mask, output_file=output_file, parent_criteria_info=parent_criteria_info.copy(), level=level+1)
 
         except Exception as e:
+            pass
             print(f'criteria error {e}')
         
         return df, section_name, account, description
@@ -292,13 +300,15 @@ class IntelProcessor(BaseProcessor):
                 raise ValueError("Missing primary key columns in new_data.")
             
             # Standardize data types for primary key columns
+            existing_data = existing_data.copy()  # Ensure it's a full copy
+            new_data = new_data.copy()  # Ensure it's a full copy
             for col in primary_key_columns:
                 if col in existing_data.columns and col in new_data.columns:
                     # Convert both columns to string (or other appropriate types)
                     existing_data[col] = existing_data[col].astype(str)
                     new_data[col] = new_data[col].astype(str)
 
-            chunk_size = self.config.chunk_size * 10
+            chunk_size = self.config.chunk_size
             result = pd.concat(
                 (
                     pd.merge(
@@ -313,9 +323,9 @@ class IntelProcessor(BaseProcessor):
                 ignore_index=True
             )
 
-
         except Exception as e:
             self.log_error(e)
+            result = pd.DataFrame()
 
         return result
 
@@ -326,10 +336,19 @@ class IntelProcessor(BaseProcessor):
         try:
             # Load necessary data as scrape targets
             financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            # # pre-debug
+            # financial_statements[:1000000].to_csv('financial_statements.csv', index=False)
+
             standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+            # # pre-debug
+            # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
+
+            # # debug
+            # financial_statements = pd.read_csv('financial_statements.csv')
+            # standart_statements = pd.read_csv('standart_statements.csv')
 
             # load statements and process intel
-            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements)
+            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements[:100000])
 
             # Exit if no scrape_targets
             if scrape_targets.empty:

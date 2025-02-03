@@ -103,7 +103,7 @@ class StatementsProcessor(BaseProcessor):
                 company = row['company_name']
                 quarter = datetime.datetime.strptime(row['quarter'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m')
                 sent_date = datetime.datetime.strptime(row['sent_date'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
-                extra_info = [worker, item, global_position, quarter, version, sent_date, company, ]
+                extra_info = [worker, item, global_position, company, quarter, version, sent_date, ]
                 self.print_info(i, len(sub_batch), start_time, extra_info)
 
             except Exception as e:

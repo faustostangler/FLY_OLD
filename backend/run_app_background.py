@@ -27,7 +27,7 @@ if __name__ == '__main__':
             nsd_processor.main(thread=True)
 
         # Ask the user if they want to get finantial statements
-        run_statements_processor = 'Y'
+        run_statements_processor = 'N'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
@@ -43,7 +43,7 @@ if __name__ == '__main__':
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith('Y'):
             intel_processor = IntelProcessor()
-            intel_processor.main(thread=False)
+            intel_processor.main(thread=True)
 
 
 
