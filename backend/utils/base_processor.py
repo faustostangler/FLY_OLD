@@ -572,13 +572,12 @@ class BaseProcessor:
         select = ''
 
         try:
-
-            element = self.wait_forever(driver_wait, xpath, max_attempts=3)
+            element = self.wait_forever(driver_wait, xpath, max_retries=1)
             select = Select(driver.find_element(By.XPATH, xpath))
             select.select_by_visible_text(text)
         except Exception as e:
-            self.log_error(e)
-
+            pass
+            # self.log_error(e)
         return select
 
     def raw_text(self, xpath, driver=None, driver_wait=None):

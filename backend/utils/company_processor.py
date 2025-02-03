@@ -146,7 +146,12 @@ class CompanyProcessor(BaseProcessor):
                 processed_data.append(company_data)
 
                 # Log progress
-                extra_info = [company_info['ticker'], company_data.get('cvm_code', ''), company_name]
+                extra_info = [
+                        f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", 
+                        company_info['ticker'], 
+                        company_data.get('cvm_code', ''), 
+                        company_name
+                    ]
                 self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info, indent_level=1)
 
             except Exception as e:
@@ -292,7 +297,7 @@ class CompanyProcessor(BaseProcessor):
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(local_companies, web_companies)
+            scrape_targets = self.get_scrape_targets(local_companies[:-100], web_companies)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:

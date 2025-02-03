@@ -14,6 +14,7 @@ if __name__ == '__main__':
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
             company_processor = CompanyProcessor()
+            company_processor.close_driver()
             company_processor.main(thread=True)
             company_processor.close_driver()
 
@@ -24,7 +25,6 @@ if __name__ == '__main__':
         if run_nsd_processor.strip().upper().startswith('Y'):
             nsd_processor = NsdProcessor()
             nsd_processor.main(thread=True)
-            nsd_processor.close_driver()
 
         # Ask the user if they want to get finantial statements
         run_statements_processor = 'N'
@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
 
         # Ask the user if they want to sstandardize the statements
-        run_intel_processor = 'Y'
+        run_intel_processor = 'N'
         prompt = 'Want to standardize statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith('Y'):
@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
         # # Ask the user if they want to get finantial historical market data direct form b3 source
         # stock_processor = StockProcessor()
-        # run_stock_processor = 'Y'
+        # run_stock_processor = 'N'
         # prompt = 'Want to update stock historical data? (YES/NO): '
         # # run_stock_processor = stock_processor.timed_input(prompt)
         # if run_stock_processor.strip().upper().startswith('Y'):

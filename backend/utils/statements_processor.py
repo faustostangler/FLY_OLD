@@ -70,6 +70,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result = batch_processor.process_batch(sub_batch, progress)
+            self.save_to_db(dataframe=result, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
 
             # Clean up driver after processing
             batch_processor.close_driver()
@@ -199,6 +200,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Select the correct options for cmbGrupo and cmbQuadro
             self.test_internet()
+
             grupo = self.select(xpath_grupo, cmbGrupo, self.driver, self.driver_wait)
             quadro = self.select(xpath_quadro, cmbQuadro, self.driver, self.driver_wait)
 
@@ -347,7 +349,6 @@ class StatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            thread=False # always false
             processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
