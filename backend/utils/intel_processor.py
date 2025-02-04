@@ -45,6 +45,7 @@ class IntelProcessor(BaseProcessor):
             # Delegate to process_batch for the actual batch processing
             result = intel_processor.process_batch(sub_batch, progress)
             self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+            self.db_optimize(self.config.standart_filepath)
 
             # Clean up driver after processing
             intel_processor.close_driver()
@@ -110,8 +111,8 @@ class IntelProcessor(BaseProcessor):
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
-                extra_info = [progress['thread_id'], progress['batch_index'], company_name, section_name.upper(), ]
-                self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=3)
+                # extra_info = [progress['thread_id'], progress['batch_index'], company_name, section_name.upper(), ]
+                # self.print_info(i, len(self.section_criterias), start_time, extra_info, indent_level=3)
 
         except Exception as e:
             print(f'criteria error {e}')
@@ -335,7 +336,8 @@ class IntelProcessor(BaseProcessor):
         docstring
         '''
         try:
-            # optimize db before return
+            # optimize db before run
+            self.db_optimize(self.config.initial_filepath)
             self.db_optimize(self.config.standart_filepath)
 
             # Load necessary data as scrape targets
@@ -367,6 +369,7 @@ class IntelProcessor(BaseProcessor):
                 self.save_to_db(dataframe=processed_data, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
 
             # optimize db before return
+            self.db_optimize(self.config.initial_filepath)
             self.db_optimize(self.config.standart_filepath)
 
         except Exception as e:

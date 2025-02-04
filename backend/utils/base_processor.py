@@ -877,7 +877,7 @@ class BaseProcessor:
         conn = ''
         return conn
 
-    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None):
+    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None, alert=True):
 
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
@@ -924,8 +924,9 @@ class BaseProcessor:
 
                     # Define the worker function for reading batches with retry logic
                     def read_batch(offset, batch_number):
-                        extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
-                        self.print_info(batch_number, number_of_batches, start_time, extra_info)
+                        if alert:
+                            extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
+                            self.print_info(batch_number, number_of_batches, start_time, extra_info)
 
                         attempt = 0
                         while attempt < max_retries:
@@ -1231,11 +1232,11 @@ class BaseProcessor:
         mask = company_info['ticker_isin'].apply(lambda x: len(x) > 0)
         company_info = company_info[mask]
 
-        company_info = company_info.explode('ticker_isin')
-        company_info[['ticker_code', 'isin_code']] = pd.DataFrame(company_info['ticker_isin'].tolist(), index=company_info.index)
-        company_info = company_info.drop(columns=['ticker_isin'])
+        company_info_exploded = company_info.explode('ticker_isin')
+        company_info_exploded[['ticker_code', 'isin_code']] = pd.DataFrame(company_info_exploded['ticker_isin'].tolist(), index=company_info_exploded.index)
+        company_info_exploded = company_info_exploded.drop(columns=['ticker_isin'])
 
-        return company_info
+        return company_info_exploded
 class TemplateProcessor(BaseProcessor):
     '''
     docstrings

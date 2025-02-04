@@ -222,6 +222,8 @@ class Config:
 
         # Standard settings
         self.statements_standard = 'standard'
+        self.statements_index_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version']
+        self.statements_pivot_columns = ['account', 'description', 'frame', 'type']
 
         # stock_market
         self.markets_file = 'markets'
