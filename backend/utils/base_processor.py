@@ -1018,6 +1018,8 @@ class BaseProcessor:
                         if alert:
                             print(f'Saved {database_name}')
 
+                        break  # While out with sucess
+
                     except Exception as e:
                         if "database is locked" in str(e):
                             attempts += 1

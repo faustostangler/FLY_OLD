@@ -207,6 +207,7 @@ class Config:
 
         self.statements_file = 'statements_initial'
         self.statements_types = ["DEMONSTRACOES FINANCEIRAS PADRONIZADAS", "INFORMACOES TRIMESTRAIS"]
+        self.statements_columns_empty_df = ['date', 'nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version',]
         self.financial_statements_columns = ['account', 'description', 'value']  # Assuming these are the financial/statements columns
         self.statements_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'frame'] + self.financial_statements_columns
         self.statements_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'account', 'description', 'type', ]
@@ -217,6 +218,7 @@ class Config:
         self.historical_stock_data_table = 'stock_data'
         self.historical_stock_data_columns = ['date', 'close', 'high', 'low', 'open', 'volume', 'stock_splits', 'dividends']
         self.historical_stock_data_all_columns = ['company_name', 'ticker', 'ticker_code'] + self.historical_stock_data_columns
+
         # Math settings
         self.statements_file_math = 'math'
 
@@ -228,6 +230,9 @@ class Config:
         # stock_market
         self.markets_file = 'markets'
 
+        # splits
+        self.split_columns = ['company_name', 'ticker', 'ticker_code', 'date', 'stock_splits']
+        
         # ratios
         self.indicators_file = 'indicators'
 
