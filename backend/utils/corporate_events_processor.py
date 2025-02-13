@@ -26,6 +26,8 @@ from utils.base_processor import BaseProcessor
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning, module='pandas')
+pd.set_option('future.no_silent_downcasting', True)
+
 
 class CorporateEventsProcessor(BaseProcessor):
     '''
@@ -327,20 +329,29 @@ class EventsStatementsProcessor(BaseProcessor):
         Retorna:
         - company_stock_data (pd.DataFrame): DataFrame contendo os dados históricos de ações.
         """
-        ticker_code = ticker_code or 'PETR4'
+        ticker_code_alternative = 'PETR4'
         try:
             # Consulta SQL para obter os dados históricos de ações de um ticker específico de uma empresa específica
             sql_stock_data = '''SELECT *
                                 FROM stock_data
                                 WHERE ticker_code = ?'''
 
-            company_stock_data = self.load_data(
-                table_name=self.config.historical_stock_data_table,
-                query=sql_stock_data,
-                params=(ticker_code,),
-                db_filepath=self.config.metadados_filepath,
-                alert=False
-            )
+            if ticker_code != None:
+                company_stock_data = self.load_data(
+                    table_name=self.config.historical_stock_data_table,
+                    query=sql_stock_data,
+                    params=(ticker_code,),
+                    db_filepath=self.config.metadados_filepath,
+                    alert=False
+                    )
+            else:
+                company_stock_data = self.load_data(
+                    table_name=self.config.historical_stock_data_table,
+                    query=sql_stock_data,
+                    params=(ticker_code_alternative,),
+                    db_filepath=self.config.metadados_filepath,
+                    alert=False
+                    )
 
             # Remove linhas onde a data esteja ausente
             company_stock_data = company_stock_data.dropna(subset=['date'])
@@ -349,8 +360,15 @@ class EventsStatementsProcessor(BaseProcessor):
             company_stock_data['date'] = pd.to_datetime(company_stock_data['date'])
 
             if not company_stock_data.empty:
-                splits = company_stock_data[['company_name', 'ticker', 'ticker_code', 'date', 'stock_splits']].query("stock_splits != 0")
-                splits['date'] = pd.to_datetime(splits['date'])
+                if ticker_code != None:
+                    splits = company_stock_data[['company_name', 'ticker', 'ticker_code', 'date', 'stock_splits']].query("stock_splits != 0")
+                    splits['date'] = pd.to_datetime(splits['date'])
+                else:
+                    company_stock_data = company_stock_data[['date']].copy()
+                    required_columns = ['close', 'dividends', 'high', 'low', 'open', 'stock_splits', 'volume']
+                    company_stock_data = company_stock_data.reindex(columns=['date'] + required_columns, fill_value=np.nan)
+                    splits = pd.DataFrame(columns=['company_name', 'ticker', 'ticker_code', 'date', 'stock_splits'])
+                    splits['date'] = pd.to_datetime(splits['date'])
             else:
                 company_stock_data, splits = self.get_company_stock_data()
                 splits = pd.DataFrame(columns=self.config.split_columns)
@@ -427,7 +445,7 @@ class EventsStatementsProcessor(BaseProcessor):
             statements_daily_filled["date_quarter"] = statements_daily_filled["date"].dt.to_period("Q").dt.end_time.dt.normalize()
 
             # Extrai os trimestres únicos para iteração
-            unique_quarters = statements_daily["quarter"].unique()
+            unique_quarters = statements_daily_filled["date_quarter"].unique()
 
             # Dicionário para armazenar os dados processados de cada trimestre
             filled_list = {}
@@ -436,14 +454,12 @@ class EventsStatementsProcessor(BaseProcessor):
             # Itera sobre cada trimestre único e processa seus dados financeiros
             for quarter in unique_quarters:
                 if pd.notna(quarter):  # Garante que o trimestre seja válido (não seja NaT)
-                    quarter = pd.Timestamp(quarter).normalize()  # Normaliza para o início do dia
-
                     # Seleciona as linhas pertencentes ao trimestre atual
                     mask = statements_daily_filled["date_quarter"] == quarter
                     quarter_data = statements_daily_filled.loc[mask].copy()  # Copia para evitar modificar o original
 
                     # Aplica preenchimento para garantir continuidade dos valores dentro do trimestre
-                    quarter_data = quarter_data.bfill()
+                    quarter_data = quarter_data.bfill().infer_objects(copy=False)
 
                     # Identifica os eventos de desdobramento de ações dentro deste trimestre
                     split_mask = (splits["date"] >= quarter_data["date"].min()) & (splits["date"] <= quarter_data["date"].max())
@@ -525,16 +541,16 @@ class EventsStatementsProcessor(BaseProcessor):
                 ticker_code = row['ticker_code']
                 company_name = row['company_name']
 
-                # dados históricos de ações de uma empresa específica filtrada
-                stock_data, stock_splits = self.get_company_stock_data(ticker_code)
-
                 # demonstrações financeiras e por quarter de uma empresa específica filtrada
                 statements_company = self.get_company_statements(company_name)
 
+                # dados históricos de ações de uma empresa específica filtrada
+                stock_data, stock_splits = self.get_company_stock_data(ticker_code)
+
                 if not statements_company.empty:
                     # get stock items
-                    stock_statements = statements_company[statements_company['account'].str.startswith(self.config.stock_start)]
-                    stocks = self.get_items(stock_data, stock_splits, stock_statements)
+                    statements_stocks = statements_company[statements_company['account'].str.startswith(self.config.stock_start)]
+                    stocks = self.get_items(stock_data, stock_splits, statements_stocks)
 
                     ### DFs Individuais and DFs Consolidadas
                     statements[ticker_code] = {}
@@ -544,9 +560,10 @@ class EventsStatementsProcessor(BaseProcessor):
                         
                         if not group_statements.empty:
                             items = self.get_items(stock_data, stock_splits, group_statements)
-                            df = pd.concat([stocks, items], axis=1).loc[:, ~pd.concat([stocks, items], axis=1).columns.duplicated()]
+                            df = pd.concat([stock_data, stocks, items], axis=1).loc[:, ~pd.concat([stock_data, stocks, items], axis=1).columns.duplicated()]
                         else:
                             df = stocks
+                            df = pd.concat([stock_data, stocks], axis=1).loc[:, ~pd.concat([stock_data, stocks], axis=1).columns.duplicated()]
 
                         statements[ticker_code][group_type] = df
 
@@ -561,4 +578,29 @@ class EventsStatementsProcessor(BaseProcessor):
         except Exception as e:
             self.log_error(e)
 
-        return statements
+        # Lista para armazenar os DataFrames formatados
+        dfs = []
+
+        # Percorrer o dicionário e adicionar metadados
+        for ticker_code, dicts in statements.items():
+            for group_type, df in dicts.items():
+                if not df.empty:
+                    df = df.copy()
+                    df["ticker_code"] = ticker_code
+                    df["group_type"] = group_type
+
+                    # Reorganizar as colunas para que 'ticker_code' e 'group_type' sejam as primeiras
+                    columns_order = ["ticker_code", "group_type"] + [col for col in df.columns if col not in ["ticker_code", "group_type"]]
+                    df = df[columns_order]
+
+                    dfs.append(df)
+
+        # Concatenar todos os DataFrames
+        if dfs:
+            final_df = pd.concat(dfs, ignore_index=True)
+        else:
+            final_df = pd.DataFrame()  # Caso não haja dados
+
+        final_df.to_csv('statements_daily.csv', index=False)
+
+        return final_df
