@@ -877,6 +877,37 @@ class BaseProcessor:
         conn = ''
         return conn
 
+    def _add_columns_if_not_exist(self, db_filepath, table_name, column_names):
+        """
+        Adds multiple columns to the table if they do not already exist.
+
+        Args:
+            db_path (str): Path to the SQLite database.
+            table_name (str): Name of the table to modify.
+            column_names (list): List of column names to add.
+
+        """
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Retrieve existing column names
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing_columns = {row[1] for row in cursor.fetchall()}  # Use a set for faster lookups
+
+        # Prepare ALTER TABLE statements only for missing columns
+        alter_statements = [
+            f"ALTER TABLE {table_name} ADD COLUMN '{column}' REAL"
+            for column in column_names if column not in existing_columns
+        ]
+
+        # Execute all ALTER TABLE commands in a single transaction
+        if alter_statements:
+            for statement in alter_statements:
+                cursor.execute(statement)
+            conn.commit()
+
+        conn.close()
+
     def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None, alert=True):
 
         """
@@ -990,31 +1021,39 @@ class BaseProcessor:
         try:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
-
             max_retries = max_retries or self.config.max_retries
 
             primary_keys = self._get_primary_key(table_name, database_name)
 
             # Acquire the lock to ensure thread safety
-            with self.db_lock:
+            with self.db_lock, self._get_db_connection(db_filepath) as conn:
+                cursor = conn.cursor()
+
+                # Ensure Table Columns Match DataFrame
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+
+                missing_columns = [col for col in dataframe.columns if col not in existing_columns]
+
+                for _, col in enumerate(missing_columns):
+                    safe_col = f'"{col}"'  # Ensure proper escaping of column names
+                    alter_query = f'ALTER TABLE {table_name} ADD COLUMN {safe_col} REAL;'
+                    cursor.execute(alter_query)
+
+                conn.commit()  # Apply table modifications
+
+                # Prepare and Insert Data
+                sql = self._get_sql_statement(dataframe, primary_keys, table_name)
+                dataframe = self._prepare_dataframe(dataframe)
+                data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+
                 attempts = 0
+
                 while attempts < max_retries:
                     try:
-                        with self._get_db_connection(db_filepath) as conn:
-                            conn.execute("PRAGMA journal_mode=WAL;")
-                            cursor = conn.cursor()
-
-                            sql = self._get_sql_statement(dataframe, primary_keys, table_name)
-
-                            dataframe = self._prepare_dataframe(dataframe)
-
-                            # Convert the DataFrame to a list of tuples for executemany
-                            data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
-
-                            # Execute the batch operation
-                            cursor.executemany(sql, data_tuples)
-
+                        cursor.executemany(sql, data_tuples)
                         conn.commit()
+
                         if alert:
                             print(f'Saved {database_name}')
 
@@ -1025,7 +1064,7 @@ class BaseProcessor:
                             attempts += 1
                             time.sleep(self.config.wait_time)
                         else:
-                            break  # Other error, break retry loop
+                            raise  # Exit on other errors
 
         except Exception as e:
             print(dataframe.dtypes)
@@ -1072,25 +1111,37 @@ class BaseProcessor:
 
     def _get_sql_statement(self, dataframe, primary_keys, table_name):
         """
+        Generate a SQL statement dynamically, ensuring column names are correctly formatted
+        to prevent syntax errors in SQLite.
         """
         sql = ''
         try:
-            f_fields = '(' + ', '.join([f for f in dataframe.columns]) + ')'
-            f_values = '(' + ', '.join(['?'] * len(dataframe.columns)) + ')'
-            f_primary_keys = f"({', '.join(primary_keys)})"
-            f_update_set = ', '.join([f"{f} = excluded.{f}" for f in dataframe.columns if f not in primary_keys])
+            # Wrap columns in double quotes if needed (special characters, spaces, or digits at the start)
+            def quote_column(col):
+                return f'"{col}"' if not col.isidentifier() or col[0].isdigit() else col
 
-            # Construção do SQL
-            sql = 'INSERT INTO ' + table_name + ' '
-            sql += f_fields
-            sql += ' VALUES ' + f_values
-            sql += ' ON CONFLICT ' + f_primary_keys
-            if f_update_set:
-                sql += ' DO UPDATE SET ' + f_update_set
-            else:
-                sql += ' DO NOTHING'
+            quoted_columns = [quote_column(f) for f in dataframe.columns]
+            quoted_primary_keys = [quote_column(f) for f in primary_keys] if primary_keys else []
+
+            f_fields = '(' + ', '.join(quoted_columns) + ')'
+            f_values = '(' + ', '.join(['?'] * len(dataframe.columns)) + ')'
+            f_update_set = ', '.join([f"{col} = excluded.{col}" for col in quoted_columns if col not in quoted_primary_keys])
+
+            # Start building SQL query
+            sql = f'INSERT INTO {table_name} {f_fields} VALUES {f_values}'
+
+            # Only add ON CONFLICT if primary keys exist
+            if quoted_primary_keys:
+                f_primary_keys = f"({', '.join(quoted_primary_keys)})"
+                sql += f' ON CONFLICT {f_primary_keys}'
+
+                if f_update_set:
+                    sql += f' DO UPDATE SET {f_update_set}'
+                else:
+                    sql += ' DO NOTHING'
+
         except Exception as e:
-            pass
+            self.log_error(f"Error in SQL statement generation: {e}")
 
         return sql
 

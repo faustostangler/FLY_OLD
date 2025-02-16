@@ -8,6 +8,9 @@ class Config:
         self.standart_database = 'statements standart.db'
         self.standart_table = 'statements_standart'
 
+        self.events_database = 'statements events.db'
+        self.events_table = 'statements_events'
+
         self.final_database = 'statements final.db'
         self.final_table = 'statements_processed'
 
@@ -45,13 +48,16 @@ class Config:
         self.standart_filepath = os.path.join(self.data_folder, self.standart_database)
         self.backup_standart_db = f"{self.standart_database.split('.')[0]} {self.backup_name}.{self.standart_database.split('.')[-1]}"
 
+        self.events_filepath = os.path.join(self.data_folder, self.events_database)
+        self.backup_events_db = f"{self.events_database.split('.')[0]} {self.backup_name}.{self.events_database.split('.')[-1]}"
+
         self.final_filepath = os.path.join(self.data_folder, self.final_database)
         self.backup_final_db = f"{self.final_database.split('.')[0]} {self.backup_name}.{self.final_database.split('.')[-1]}"
 
         # batches and other numbers
         cpu = os.cpu_count()
         self.batch_size = cpu * 10 # 250  # Batch size for data processing
-        cpu_factor = 1
+        cpu_factor = 1 # 1
         self.max_workers = int(cpu * cpu_factor) + (1 if (cpu * cpu_factor) % 1 > 0 else 0) # ceil
         self.big_batch_size = int(40000 / self.max_workers)
         self.chunk_size = 100000
@@ -63,7 +69,7 @@ class Config:
 
         # Selenium settings
         self.wait_time = 2  # Wait time for Selenium operations
-        self.max_retries = 3
+        self.max_retries = 5 #3
         self.driver = self.driver_wait = None  # Placeholders for Selenium driver and wait objects
         self.registry_paths = [
             r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
@@ -226,6 +232,9 @@ class Config:
         self.statements_standard = 'standard'
         self.statements_index_columns = ['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter', 'version']
         self.statements_pivot_columns = ['account', 'description', 'frame', 'type']
+
+        # corporate events
+        self.events_file = 'statements_events'
 
         # stock_market
         self.markets_file = 'markets'
@@ -451,6 +460,30 @@ class Config:
                     )
                 """
             },
+            self.events_database: {
+                self.events_table: """
+                    CREATE TABLE IF NOT EXISTS statements_events (
+                        ticker_code TEXT,
+                        group_type TEXT,
+                        date TEXT,
+                        close REAL,
+                        dividends REAL,
+                        high REAL,
+                        low REAL,
+                        open REAL,
+                        stock_splits REAL,
+                        volume INTEGER,
+                        nsd INTEGER,
+                        sector TEXT,
+                        subsector TEXT,
+                        segment TEXT,
+                        company_name TEXT,
+                        quarter TEXT,
+                        version TEXT, 
+                        PRIMARY KEY (company_name, quarter, version, date, group_type)
+                    )
+                """
+            }, 
             self.final_database: {
                 self.final_table: """
                     CREATE TABLE IF NOT EXISTS statements_processed (
