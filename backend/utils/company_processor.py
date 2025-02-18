@@ -41,7 +41,7 @@ class CompanyProcessor(BaseProcessor):
                 self.driver, self.driver_wait = self._initialize_driver()
 
                 self.test_internet()
-                self.driver.get(self.config.companies_url)
+                self.driver.get(self.config.domain['companies_url'])
                 self.choose(select_page_xpath, self.driver, self.driver_wait)
 
                 text = self.text(pagination_xpath, self.driver_wait)
@@ -60,7 +60,7 @@ class CompanyProcessor(BaseProcessor):
 
                     extra_info = [f'page {page + 1}']
                     self.print_info(i, total_pages + 1, start_time, extra_info)
-                    time.sleep(self.config.wait_time/50)
+                    time.sleep(self.config.selenium['wait_time']/50)
 
             except Exception as e:
                 self.config.log_error(e)
@@ -83,7 +83,7 @@ class CompanyProcessor(BaseProcessor):
 
                         listing = extracted_info['listing']
                         if listing:
-                            for abbr, full_name in self.config.governance_levels.items():
+                            for abbr, full_name in self.config.domain['governance_levels'].items():
                                 new_listing = self.clean_text(listing.replace(abbr, full_name))
                                 if new_listing != listing:
                                     extracted_info['listing'] = new_listing
@@ -167,7 +167,7 @@ class CompanyProcessor(BaseProcessor):
         """
         try:
             self.test_internet()
-            self.driver.get(self.config.company_url)
+            self.driver.get(self.config.domain['company_url'])
 
             # Search for the company
             search_field_xpath = '//*[@id="keyword"]'
@@ -292,8 +292,11 @@ class CompanyProcessor(BaseProcessor):
         Main method to process data.
         """
         try:
+            tbl_company_info = self.config.databases['raw']['tables']['company_info']
+            db_filepath = self.config.databases['raw']['filepath']
+
             # Load existing and new companies
-            local_companies = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            local_companies = self.load_data(table_name=tbl_company_info, db_filepath=db_filepath)
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
@@ -301,7 +304,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.metadados_filepath)
+                self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Run batch processing
@@ -309,7 +312,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(processed_data, table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+                self.save_to_db(processed_data, table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

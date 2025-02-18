@@ -146,21 +146,21 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         """
         try:
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            ticker_urls = self.load_data(table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.metadados_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            ticker_urls = self.load_data(table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.databases['raw']['filepath'])
 
             scrape_targets = self.get_scrape_targets(company_info, ticker_urls)
 
             # Exit if no scrape_targets
             if scrape_targets.size == 0:  # Check if the array is empty
-                self.db_optimize(self.config.metadados_filepath)
+                self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
             processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             if not processed_batch.empty:
-                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.metadados_filepath)
+                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.databases['raw']['filepath'])
 
         except Exception as e:
             self.log_error(e)
@@ -174,7 +174,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         try:
 
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 
             tickers = company_info['ticker'].unique()
 

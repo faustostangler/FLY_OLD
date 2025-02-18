@@ -36,11 +36,11 @@ class NsdProcessor(BaseProcessor):
                 days_span = (max_date - min_date).days
                 days_elapsed = (datetime.datetime.now() - max_date).days + 1 if max_date else 1
                 daily_submission_estimate =  total_nsds / days_span if days_span > 0 else 1
-                estimated_new_nsds = int(daily_submission_estimate * days_elapsed * self.config.safety_factor) + 1
+                estimated_new_nsds = int(daily_submission_estimate * days_elapsed * self.config.domain['safety_factor']) + 1
                 nsd_range = list(range(last_nsd + 1, 1 + last_nsd + estimated_new_nsds))
 
             else:
-                nsd_range = list(range(last_nsd + 1, 1 + last_nsd + self.config.batch_size))
+                nsd_range = list(range(last_nsd + 1, 1 + last_nsd + self.config.scraping['batch_size']))
         except Exception as e:
             self.log_error(e)
         
@@ -53,7 +53,7 @@ class NsdProcessor(BaseProcessor):
         """
         Process a batch of NSD data by scraping and extracting relevant information.
         """
-        result = pd.DataFrame(columns=self.config.nsd_columns)
+        result = pd.DataFrame(columns=self.config.domain['columns_nsd'])
         processed_data = []
         start_time = time.time()
 
@@ -81,7 +81,7 @@ class NsdProcessor(BaseProcessor):
 
         # Combine results into a DataFrame
         if processed_data:
-            result = pd.DataFrame(processed_data, columns=self.config.nsd_columns)
+            result = pd.DataFrame(processed_data, columns=self.config.domain['columns_nsd'])
         
         return result
 
@@ -178,7 +178,7 @@ class NsdProcessor(BaseProcessor):
             # self.driver, self.driver_wait = self._initialize_driver()
 
             # Load existing NSD data
-            existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+            existing_nsd = self.load_data(table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
 
             # Filter by the last sent_date
             existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
@@ -189,7 +189,7 @@ class NsdProcessor(BaseProcessor):
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.metadados_filepath)
+                self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Run processing (threaded or sequential)
@@ -197,7 +197,7 @@ class NsdProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

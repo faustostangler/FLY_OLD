@@ -44,8 +44,8 @@ class IntelProcessor(BaseProcessor):
             
             # Delegate to process_batch for the actual batch processing
             result = intel_processor.process_batch(sub_batch, progress)
-            self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
-            self.db_optimize(self.config.standart_filepath)
+            self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
+            self.db_optimize(self.config.databases["raw"]["filepath"])
 
             # Clean up driver after processing
             intel_processor.close_driver()
@@ -77,7 +77,7 @@ class IntelProcessor(BaseProcessor):
 
                 # sanitize db
                 result = self.adjust_columns(result)
-                self.save_to_db(dataframe=result, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+                self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
 
                 extra_info = [progress['thread_id'], progress['batch_index'], company]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
@@ -228,11 +228,11 @@ class IntelProcessor(BaseProcessor):
             account, description = target.split(' - ')
             df.loc[mask, 'account_standard'] = account
             df.loc[mask, 'description_standard'] = description
-            df.loc[mask, 'standard_criteria'] = self.config.joint2.join([f"{c[0]} {c[1]} {c[2]}" for c in crits])  # Add criteria details
+            df.loc[mask, 'standard_criteria'] = self.config.domain["sep_pipe"].join([f"{c[0]} {c[1]} {c[2]}" for c in crits])  # Add criteria details
             
             # Capture "contém itens como" (items that match the mask)
-            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']}{self.config.joint}{row['description']}", axis=1).tolist()
-            df.loc[mask, 'items_match'] = self.config.joint2.join(items_example)
+            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']}{self.config.domain["sep_dash"]}{row['description']}", axis=1).tolist()
+            df.loc[mask, 'items_match'] = self.config.domain["sep_pipe"].join(items_example)
 
             # Recursively apply subcriteria using a new refined mask
             for sub in sub_criteria:
@@ -266,7 +266,7 @@ class IntelProcessor(BaseProcessor):
             df = df.rename(columns={'account_standard': 'account', 'description_standard': 'description'})
 
             # Step 4: Reorder the DataFrame columns
-            df = df[self.config.statements_columns]
+            df = df[self.config.domain['statements_columns']]
 
             # Step 5: Sort by the specified columns
             df = df.sort_values(by=self.config.statements_order)
@@ -310,7 +310,7 @@ class IntelProcessor(BaseProcessor):
                     existing_data[col] = existing_data[col].astype(str)
                     new_data[col] = new_data[col].astype(str)
 
-            chunk_size = self.config.chunk_size
+            chunk_size = self.config.scraping['chunk_size']
             result = pd.concat(
                 (
                     pd.merge(
@@ -337,15 +337,15 @@ class IntelProcessor(BaseProcessor):
         '''
         try:
             # optimize db before run
-            self.db_optimize(self.config.initial_filepath)
-            self.db_optimize(self.config.standart_filepath)
+            self.db_optimize(self.config.databases['raw']['filepath'])
+            self.db_optimize(self.config.databases["raw"]["filepath"])
 
             # Load necessary data as scrape targets
-            financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            financial_statements = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
             # # pre-debug
             # financial_statements[:1000000].to_csv('financial_statements.csv', index=False)
 
-            standart_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+            standart_statements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
             # # pre-debug
             # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
 
@@ -358,7 +358,7 @@ class IntelProcessor(BaseProcessor):
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.standart_filepath)
+                self.db_optimize(self.config.databases["raw"]["filepath"])
                 return True
 
             # Process targets using threading or sequential logic
@@ -366,11 +366,11 @@ class IntelProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
 
             # optimize db before return
-            self.db_optimize(self.config.initial_filepath)
-            self.db_optimize(self.config.standart_filepath)
+            self.db_optimize(self.config.databases['raw']['filepath'])
+            self.db_optimize(self.config.databases["raw"]["filepath"])
 
         except Exception as e:
             self.log_error(e)

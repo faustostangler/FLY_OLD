@@ -29,7 +29,7 @@ class StatementsProcessor(BaseProcessor):
 
         try:
             # Assuming `existing_nsd` is your DataFrame and `statements_types` is the list of desired nsd_types
-            nsd_df = existing_nsd[existing_nsd['nsd_type'].isin(self.config.statements_types)]
+            nsd_df = existing_nsd[existing_nsd['nsd_type'].isin(self.config.domain['statements_types'])]
 
             # merge nsd and company info
             nsd_company_df = pd.merge(nsd_df, company_info, on='company_name', how='inner')
@@ -70,7 +70,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result = batch_processor.process_batch(sub_batch, progress)
-            self.save_to_db(dataframe=result, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            self.save_to_db(dataframe=result, table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
 
             # Clean up driver after processing
             batch_processor.close_driver()
@@ -117,7 +117,7 @@ class StatementsProcessor(BaseProcessor):
         if processed_data:
             result = pd.concat(processed_data, ignore_index=True)
         else:
-            result = pd.DataFrame(columns=self.config.statements_columns)
+            result = pd.DataFrame(columns=self.config.domain['statements_columns'])
 
         return result
 
@@ -149,11 +149,11 @@ class StatementsProcessor(BaseProcessor):
             self.driver.get(url)
 
             # Define all statements to be scraped
-            statements = self.config.financial_data_statements + self.config.statements_data_statements
+            statements = self.config.domain['statements_financial_data'] + self.config.domain['statements_capital_config']
 
             for cmbGrupo, cmbQuadro in statements:
                 # Determine which scraping method to use
-                if [cmbGrupo, cmbQuadro] in self.config.financial_data_statements:
+                if [cmbGrupo, cmbQuadro] in self.config.domain['statements_financial_data']:
                     df = self._scrape_financial_data(cmbGrupo, cmbQuadro)
                 else:
                     df = self._scrape_statements_data(cmbGrupo, cmbQuadro)
@@ -172,7 +172,7 @@ class StatementsProcessor(BaseProcessor):
                         frame=cmbQuadro
                     )
                     # Append the processed DataFrame to the list
-                    company_quarter_data.append(df[self.config.statements_columns])
+                    company_quarter_data.append(df[self.config.domain['statements_columns']])
 
             return company_quarter_data
 
@@ -223,8 +223,8 @@ class StatementsProcessor(BaseProcessor):
 
             df1 = df1.iloc[:,0:3]
             df2 = df2.iloc[:,0:3]
-            df1.columns = self.config.financial_statements_columns
-            df2.columns = self.config.financial_statements_columns
+            df1.columns = self.config.domain['financial_statements_columns']
+            df2.columns = self.config.domain['financial_statements_columns']
             df = pd.concat([df1.iloc[:, :2], df2.iloc[:, 2:3]], axis=1)
 
             col = df.iloc[:, 2].astype(str)
@@ -235,7 +235,7 @@ class StatementsProcessor(BaseProcessor):
             df.iloc[:, 2] = col
 
             try:
-                df = df[~df[self.config.financial_statements_columns[0]].str.startswith(drop_items)]
+                df = df[~df[self.config.domain['financial_statements_columns'][0]].str.startswith(drop_items)]
             except Exception as e:
                 pass
 
@@ -288,9 +288,9 @@ class StatementsProcessor(BaseProcessor):
 
             # Extract the required values
             data = {
-                self.config.financial_statements_columns[0]: [],  # 'account'
-                self.config.financial_statements_columns[1]: [],  # 'description'
-                self.config.financial_statements_columns[2]: []   # 'value'
+                self.config.domain['financial_statements_columns'][0]: [],  # 'account'
+                self.config.domain['financial_statements_columns'][1]: [],  # 'description'
+                self.config.domain['financial_statements_columns'][2]: []   # 'value'
             }
 
             # Extract values using the XPaths
@@ -300,19 +300,19 @@ class StatementsProcessor(BaseProcessor):
             acoes_pn_tesouraria = self.driver.find_element(By.XPATH, acoes_pn_tesouraria_xpath).text.strip().replace('.', '').replace(',', '.')
 
             # Populate the data dictionary using settings values
-            data[self.config.financial_statements_columns[0]] = [
-                self.config.accounts['acoes_on'], 
-                self.config.accounts['acoes_pn'], 
-                self.config.accounts['acoes_on_tesouraria'], 
-                self.config.accounts['acoes_pn_tesouraria']
+            data[self.config.domain['financial_statements_columns'][0]] = [
+                self.config.domain['accounts']['acoes_on'], 
+                self.config.domain['accounts']['acoes_pn'], 
+                self.config.domain['accounts']['acoes_on_tesouraria'], 
+                self.config.domain['accounts']['acoes_pn_tesouraria']
             ]
-            data[self.config.financial_statements_columns[1]] = [
-                self.config.descriptions['acoes_on'], 
-                self.config.descriptions['acoes_pn'], 
-                self.config.descriptions['acoes_on_tesouraria'], 
-                self.config.descriptions['acoes_pn_tesouraria']
+            data[self.config.domain['financial_statements_columns'][1]] = [
+                self.config.domain['descriptions']['acoes_on'], 
+                self.config.domain['descriptions']['acoes_pn'], 
+                self.config.domain['descriptions']['acoes_on_tesouraria'], 
+                self.config.domain['descriptions']['acoes_pn_tesouraria']
             ]
-            data[self.config.financial_statements_columns[2]] = [
+            data[self.config.domain['financial_statements_columns'][2]] = [
                 float(acoes_on) * thousand, 
                 float(acoes_pn) * thousand, 
                 float(acoes_on_tesouraria) * thousand, 
@@ -336,16 +336,16 @@ class StatementsProcessor(BaseProcessor):
         """
         try:
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            existing_nsd = self.load_data(table_name=self.config.nsd_table, db_filepath=self.config.metadados_filepath)
-            financial_statements = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            existing_nsd = self.load_data(table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
+            financial_statements = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
 
             # Identify scrape targets
             scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.initial_filepath)
+                self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
@@ -353,7 +353,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

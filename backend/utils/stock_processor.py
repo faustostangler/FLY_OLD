@@ -355,8 +355,8 @@ class StockProcessor(BaseProcessor):
             all_results = []  # To collect results from all futures
             sub_batch_counter = 0  # Initialize thread counter
 
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-                sub_batch_size = max(1, len(batch) // self.config.max_workers)
+            with ThreadPoolExecutor(max_workers=self.config.scraping['max_workers']) as executor:
+                sub_batch_size = max(1, len(batch) // self.config.scraping['max_workers'])
                 futures = []
 
                 for sub_batch_start in range(0, len(batch), sub_batch_size):
@@ -418,7 +418,7 @@ class StockProcessor(BaseProcessor):
             # self.driver, self.driver_wait = self._initialize_driver()
 
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
             stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
             # Identify scrape targets
@@ -444,14 +444,14 @@ class StockProcessor(BaseProcessor):
             # # Initialize the WebDriver
             # self.driver, self.driver_wait = self._initialize_driver()
 
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
             stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
             scrape_targets = self.get_scrape_targets(company_info, stock_info)
 
             progress = {}
             progress['scrape_size'] = len(scrape_targets)
-            progress['batch_size'] = self.config.batch_size
+            progress['batch_size'] = self.config.scraping['batch_size']
 
             start_time = time.time()
             progress['start_time'] = start_time

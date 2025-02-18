@@ -92,7 +92,7 @@ class MarketProcessor(BaseProcessor):
 
                 # Print progress when remaining iterations are divisible by an interval
                 remaining = total_quarters - i - 1
-                if remaining == 0 or remaining % self.config.batch_size == 0:  # Print when remaining is divisible by 100 or is the last iteration
+                if remaining == 0 or remaining % self.config.scraping['batch_size'] == 0:  # Print when remaining is divisible by 100 or is the last iteration
 
                     extra_info = ['ROW', sector, ticker, company_name, datetime.datetime.strptime(quarter, '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m'), new_value]
                     self.print_info(i, total_quarters, start_time, extra_info)
@@ -127,7 +127,7 @@ class MarketProcessor(BaseProcessor):
             one_row_type = 'Cotações Históricas'
             one_row_frame = 'Cotação Mediana do Trimestre'
             one_row_account = '99.' + tick_type
-            one_row_description = self.config.tipos_acoes.get(tick_type, 'Tipo de Ação Desconhecido')
+            one_row_description = self.config.domain["tipos_acoes"].get(tick_type, 'Tipo de Ação Desconhecido')
 
             # Filtering for matching rows
             mask = (scrape_targets['company_name'] == company_name) & \
@@ -177,10 +177,10 @@ class MarketProcessor(BaseProcessor):
         The main method to scrape NSD data, parse it, and save it to the database.
         """
         try:
-            statements_data = self.load_data(table_name=self.config.statements_file, db_filepath=self.config.initial_filepath)
-            companies_data = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+            statements_data = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
+            companies_data = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 
-            historical_data = self.load_data(table_name=self.config.historical_data, db_filepath=self.config.metadados_filepath)
+            historical_data = self.load_data(table_name=self.config.historical_data, db_filepath=self.config.databases['raw']['filepath'])
 
 
             # Merge the two DataFrames on 'company_name'
@@ -228,7 +228,7 @@ class MarketProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_historical, db_filepath=self.config.initial_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_historical, db_filepath=self.config.databases['raw']['filepath'])
 
             pass
         except Exception as e:

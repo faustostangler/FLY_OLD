@@ -54,15 +54,15 @@ class BaseProcessor:
         results = []
         try:
             if 'utils.intel_processor' in module_name:
-                batches = self._split_batches_by_company(data, self.config.max_workers)
+                batches = self._split_batches_by_company(data, self.config.scraping["max_workers"])
             else: 
-                batches = self._split_batches(data, self.config.max_workers)
+                batches = self._split_batches(data, self.config.scraping["max_workers"])
 
             if thread:
-                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.batch_size} batches of up to {1+int(data.shape[0]/self.config.max_workers)} items each throught {self.config.max_workers} simultaneous workers')
+                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping['batch_size']} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each throught {self.config.scraping["max_workers"]} simultaneous workers')
                 results = self._process_with_threads(batches)
             else:
-                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.max_workers} batches of up to {1+int(data.shape[0]/self.config.max_workers)} items each')
+                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each')
                 results = self._process_sequentially(batches)
 
         except Exception as e:
@@ -144,7 +144,7 @@ class BaseProcessor:
             total_scrape_size = sum(len(b) for b in batches)
             cumulative = 0  # will keep track of the global start index for each batch
 
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+            with ThreadPoolExecutor(max_workers=self.config.scraping['max_workers']) as executor:
                 futures = []
                 for batch_index, batch in enumerate(batches):
                     progress = {
@@ -153,7 +153,7 @@ class BaseProcessor:
                         'batch_start': cumulative,                          # actual starting index in the overall data,
                         'scrape_size': total_scrape_size, 
                         'start_time': start_time,
-                        'thread_id': batch_index % self.config.max_workers, # Map batch index to thread pool ID
+                        'thread_id': batch_index % self.config.scraping['max_workers'], # Map batch index to thread pool ID
                     }
                     cumulative += len(batch)  # add the length of this batch for the next iteration
 
@@ -184,10 +184,10 @@ class BaseProcessor:
             progress = {
                 'batch_index': batch_index,
                 'total_batches': total_batches,
-                'batch_start': batch_index * self.config.batch_size,
+                'batch_start': batch_index * self.config.scraping['batch_size'],
                 'scrape_size': total_scrape_size, 
                 'start_time': start_time,
-                'thread_id': batch_index % self.config.max_workers,  # Map batch index to thread pool ID
+                'thread_id': batch_index % self.config.scraping['max_workers'],  # Map batch index to thread pool ID
             }
 
             try:
@@ -213,23 +213,26 @@ class BaseProcessor:
         """
         chrome_error_msg = 'Failed to retrieve Chrome version: {e}'
 
-        for reg_query in self.config.registry_paths:
+        try:
+            for reg_query in self.config.selenium['registry_paths']:
+                try:
+                    output = subprocess.check_output(reg_query, shell=True)
+                    version = re.search(r'\d+\.\d+\.\d+\.\d+', output.decode('utf-8')).group(0)
+                    return version
+                except subprocess.CalledProcessError:
+                    continue
+
             try:
-                output = subprocess.check_output(reg_query, shell=True)
+                chrome_path = self.config.selenium["chrome_path_64"] if os.path.exists(self.config.selenium["chrome_path_64"]) else self.config.selenium["chrome_path_32"]
+                output = subprocess.check_output([chrome_path, '--version'], shell=True)
                 version = re.search(r'\d+\.\d+\.\d+\.\d+', output.decode('utf-8')).group(0)
                 return version
-            except subprocess.CalledProcessError:
-                continue
 
-        try:
-            chrome_path = self.config.chrome_path_64 if os.path.exists(self.config.chrome_path_64) else self.config.chrome_path_32
-            output = subprocess.check_output([chrome_path, '--version'], shell=True)
-            version = re.search(r'\d+\.\d+\.\d+\.\d+', output.decode('utf-8')).group(0)
-            return version
-
+            except Exception as e:
+                self.system.log_error(chrome_error_msg.format(e=e))
+                return None
         except Exception as e:
-            self.system.log_error(chrome_error_msg.format(e=e))
-            return None
+            self.log_error(e)
 
     def _get_chromedriver_url(self, version):
         """
@@ -269,7 +272,7 @@ class BaseProcessor:
             str: The path to the extracted ChromeDriver executable.
         """
         zip_filename = 'chromedriver.zip'
-        dest_folder = self.config.bin_folder
+        dest_folder = self.config.paths['bin_folder']
         chromedriver_folder = 'chromedriver-win64'
         chromedriver_executable = 'chromedriver.exe'
         download_error_msg = 'Failed to download or extract ChromeDriver: {e}'
@@ -324,7 +327,7 @@ class BaseProcessor:
             self.log_error(str(e))
             return None
 
-    def _load_driver(self, chromedriver_path):
+    def _load_driver(self, chromedriver_path=None):
         """
         Initialize and return the Selenium WebDriver and WebDriverWait instances.
 
@@ -335,6 +338,8 @@ class BaseProcessor:
             tuple: A tuple containing the WebDriver and WebDriverWait instances.
         """
         load_driver_error_msg = 'Failed to load driver: {e}'
+
+        chromedriver_path = chromedriver_path or self.config.selenium['chromedriver_path']
 
         try:
             # Get random headers using the custom function
@@ -352,7 +357,7 @@ class BaseProcessor:
 
             driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
             exceptions_ignore = (NoSuchElementException, StaleElementReferenceException)
-            driver_wait = WebDriverWait(driver, self.config.wait_time, ignored_exceptions=exceptions_ignore)
+            driver_wait = WebDriverWait(driver, self.config.selenium['wait_time'], ignored_exceptions=exceptions_ignore)
 
             return driver, driver_wait
 
@@ -370,13 +375,11 @@ class BaseProcessor:
             tuple: A tuple containing the WebDriver and WebDriverWait instances.
         """
         # https://googlechromelabs.github.io/chrome-for-testing/#stable
-        computer_name = os.environ['COMPUTERNAME']
-        chromedriver_path = os.path.join(self.config.backend_folder, r'bin\chromedriver-win64\chromedriver.exe')
         initialize_driver_error_msg = 'Failed to load driver from hardcoded path.'
         dynamic_driver_error_msg = 'Failed to obtain ChromeDriver path dynamically.'
 
         try:
-            driver, driver_wait = self._load_driver(chromedriver_path)
+            driver, driver_wait = self._load_driver()
             if driver is not None:
                 return driver, driver_wait
             else:
@@ -427,7 +430,7 @@ class BaseProcessor:
             text = re.sub(r'\s+', ' ', text)
 
             # Regular expression pattern to remove specific words from text
-            words_to_remove = '|'.join(map(re.escape, self.config.words_to_remove))
+            words_to_remove = '|'.join(map(re.escape, self.config.domain['words_to_remove']))
             pattern = r'\b(?:' + words_to_remove + r')\b'
             text = re.sub(pattern, '', text)
 
@@ -476,9 +479,9 @@ class BaseProcessor:
         try:
             element = self.wait_forever(driver_wait, xpath)
 
-            time.sleep(self.config.wait_time/10)
+            time.sleep(self.config.selenium['wait_time']/10)
             element.click()
-            time.sleep(self.config.wait_time/10)
+            time.sleep(self.config.selenium['wait_time']/10)
 
             return True
         except Exception as e:
@@ -613,7 +616,7 @@ class BaseProcessor:
         WebElement: O elemento da web encontrado.
         """
         attempt = 0
-        max_retries = max_retries or self.config.max_retries 
+        max_retries = max_retries or self.config.selenium['max_retries'] 
         while True:
             try:
                 element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
@@ -622,7 +625,7 @@ class BaseProcessor:
                 attempt += 1
                 if max_retries and attempt >= max_retries:
                     raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_retries} attempts.") from e
-                time.sleep(self.config.wait_time)
+                time.sleep(self.config.selenium['wait_time'])
 
     def subtract_lists(self, list1, list2):
         """
@@ -670,7 +673,7 @@ class BaseProcessor:
         """
         try:
             if delay == None:
-                delay = self.config.wait_time
+                delay = self.config.selenium['wait_time']
 
             time.sleep(delay)
             pyautogui.typewrite(text)
@@ -692,7 +695,7 @@ class BaseProcessor:
         """
         try:
             if timeout == None:
-                timeout = self.config.wait_time
+                timeout = self.config.selenium['wait_time']
 
             prefill_thread = threading.Thread(target=self.prefill_input, args=(default,))
             prefill_thread.start()
@@ -840,12 +843,14 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
+        return True
+    
     def _initialize_table(self, db_filepath, database_name, table_name):
         """
         Ensure the specified table exists, creating it if necessary.
         """
         try:
-            schema_definitions = self.config.schema_definitions.get(database_name, {})
+            schema_definitions = self.config.schemas[database_name]
             for schema_table_name, schema_sql in schema_definitions.items():
                 # Handle dynamic table names for sectors
                 if schema_table_name in table_name or schema_table_name == table_name:
@@ -859,22 +864,38 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
+        return True
+
     def _configure_db(self, db_filepath):
         """Set persistent PRAGMA settings for the database."""
-        with sqlite3.connect(db_filepath) as conn:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA synchronous=NORMAL;")
-        # print("Database configured successfully.")
+        try:
+            with sqlite3.connect(db_filepath) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
+            # print("Database configured successfully.")
+        except Exception as e:
+            self.log_error(e)
+
+        return conn
 
     def _get_db_connection(self, db_filepath):
         """Return a new database connection with session-specific PRAGMA settings."""
-        conn = sqlite3.connect(db_filepath, check_same_thread=False)  # Allow multithreading
-        conn.execute("PRAGMA temp_store=MEMORY;")
-        conn.execute("PRAGMA locking_mode=NORMAL;")
+        try:
+            conn = sqlite3.connect(db_filepath, check_same_thread=False)  # Allow multithreading
+            conn.execute("PRAGMA temp_store=MEMORY;")
+            conn.execute("PRAGMA locking_mode=NORMAL;")
+        except Exception as e:
+            self.log_error(e)
+            
         return conn
 
     def prepare_db_conn(self, db):
-        conn = ''
+        '''description'''
+        try:
+            conn = ''
+        except Exception as e:
+            self.log_error(e)
+
         return conn
 
     def _add_columns_if_not_exist(self, db_filepath, table_name, column_names):
@@ -914,99 +935,104 @@ class BaseProcessor:
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
         Dynamically creates databases and tables if they do not exist.
         """
-        db_filepath = db_filepath or self.config.metadados_filepath
-        database_name = os.path.basename(db_filepath)
-        primary_keys = self._get_primary_key(table_name, database_name)
-        dataframes = []
+        try:
+            db_filepath = db_filepath or self.config.databases['raw']['filepath']
+            database_name = self.config.databases['raw']['filename']
+            primary_keys = self._get_primary_key(table_name, database_name)
+            dataframes = []
 
-        max_retries = max_retries or self.config.max_retries
+            max_retries = max_retries or self.config.selenium['max_retries']
 
-        self._configure_db(db_filepath)
-        
-        with self.db_lock:
-            try:
-                # Ensure the database and table exist
-                self._initialize_database(db_filepath, database_name, table_name)
+            self._configure_db(db_filepath)
+            
+            with self.db_lock:
+                try:
+                    # Ensure the database and table exist
+                    self._initialize_database(db_filepath, database_name, table_name)
 
-                # Connect to the database and count total rows
-                with self._get_db_connection(db_filepath) as conn:
-                    cursor = conn.cursor()
-                    if table_name:
-                        try:
-                            if query:
-                                # Adjust query to count rows based on filters
-                                count_query = f"SELECT COUNT(*) FROM ({query})"
-                                cursor.execute(count_query, params)
-                            else:
-                                # Default to counting all rows in the table
-                                cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
-                            total_rows = cursor.fetchone()[0]
-
-                        except Exception as e:
-                            self._initialize_table(db_filepath, database_name, table_name)
-                            total_rows = 0
-
-                    batch_size = self.config.chunk_size
-                    number_of_batches = (total_rows // batch_size) + 1
-                    num_threads = min(self.config.max_workers, number_of_batches)  # Use fewer threads if less data
-                    offsets = range(0, total_rows, batch_size)
-
-                    start_time = time.time()  # Start time for tracking progress
-
-                    # Define the worker function for reading batches with retry logic
-                    def read_batch(offset, batch_number):
-                        if alert:
-                            extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
-                            self.print_info(batch_number, number_of_batches, start_time, extra_info)
-
-                        attempt = 0
-                        while attempt < max_retries:
+                    # Connect to the database and count total rows
+                    with self._get_db_connection(db_filepath) as conn:
+                        cursor = conn.cursor()
+                        if table_name:
                             try:
-                                with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
-                                    if query:
-                                        paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                                        return pd.read_sql_query(paginated_query, conn, params=params)
-                                    elif table_name:
-                                        paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
-                                        return pd.read_sql_query(paginated_query, conn)
-                                    return pd.DataFrame()
+                                if query:
+                                    # Adjust query to count rows based on filters
+                                    count_query = f"SELECT COUNT(*) FROM ({query})"
+                                    cursor.execute(count_query, params)
+                                else:
+                                    # Default to counting all rows in the table
+                                    cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
+                                total_rows = cursor.fetchone()[0]
+
                             except Exception as e:
-                                if "database is locked" in str(e):
-                                    attempt += 1
-                                    time.sleep(self.config.wait_time)
-                                else:
-                                    raise  # Raise other errors immediately
-                        raise Exception(f"Failed to read batch after {max_retries} attempts.")
+                                self._initialize_table(db_filepath, database_name, table_name)
+                                total_rows = 0
 
-                    # Read data using multithreading
-                    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-                        tasks = []
-                        for batch_number, offset in enumerate(offsets):
-                            task = executor.submit(read_batch, offset, batch_number)
-                            tasks.append(task)
-                            time.sleep(1)
+                        batch_size = self.config.scraping['chunk_size']
+                        number_of_batches = (total_rows // batch_size) + 1
+                        num_threads = min(self.config.scraping['max_workers'], number_of_batches)  # Use fewer threads if less data
+                        offsets = range(0, total_rows, batch_size)
 
-                        dataframes = [task.result() for task in tasks]
+                        start_time = time.time()  # Start time for tracking progress
 
-                    # Concatenate all the dataframes
-                    if dataframes:
-                        final_df = pd.concat(dataframes, ignore_index=True)
-                    else:
-                        final_df = pd.DataFrame()
+                        # Define the worker function for reading batches with retry logic
+                        def read_batch(offset, batch_number):
+                            if alert:
+                                extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
+                                self.print_info(batch_number, number_of_batches, start_time, extra_info)
 
-                    # Normalize columns if specified
-                    if normalize_columns:
-                        for col in normalize_columns:
-                            if col in final_df.columns:
-                                if 'date' in col.lower() or 'time' in col.lower():
-                                    final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
-                                else:
-                                    final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+                            attempt = 0
+                            while attempt < max_retries:
+                                try:
+                                    with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
+                                        if query:
+                                            paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
+                                            return pd.read_sql_query(paginated_query, conn, params=params)
+                                        elif table_name:
+                                            paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
+                                            return pd.read_sql_query(paginated_query, conn)
+                                        return pd.DataFrame()
+                                except Exception as e:
+                                    if "database is locked" in str(e):
+                                        attempt += 1
+                                        time.sleep(self.config.selenium['wait_time'])
+                                    else:
+                                        raise  # Raise other errors immediately
+                            raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
-                    return final_df
+                        # Read data using multithreading
+                        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                            tasks = []
+                            for batch_number, offset in enumerate(offsets):
+                                task = executor.submit(read_batch, offset, batch_number)
+                                tasks.append(task)
+                                time.sleep(1)
 
-            except Exception as e:
-                self.log_error(e)
+                            dataframes = [task.result() for task in tasks]
+
+                        # Concatenate all the dataframes
+                        if dataframes:
+                            final_df = pd.concat(dataframes, ignore_index=True)
+                        else:
+                            final_df = pd.DataFrame()
+
+                        # Normalize columns if specified
+                        if normalize_columns:
+                            for col in normalize_columns:
+                                if col in final_df.columns:
+                                    if 'date' in col.lower() or 'time' in col.lower():
+                                        final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
+                                    else:
+                                        final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+
+                        return final_df
+
+                except Exception as e:
+                    self.log_error(e)
+        except Exception as e:
+            self.log_error(e)
+        
+        return True
 
     def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True, max_retries=None):
         """
@@ -1021,7 +1047,7 @@ class BaseProcessor:
         try:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
-            max_retries = max_retries or self.config.max_retries
+            max_retries = max_retries or self.config.selenium['max_retries']
 
             primary_keys = self._get_primary_key(table_name, database_name)
 
@@ -1062,7 +1088,7 @@ class BaseProcessor:
                     except Exception as e:
                         if "database is locked" in str(e):
                             attempts += 1
-                            time.sleep(self.config.wait_time)
+                            time.sleep(self.config.selenium['wait_time'])
                         else:
                             raise  # Exit on other errors
 
@@ -1078,7 +1104,7 @@ class BaseProcessor:
         primary_key = ''
 
         try:
-            schema = self.config.schema_definitions.get(database_name, {}).get(table_name, "")
+            schema = self.config.schemas[database_name][table_name]
             lines = schema.strip().splitlines()
 
             # Step 2: Initialize Variables for Parsing
@@ -1236,16 +1262,19 @@ class BaseProcessor:
     # WEB & REQUESTS
     def header_random(self):
         """Generate random HTTP headers for requests."""
-        user_agent = random.choice(self.config.USER_AGENTS)
-        referer = random.choice(self.config.REFERERS)
-        language = random.choice(self.config.LANGUAGES)
+        try:
+            user_agent = random.choice(self.config.requests['user_agents'])
+            referer = random.choice(self.config.requests['referers'])
+            language = random.choice(self.config.requests['languages'])
 
-        headers = {
+            headers = {
             'User-Agent': user_agent,
             'Referer': referer,
             'Accept-Language': language
-        }
+            }
 
+        except Exception as e:
+            self.log_error(e)
         return headers
 
     def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
@@ -1257,8 +1286,7 @@ class BaseProcessor:
             url (str): The URL to request (default: Google's favicon URL).
         """
         if not wait_time:
-            wait_time = self.config.wait_time  # Time to wait before retrying on failure
-        
+            wait_time = self.config.selenium['wait_time']  # Time to wait before retrying on failure
 
         while True:
             try:
@@ -1356,7 +1384,7 @@ class TemplateProcessor(BaseProcessor):
             # if no scrape_targets, optimize db and return True
             if scrape_targets:
                 if scrape_targets.size == 0:  # Check if the array is empty
-                    self.db_optimize(self.config.metadados_filepath)
+                    self.db_optimize(self.config.databases['raw']['filepath'])
                     return True
 
             # Process targets using threading or sequential logic
@@ -1364,7 +1392,7 @@ class TemplateProcessor(BaseProcessor):
 
             # save/update db
             if not processed_batch.empty:
-                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.metadados_filepath)
+                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.databases['raw']['filepath'])
 
         except Exception as e:
             self.log_error(e)

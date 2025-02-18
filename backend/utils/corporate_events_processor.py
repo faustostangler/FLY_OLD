@@ -78,7 +78,7 @@ class EventsStatementsProcessor(BaseProcessor):
                 print(statements_company.columns)
                 if not statements_company.empty:
                     # get stock items
-                    statements_stocks = statements_company[statements_company['account'].str.startswith(self.config.stock_start)]
+                    statements_stocks = statements_company[statements_company['account'].str.startswith(self.config.domain["stock_prefix"])]
                     stocks = self.process_financial_data(stock_data, stock_splits, statements_stocks)
                     print(stocks.columns)
                     for group_type in ['DFs Individuais', 'DFs Consolidadas']:
@@ -181,10 +181,10 @@ class EventsStatementsProcessor(BaseProcessor):
             sql = '''SELECT * FROM statements_standart WHERE company_name = ?'''
 
             statements = self.load_data(
-                table_name=self.config.standart_table,
+                table_name=self.config.databases["raw"]["tables"]["statements_normalized"],
                 query=sql,
                 params=(company_name,),
-                db_filepath=self.config.standart_filepath,
+                db_filepath=self.config.databases["raw"]["filepath"],
                 alert=False
             )
 
@@ -219,7 +219,7 @@ class EventsStatementsProcessor(BaseProcessor):
                 table_name=self.config.historical_stock_data_table,
                 query=sql_stock_data,
                 params=(tk_cd,),
-                db_filepath=self.config.metadados_filepath,
+                db_filepath=self.config.databases['raw']['filepath'],
                 alert=False
                 )
 
@@ -282,7 +282,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
             statements_daily = self._parse_statements_daily(statements_quarterly, stock_data)
 
-            columns_to_update = [col for col in statements_quarterly.columns if col.startswith(self.config.stock_start)]
+            columns_to_update = [col for col in statements_quarterly.columns if col.startswith(self.config.domain["stock_prefix"])]
 
             stocks = self._parse_statements_filled(statements_quarterly, statements_daily, stock_splits, columns_to_update=columns_to_update)
 
@@ -309,7 +309,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
             # Ajusta os nomes das colunas para um formato mais acessível
             statements_quarterly.columns = [
-                self.config.joint.join([str(part) for part in col if part]) 
+                self.config.domain["sep_dash"].join([str(part) for part in col if part]) 
                 if isinstance(col, tuple) else col for col in statements_quarterly.columns]
 
         except Exception as e:
@@ -439,7 +439,7 @@ class EventsStatementsProcessor(BaseProcessor):
             try:
                 result = pd.concat(filled_list).sort_values(by="date").reset_index(drop=True)
             except Exception as e:
-                result = pd.DataFrame(columns=self.config.statements_columns_empty_df)
+                result = pd.DataFrame(columns=self.config.domain['statements_columns']_empty_df)
 
         except Exception as e:
             # Registra qualquer erro e retorna um DataFrame vazio
@@ -491,17 +491,17 @@ class EventsStatementsProcessor(BaseProcessor):
         try:
 
             # Carregar dados processados anteriormente
-            existing_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+            standart_statements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
 
             # load existing company_info data
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            events_stattements = self.load_data(table_name=self.config.events_file, db_filepath=self.config.events_filepath)
+            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            events_stattements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
 
             scrape_targets = self.get_scrape_targets(company_info)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
-                self.db_optimize(self.config.metadados_filepath)
+                self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
@@ -509,7 +509,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
             # Save processed data
             if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.events_file, db_filepath=self.config.events_filepath)
+                self.save_to_db(dataframe=processed_data, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
@@ -607,7 +607,7 @@ class EventsStatementsProcessor(BaseProcessor):
 #         except Exception as e:
 #             self.log_error(e)
 
-#         self.save_to_db(dataframe=result, table_name=self.config.events_file, db_filepath=self.config.events_filepath)
+#         self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
 
 #         return result
 
@@ -630,7 +630,7 @@ class EventsStatementsProcessor(BaseProcessor):
 #                 # Drop duplicates based on ['company_name', 'ticker', 'ticker_code'], keeping the most recent
 #                 historical_data = historical_data.drop_duplicates(subset=historical_data_primary_key_columns, keep='first')
 #             except Exception as e:
-#                 company_info['date'] = self.config.stock_data_start_date
+#                 company_info['date'] = self.config.scraping["stock_data_start_date"]
 #                 scrape_targets = company_info[merging_columns]
 #                 return scrape_targets
 
@@ -649,7 +649,7 @@ class EventsStatementsProcessor(BaseProcessor):
 #             # Filter rows based on the date threshold
 #             non_existing_historical_data = historical_data[historical_data['date'].isna()][merging_columns]
 
-#             delta = datetime.timedelta(days=self.config.update_days + 1)
+#             delta = datetime.timedelta(days=self.config.scraping["update_days"] + 1)
 #             date_diff = datetime.datetime.now() - delta
 #             processed_companies = historical_data[historical_data['date'] < (date_diff)]
 #             processed_companies.loc[:, 'date'] = processed_companies['date'].dt.strftime('%Y-%m-%d')
@@ -676,16 +676,16 @@ class EventsStatementsProcessor(BaseProcessor):
 #         '''
 #         try:
 #             # Load existing information
-#             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-#             historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
-#             # statements_company = self.load_data(table_name=self.config.initial_table, db_filepath=self.config.initial_filepath)
-#             statements_company = pd.DataFrame(columns=self.config.statements_columns)
+#             company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+#             historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.databases['raw']['filepath'])
+#             # statements_company = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'] , db_filepath=self.config.databases['raw']['filepath'])
+#             statements_company = pd.DataFrame(columns=self.config.domain['statements_columns'])
 
 #             scrape_targets = self.get_scrape_targets(company_info, historical_data, statements_company)
 
 #             # if no scrape_targets, optimize db and return True
 #             if scrape_targets.size == 0:  # Check if the array is empty
-#                 self.db_optimize(self.config.metadados_filepath)
+#                 self.db_optimize(self.config.databases['raw']['filepath'])
 #                 return True
 
 #             # Process targets using threading or sequential logic
@@ -693,7 +693,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
 #             # save/update db
 #             if not processed_batch.empty:
-#                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
+#                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.databases['raw']['filepath'])
 
 #         except Exception as e:
 #             self.log_error(e)

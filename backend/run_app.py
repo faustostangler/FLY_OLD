@@ -2,14 +2,14 @@ from utils.company_processor import CompanyProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
 from utils.intel_processor import IntelProcessor
+from utils.corporate_events_processor import EventsStatementsProcessor
 
 from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
-from utils.corporate_events_processor import EventsStatementsProcessor
 
 if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
-        run_company_processor = 'N'
+        run_company_processor = 'Y'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
@@ -19,7 +19,7 @@ if __name__ == '__main__':
             company_processor.close_driver()
 
         # Ask the user if they want to get nsd information
-        run_nsd_processor = 'N'
+        run_nsd_processor = 'Y'
         prompt = 'Want to update nsd information? (YES/NO): '
         # run_nsd_processor = nsd_processor.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith('Y'):
@@ -27,7 +27,7 @@ if __name__ == '__main__':
             nsd_processor.main(thread=True)
 
         # Ask the user if they want to get finantial statements
-        run_statements_processor = 'N'
+        run_statements_processor = 'Y'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
 
         # Ask the user if they want to sstandardize the statements
-        run_intel_processor = 'N'
+        run_intel_processor = 'Y'
         prompt = 'Want to standardize statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith('Y'):
