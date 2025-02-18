@@ -4,7 +4,7 @@ from utils.statements_processor import StatementsProcessor
 from utils.intel_processor import IntelProcessor
 
 from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
-from utils.corporate_events_processor import CorporateEventsProcessor, EventsStatementsProcessor
+from utils.corporate_events_processor import EventsStatementsProcessor
 
 if __name__ == '__main__':
     try:
@@ -54,7 +54,7 @@ if __name__ == '__main__':
             # corporate_events_processor = CorporateEventsProcessor()
             # corporate_events_processor.main(thread=True)
             events_states_processor = EventsStatementsProcessor()
-            events_states_processor.main(thread=True)
+            events_states_processor.main(thread=False)
 
             # corporate_events_merger = CorporateEventsMerger()
             # corporate_events_merger.main(thread=False)

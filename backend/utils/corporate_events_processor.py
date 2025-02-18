@@ -26,190 +26,6 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning, module='pandas')
 pd.set_option('future.no_silent_downcasting', True)
 
-
-class CorporateEventsProcessor(BaseProcessor):
-    '''
-    docstrings
-    '''
-    def __init__(self):
-        '''
-        docstrings
-        '''
-        super().__init__()
-        self.db_lock = Lock()  # Initialize a threading Lock
-
-        # # Initialize the WebDriver
-        # self.driver, self.driver_wait = self._initialize_driver()
-
-    def process_instance(self, sub_batch, progress):
-        """
-        Process a single batch by delegating 
-        from abstract base_processor method 
-        to this class process_batch (true process info method) 
-        via this process_instance method (create instance method).
-        
-        sub_batch
-        progress
-
-        return result from process_batch
-        """
-        try:
-            ticker_list = sub_batch['ticker_code']
-            extra_info = [f"Worker {progress['thread_id']}", ' '.join(ticker_list)]
-            self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
-
-            # Delegate to process_batch for the actual batch processing
-            result = self.process_batch(sub_batch, progress)
-
-        except Exception as e:
-            pass
-
-        return result
-
-    def process_batch(self, sub_batch, progress):
-        '''
-        '''
-        result = pd.DataFrame()
-        try:
-            data = []
-            start_time = time.time()
-            for i, row in sub_batch.reset_index().iterrows():
-                start_date = row['date']
-                company_name = row['company_name']
-                ticker = row['ticker']
-                ticker_code = row['ticker_code']
-
-                try:
-                    # Redirect stderr to silence error messages
-                    old_stderr = sys.stderr
-                    sys.stderr = io.StringIO()
-
-                    ticker_obj = yf.Ticker(ticker_code + '.SA')
-                    historical_data = ticker_obj.history(start=start_date, actions=True, auto_adjust=True).reset_index()
-
-                    # historical_data = yf.download(ticker_code + '.SA', start=start_date, progress=False, actions=True, auto_adjust=True).reset_index()
-                    if not historical_data.empty:
-                        historical_data.columns = historical_data.columns.str.lower().str.replace(" ", "_")
-                        historical_data['date'] = pd.to_datetime(historical_data['date']).dt.strftime('%Y-%m-%d')
-                        historical_data['company_name'] = company_name
-                        historical_data['ticker'] = ticker
-                        historical_data['ticker_code'] = ticker_code
-                        historical_data = historical_data[self.config.historical_stock_data_all_columns]
-                    else:
-                        new_row = {
-                            'company_name': company_name,
-                            'ticker': ticker,
-                            'ticker_code': ticker_code,
-                        }
-                        historical_data = pd.DataFrame([new_row])
-
-                finally:
-                    # Reset stderr to its original state
-                    sys.stderr = old_stderr
-
-                data.append(historical_data)
-
-                extra_info = [f'Worker {progress["batch_index"]}', ticker_code, company_name]
-                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=2)
-
-            result = pd.concat(data)
-
-        except Exception as e:
-            self.log_error(e)
-
-        self.save_to_db(dataframe=result, table_name=self.config.events_file, db_filepath=self.config.events_filepath)
-
-        return result
-
-    def get_scrape_targets(self, company_info, historical_data, statements_company):
-        '''
-        docstrings
-        '''
-        historical_data_primary_key_columns = ['company_name', 'ticker', 'ticker_code']
-        merging_columns = historical_data_primary_key_columns + ['date']
-
-        try:
-            # prepare company_info
-            company_info = self.explode_company(company_info)
-
-            # prepare historical_data
-            try:
-                historical_data['date'] = pd.to_datetime(historical_data['date'])
-                # Sort the DataFrame by date in descending order (most recent first)
-                historical_data = historical_data.sort_values(by='date', ascending=False)
-                # Drop duplicates based on ['company_name', 'ticker', 'ticker_code'], keeping the most recent
-                historical_data = historical_data.drop_duplicates(subset=historical_data_primary_key_columns, keep='first')
-            except Exception as e:
-                company_info['date'] = self.config.stock_data_start_date
-                scrape_targets = company_info[merging_columns]
-                return scrape_targets
-
-            # get unprocessed companies
-            # Merge to find unprocessed companies (companies in `company_info` not in `historical_data`)
-            unprocessed_companies = pd.merge(
-                company_info,
-                historical_data[historical_data_primary_key_columns],
-                on=historical_data_primary_key_columns,
-                how='left',
-                indicator=True
-            ).query('_merge == "left_only"').drop(columns=['_merge'])
-            unprocessed_companies['date'] = pd.to_datetime('1960-01-01').strftime('%Y-%m-%d')
-            unprocessed_companies = unprocessed_companies[merging_columns]
-
-            # Filter rows based on the date threshold
-            non_existing_historical_data = historical_data[historical_data['date'].isna()][merging_columns]
-
-            delta = datetime.timedelta(days=self.config.update_days + 1)
-            date_diff = datetime.datetime.now() - delta
-            processed_companies = historical_data[historical_data['date'] < (date_diff)]
-            processed_companies.loc[:, 'date'] = processed_companies['date'].dt.strftime('%Y-%m-%d')
-            processed_companies = processed_companies[merging_columns]
-
-            # Combine the datasets
-            if not unprocessed_companies.empty:
-                scrape_targets = pd.concat([unprocessed_companies, processed_companies], ignore_index=True)
-                scrape_targets['date'] = pd.to_datetime(scrape_targets['date'], errors='coerce')
-                scrape_targets['date'] = scrape_targets['date'].dt.strftime('%Y-%m-%d')
-                scrape_targets = scrape_targets.dropna(subset=['date']).reset_index(drop=True)
-            else:
-                scrape_targets = processed_companies
-
-        except Exception as e:
-            self.log_error(e)
-            scrape_targets = pd.DataFrame(columns=merging_columns)
-
-        return scrape_targets
-
-    def main(self, thread=True):
-        '''
-        docstring
-        '''
-        try:
-            # Load existing information
-            company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
-            historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
-            # statements_company = self.load_data(table_name=self.config.initial_table, db_filepath=self.config.initial_filepath)
-            statements_company = pd.DataFrame(columns=self.config.statements_columns)
-
-            scrape_targets = self.get_scrape_targets(company_info, historical_data, statements_company)
-
-            # if no scrape_targets, optimize db and return True
-            if scrape_targets.size == 0:  # Check if the array is empty
-                self.db_optimize(self.config.metadados_filepath)
-                return True
-
-            # Process targets using threading or sequential logic
-            processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
-
-            # save/update db
-            if not processed_batch.empty:
-                self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
-
-        except Exception as e:
-            self.log_error(e)
-
-        return True
-
 class EventsStatementsProcessor(BaseProcessor):
     '''
     definitions
@@ -259,18 +75,20 @@ class EventsStatementsProcessor(BaseProcessor):
                 company_name = row['company_name']
 
                 statements_company, stock_data, stock_splits = self.get_company_financials(company_name, ticker_code)
-
+                print(statements_company.columns)
                 if not statements_company.empty:
                     # get stock items
                     statements_stocks = statements_company[statements_company['account'].str.startswith(self.config.stock_start)]
                     stocks = self.process_financial_data(stock_data, stock_splits, statements_stocks)
-
+                    print(stocks.columns)
                     for group_type in ['DFs Individuais', 'DFs Consolidadas']:
                         group_statements = statements_company[statements_company['type'] == group_type]
                         
                         if not group_statements.empty:
                             group_stocks = self.process_financial_data(stock_data, stock_splits, group_statements)
+                            print(group_stocks.columns)
                             df = pd.concat([stock_data, stocks, group_stocks], axis=1).loc[:, ~pd.concat([stock_data, stocks, group_stocks], axis=1).columns.duplicated()]
+                            print(df.columns)
                         else:
                             df = stocks
                             df = pd.concat([stock_data, stocks], axis=1).loc[:, ~pd.concat([stock_data, stocks], axis=1).columns.duplicated()]
@@ -286,7 +104,7 @@ class EventsStatementsProcessor(BaseProcessor):
                 total_progress = f"{((progress['batch_start']+i) / progress['scrape_size']) * 100:.2f}%"
                 global_unit = progress['batch_start'] + i
                 progress_info = f"({global_unit}+{progress['scrape_size']-global_unit} {progress['thread_id']})"
-                extra_info = [progress_info, i+1, company_name, ticker_code]
+                extra_info = [progress_info, i+1, ticker_code, company_name]
                 self.print_info(i, len(sub_batch), start_time, extra_info)
 
             # Concatenar todos os DataFrames
@@ -671,6 +489,10 @@ class EventsStatementsProcessor(BaseProcessor):
         definitions
         '''
         try:
+
+            # Carregar dados processados anteriormente
+            existing_statements = self.load_data(table_name=self.config.standart_table, db_filepath=self.config.standart_filepath)
+
             # load existing company_info data
             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
             events_stattements = self.load_data(table_name=self.config.events_file, db_filepath=self.config.events_filepath)
@@ -693,3 +515,188 @@ class EventsStatementsProcessor(BaseProcessor):
             self.log_error(f"Error in main: {e}")
 
         return True
+
+
+# class CorporateEventsProcessor(BaseProcessor):
+#     '''
+#     docstrings
+#     '''
+#     def __init__(self):
+#         '''
+#         docstrings
+#         '''
+#         super().__init__()
+#         self.db_lock = Lock()  # Initialize a threading Lock
+
+#         # # Initialize the WebDriver
+#         # self.driver, self.driver_wait = self._initialize_driver()
+
+#     def process_instance(self, sub_batch, progress):
+#         """
+#         Process a single batch by delegating 
+#         from abstract base_processor method 
+#         to this class process_batch (true process info method) 
+#         via this process_instance method (create instance method).
+        
+#         sub_batch
+#         progress
+
+#         return result from process_batch
+#         """
+#         try:
+#             ticker_list = sub_batch['ticker_code']
+#             extra_info = [f"Worker {progress['thread_id']}", ' '.join(ticker_list)]
+#             self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
+
+#             # Delegate to process_batch for the actual batch processing
+#             result = self.process_batch(sub_batch, progress)
+
+#         except Exception as e:
+#             pass
+
+#         return result
+
+#     def process_batch(self, sub_batch, progress):
+#         '''
+#         '''
+#         result = pd.DataFrame()
+#         try:
+#             data = []
+#             start_time = time.time()
+#             for i, row in sub_batch.reset_index().iterrows():
+#                 start_date = row['date']
+#                 company_name = row['company_name']
+#                 ticker = row['ticker']
+#                 ticker_code = row['ticker_code']
+
+#                 try:
+#                     # Redirect stderr to silence error messages
+#                     old_stderr = sys.stderr
+#                     sys.stderr = io.StringIO()
+
+#                     ticker_obj = yf.Ticker(ticker_code + '.SA')
+#                     historical_data = ticker_obj.history(start=start_date, actions=True, auto_adjust=True).reset_index()
+
+#                     # historical_data = yf.download(ticker_code + '.SA', start=start_date, progress=False, actions=True, auto_adjust=True).reset_index()
+#                     if not historical_data.empty:
+#                         historical_data.columns = historical_data.columns.str.lower().str.replace(" ", "_")
+#                         historical_data['date'] = pd.to_datetime(historical_data['date']).dt.strftime('%Y-%m-%d')
+#                         historical_data['company_name'] = company_name
+#                         historical_data['ticker'] = ticker
+#                         historical_data['ticker_code'] = ticker_code
+#                         historical_data = historical_data[self.config.historical_stock_data_all_columns]
+#                     else:
+#                         new_row = {
+#                             'company_name': company_name,
+#                             'ticker': ticker,
+#                             'ticker_code': ticker_code,
+#                         }
+#                         historical_data = pd.DataFrame([new_row])
+
+#                 finally:
+#                     # Reset stderr to its original state
+#                     sys.stderr = old_stderr
+
+#                 data.append(historical_data)
+
+#                 extra_info = [f'Worker {progress["batch_index"]}', ticker_code, company_name]
+#                 self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=2)
+
+#             result = pd.concat(data)
+
+#         except Exception as e:
+#             self.log_error(e)
+
+#         self.save_to_db(dataframe=result, table_name=self.config.events_file, db_filepath=self.config.events_filepath)
+
+#         return result
+
+#     def get_scrape_targets(self, company_info, historical_data, statements_company):
+#         '''
+#         docstrings
+#         '''
+#         historical_data_primary_key_columns = ['company_name', 'ticker', 'ticker_code']
+#         merging_columns = historical_data_primary_key_columns + ['date']
+
+#         try:
+#             # prepare company_info
+#             company_info = self.explode_company(company_info)
+
+#             # prepare historical_data
+#             try:
+#                 historical_data['date'] = pd.to_datetime(historical_data['date'])
+#                 # Sort the DataFrame by date in descending order (most recent first)
+#                 historical_data = historical_data.sort_values(by='date', ascending=False)
+#                 # Drop duplicates based on ['company_name', 'ticker', 'ticker_code'], keeping the most recent
+#                 historical_data = historical_data.drop_duplicates(subset=historical_data_primary_key_columns, keep='first')
+#             except Exception as e:
+#                 company_info['date'] = self.config.stock_data_start_date
+#                 scrape_targets = company_info[merging_columns]
+#                 return scrape_targets
+
+#             # get unprocessed companies
+#             # Merge to find unprocessed companies (companies in `company_info` not in `historical_data`)
+#             unprocessed_companies = pd.merge(
+#                 company_info,
+#                 historical_data[historical_data_primary_key_columns],
+#                 on=historical_data_primary_key_columns,
+#                 how='left',
+#                 indicator=True
+#             ).query('_merge == "left_only"').drop(columns=['_merge'])
+#             unprocessed_companies['date'] = pd.to_datetime('1960-01-01').strftime('%Y-%m-%d')
+#             unprocessed_companies = unprocessed_companies[merging_columns]
+
+#             # Filter rows based on the date threshold
+#             non_existing_historical_data = historical_data[historical_data['date'].isna()][merging_columns]
+
+#             delta = datetime.timedelta(days=self.config.update_days + 1)
+#             date_diff = datetime.datetime.now() - delta
+#             processed_companies = historical_data[historical_data['date'] < (date_diff)]
+#             processed_companies.loc[:, 'date'] = processed_companies['date'].dt.strftime('%Y-%m-%d')
+#             processed_companies = processed_companies[merging_columns]
+
+#             # Combine the datasets
+#             if not unprocessed_companies.empty:
+#                 scrape_targets = pd.concat([unprocessed_companies, processed_companies], ignore_index=True)
+#                 scrape_targets['date'] = pd.to_datetime(scrape_targets['date'], errors='coerce')
+#                 scrape_targets['date'] = scrape_targets['date'].dt.strftime('%Y-%m-%d')
+#                 scrape_targets = scrape_targets.dropna(subset=['date']).reset_index(drop=True)
+#             else:
+#                 scrape_targets = processed_companies
+
+#         except Exception as e:
+#             self.log_error(e)
+#             scrape_targets = pd.DataFrame(columns=merging_columns)
+
+#         return scrape_targets
+
+#     def main(self, thread=True):
+#         '''
+#         docstring
+#         '''
+#         try:
+#             # Load existing information
+#             company_info = self.load_data(table_name=self.config.company_table, db_filepath=self.config.metadados_filepath)
+#             historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
+#             # statements_company = self.load_data(table_name=self.config.initial_table, db_filepath=self.config.initial_filepath)
+#             statements_company = pd.DataFrame(columns=self.config.statements_columns)
+
+#             scrape_targets = self.get_scrape_targets(company_info, historical_data, statements_company)
+
+#             # if no scrape_targets, optimize db and return True
+#             if scrape_targets.size == 0:  # Check if the array is empty
+#                 self.db_optimize(self.config.metadados_filepath)
+#                 return True
+
+#             # Process targets using threading or sequential logic
+#             processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+
+#             # save/update db
+#             if not processed_batch.empty:
+#                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.metadados_filepath)
+
+#         except Exception as e:
+#             self.log_error(e)
+
+#         return True
+
