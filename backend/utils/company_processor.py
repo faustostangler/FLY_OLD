@@ -283,7 +283,8 @@ class CompanyProcessor(BaseProcessor):
         try:
             result = web_companies[~web_companies['company_name'].isin(local_companies['company_name'])]
         except Exception as e:
-            self.log_error(e)
+            # self.log_error(e)
+            result = web_companies
 
         return result
 
@@ -300,7 +301,7 @@ class CompanyProcessor(BaseProcessor):
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(local_companies[:-100], web_companies)
+            scrape_targets = self.get_scrape_targets(local_companies, web_companies)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:

@@ -180,10 +180,13 @@ class NsdProcessor(BaseProcessor):
             # Load existing NSD data
             existing_nsd = self.load_data(table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
 
-            # Filter by the last sent_date
-            existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
-            last_valid_index = existing_nsd.sort_values(by='sent_date', ascending=False).index[0]
-            existing_nsd = existing_nsd.loc[:last_valid_index]
+            try:
+                # Filter by the last sent_date
+                existing_nsd['sent_date'] = pd.to_datetime(existing_nsd['sent_date'], format="%Y-%m-%dT%H:%M:%S", errors='coerce')
+                last_valid_index = existing_nsd.sort_values(by='sent_date', ascending=False).index[0]
+                existing_nsd = existing_nsd.loc[:last_valid_index]
+            except Exception as e:
+                self.log_error(e)
 
             scrape_targets = self._generate_nsd_list(existing_nsd)
 

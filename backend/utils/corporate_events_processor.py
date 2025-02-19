@@ -439,7 +439,7 @@ class EventsStatementsProcessor(BaseProcessor):
             try:
                 result = pd.concat(filled_list).sort_values(by="date").reset_index(drop=True)
             except Exception as e:
-                result = pd.DataFrame(columns=self.config.domain['statements_columns']_empty_df)
+                result = pd.DataFrame(columns=self.config.domain['statements_columns_empty_df'])
 
         except Exception as e:
             # Registra qualquer erro e retorna um DataFrame vazio

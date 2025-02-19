@@ -59,7 +59,7 @@ class BaseProcessor:
                 batches = self._split_batches(data, self.config.scraping["max_workers"])
 
             if thread:
-                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping['batch_size']} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each throught {self.config.scraping["max_workers"]} simultaneous workers')
+                print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["batch_size"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each throught {self.config.scraping["max_workers"]} simultaneous workers')
                 results = self._process_with_threads(batches)
             else:
                 print(f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each')

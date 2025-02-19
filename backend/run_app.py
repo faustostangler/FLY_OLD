@@ -9,13 +9,13 @@ from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
 if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
-        run_company_processor = 'Y'
+        run_company_processor = 'F'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
             company_processor = CompanyProcessor()
             company_processor.close_driver()
-            company_processor.main(thread=True)
+            company_processor.main(thread=False)
             company_processor.close_driver()
 
         # Ask the user if they want to get nsd information

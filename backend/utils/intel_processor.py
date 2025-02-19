@@ -231,7 +231,7 @@ class IntelProcessor(BaseProcessor):
             df.loc[mask, 'standard_criteria'] = self.config.domain["sep_pipe"].join([f"{c[0]} {c[1]} {c[2]}" for c in crits])  # Add criteria details
             
             # Capture "contém itens como" (items that match the mask)
-            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']}{self.config.domain["sep_dash"]}{row['description']}", axis=1).tolist()
+            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(lambda row: f"{row['account']}{self.config.domain['sep_dash']}{row['description']}", axis=1).tolist()
             df.loc[mask, 'items_match'] = self.config.domain["sep_pipe"].join(items_example)
 
             # Recursively apply subcriteria using a new refined mask
