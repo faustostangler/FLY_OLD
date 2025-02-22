@@ -59,14 +59,14 @@ class Config:
         data_folder = self.paths["data_folder"]
 
         # Table Names
-        tbl_company_info = "company_info"
-        tbl_nsd = "nsd"
-        tbl_stock_data = "stock_data"
-        tbl_statements_raw = "statements_raw"
-        tbl_statements_normalized = "statements_normalized"
-        tbl_statements_corp_events = "statements_corp_events"
+        tbl_company_info = "tbl_company_info"
+        tbl_nsd = "tbl_nsd"
+        tbl_stock_data = "tbl_stock_data"
+        tbl_statements_raw = "tbl_statements_raw"
+        tbl_statements_normalized = "tbl_statements_normalized"
+        tbl_statements_corp_events = "tbl_statements_corp_events"
 
-        tbl_statements_ready = "statements_ready"
+        tbl_statements_ready = "tbl_statements_ready"
 
         # Monta caminhos
         raw_path = os.path.join(data_folder, db_raw)
@@ -131,7 +131,7 @@ class Config:
                 tbl_company_info: f"""
                     CREATE TABLE IF NOT EXISTS {tbl_company_info} (
                         cvm_code TEXT,
-                        company_name TEXT PRIMARY KEY,
+                        company_name TEXT,
                         ticker TEXT,
                         ticker_codes TEXT,
                         isin_codes TEXT,
@@ -143,12 +143,13 @@ class Config:
                         activity TEXT,
                         registrar TEXT,
                         cnpj TEXT,
-                        website TEXT
+                        website TEXT, 
+                        PRIMARY KEY (company_name)
                     )
                 """,
                 tbl_nsd: f"""
                     CREATE TABLE IF NOT EXISTS {tbl_nsd} (
-                        nsd INTEGER PRIMARY KEY,
+                        nsd INTEGER,
                         company_name TEXT,
                         quarter TEXT,
                         version INTEGER,
@@ -158,7 +159,8 @@ class Config:
                         responsible_auditor TEXT,
                         protocol TEXT,
                         sent_date TEXT,
-                        reason TEXT
+                        reason TEXT, 
+                        PRIMARY KEY (nsd)
                     )
                 """,
                 tbl_stock_data: f"""

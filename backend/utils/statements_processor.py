@@ -18,45 +18,12 @@ class StatementsProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize database and table names
+        self.table_name = self.config.databases['raw']['tables']['statements_raw']
+        self.db_filepath = self.config.databases['raw']['filepath']
+
         # Initialize driver and other resources
         self.driver, self.driver_wait = self._initialize_driver()
-
-    def get_scrape_targets(self, company_info, existing_nsd, financial_statements):
-        '''
-        '''
-        last_order = 'ZZZZZZZZZZ'
-        scrape_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version']
-
-        try:
-            # Assuming `existing_nsd` is your DataFrame and `statements_types` is the list of desired nsd_types
-            nsd_df = existing_nsd[existing_nsd['nsd_type'].isin(self.config.domain['statements_types'])]
-
-            # merge nsd and company info
-            nsd_company_df = pd.merge(nsd_df, company_info, on='company_name', how='inner')
-            try:
-                scrape_targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
-            except:
-                scrape_targets = nsd_company_df
-
-            # Custom sorting to place empty fields last
-            scrape_targets.loc[scrape_targets['sector'] == '', 'sector'] = last_order
-            scrape_targets.loc[scrape_targets['subsector'] == '', 'subsector'] = last_order
-            scrape_targets.loc[scrape_targets['segment'] == '', 'segment'] = last_order
-
-            # Order the list by sector, subsector, segment, company_name, quarter, and version
-            scrape_targets = scrape_targets.sort_values(by=scrape_order, ascending=True)
-
-            # Restore empty fields
-            scrape_targets.loc[scrape_targets['sector'] == last_order, 'sector'] = ''
-            scrape_targets.loc[scrape_targets['subsector'] == last_order, 'subsector'] = ''
-            scrape_targets.loc[scrape_targets['segment'] == last_order, 'segment'] = ''
-
-            return scrape_targets
-
-        except Exception as e:
-            self.log_error(e)
-
-        return scrape_targets
 
     def process_instance(self, sub_batch, progress):
         """
@@ -70,10 +37,12 @@ class StatementsProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result = batch_processor.process_batch(sub_batch, progress)
-            self.save_to_db(dataframe=result, table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
 
             # Clean up driver after processing
             batch_processor.close_driver()
+
+            # Save result to database
+            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -85,25 +54,25 @@ class StatementsProcessor(BaseProcessor):
         """
         Process a batch of financial data by iterating over rows and scraping statements.
         """
-        processed_data = []
+        result = []
 
         start_time = time.time()
         for i, (_, row) in enumerate(sub_batch.iterrows()):
             try:
                 # Extract and process data for each row
                 row_data = self._process_company_quarter_data(row)
-                processed_data.extend(row_data)
+                result.extend(row_data)
 
                 # Log progress
-                worker = f"Worker {progress['thread_id']}"
-                item = f"Item {i+1}/{len(sub_batch)}"
-                position_i = progress['batch_start'] + i
-                global_position = f"Global position {position_i}/{progress['scrape_size']}"
+                actual_item = progress['batch_start'] + i
+                total_items = progress['scrape_size'] + 1
+                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                nsd = row['nsd']
                 version = f"v{row['version']}"
                 company = row['company_name']
                 quarter = datetime.datetime.strptime(row['quarter'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m')
                 sent_date = datetime.datetime.strptime(row['sent_date'], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
-                extra_info = [worker, item, global_position, company, quarter, version, sent_date, ]
+                extra_info = [worker_info, nsd, company, quarter, version, sent_date, ]
                 self.print_info(i, len(sub_batch), start_time, extra_info)
 
             except Exception as e:
@@ -114,8 +83,8 @@ class StatementsProcessor(BaseProcessor):
         progress['batch_start'] += len(sub_batch)
 
         # Combine results into a single DataFrame
-        if processed_data:
-            result = pd.concat(processed_data, ignore_index=True)
+        if result:
+            result = pd.concat(result, ignore_index=True)
         else:
             result = pd.DataFrame(columns=self.config.domain['statements_columns'])
 
@@ -181,6 +150,43 @@ class StatementsProcessor(BaseProcessor):
             self.log_error(f"Error processing company quarter data: {e}")
             return []  # Return an empty list to prevent the process from stopping
 
+    def get_scrape_targets(self, company_info, existing_nsd, financial_statements):
+        '''
+        '''
+        last_order = 'ZZZZZZZZZZ'
+        scrape_order = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version']
+
+        try:
+            # Assuming `existing_nsd` is your DataFrame and `statements_types` is the list of desired nsd_types
+            nsd_df = existing_nsd[existing_nsd['nsd_type'].isin(self.config.domain['statements_types'])]
+
+            # merge nsd and company info
+            nsd_company_df = pd.merge(nsd_df, company_info, on='company_name', how='inner')
+            try:
+                scrape_targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
+            except:
+                scrape_targets = nsd_company_df
+
+            # Custom sorting to place empty fields last
+            scrape_targets.loc[scrape_targets['sector'] == '', 'sector'] = last_order
+            scrape_targets.loc[scrape_targets['subsector'] == '', 'subsector'] = last_order
+            scrape_targets.loc[scrape_targets['segment'] == '', 'segment'] = last_order
+
+            # Order the list by sector, subsector, segment, company_name, quarter, and version
+            scrape_targets = scrape_targets.sort_values(by=scrape_order, ascending=True)
+
+            # Restore empty fields
+            scrape_targets.loc[scrape_targets['sector'] == last_order, 'sector'] = ''
+            scrape_targets.loc[scrape_targets['subsector'] == last_order, 'subsector'] = ''
+            scrape_targets.loc[scrape_targets['segment'] == last_order, 'segment'] = ''
+
+            return scrape_targets
+
+        except Exception as e:
+            self.log_error(e)
+
+        return scrape_targets
+
     def _scrape_financial_data(self, cmbGrupo, cmbQuadro):
         """
         Scrapes statements data from the specified page.
@@ -221,18 +227,20 @@ class StatementsProcessor(BaseProcessor):
             df1 = pd.read_html(StringIO(html_content), header=0)[0]
             df2 = pd.read_html(StringIO(html_content), header=0, thousands='.')[0].fillna(0)
 
-            df1 = df1.iloc[:,0:3]
-            df2 = df2.iloc[:,0:3]
+            split_col = 2
+            total_col = 3
+            df1 = df1.iloc[:,0:total_col]
+            df2 = df2.iloc[:,0:total_col]
             df1.columns = self.config.domain['financial_statements_columns']
             df2.columns = self.config.domain['financial_statements_columns']
-            df = pd.concat([df1.iloc[:, :2], df2.iloc[:, 2:3]], axis=1)
+            df = pd.concat([df1.iloc[:, :split_col], df2.iloc[:, split_col:total_col]], axis=1)
 
-            col = df.iloc[:, 2].astype(str)
+            col = df.iloc[:, split_col].astype(str)
             col = col.str.replace('.', '', regex=False)
             col = col.str.replace(',', '.', regex=False)
             col = pd.to_numeric(col, errors='coerce')
             col = col * thousand
-            df.iloc[:, 2] = col
+            df.iloc[:, split_col] = col
 
             try:
                 df = df[~df[self.config.domain['financial_statements_columns'][0]].str.startswith(drop_items)]
@@ -335,10 +343,13 @@ class StatementsProcessor(BaseProcessor):
         Main method to process data.
         """
         try:
+            self.tbl_company = self.config.databases['raw']['tables']['company_info']
+            self.tbl_nsd = self.config.databases['raw']['tables']['nsd']
+
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
-            existing_nsd = self.load_data(table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
-            financial_statements = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
+            company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
+            existing_nsd = self.load_data(table_name=self.tbl_nsd, db_filepath=self.db_filepath)
+            financial_statements = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
             # Identify scrape targets
             scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
@@ -349,11 +360,11 @@ class StatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

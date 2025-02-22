@@ -616,7 +616,7 @@ class BaseProcessor:
         WebElement: O elemento da web encontrado.
         """
         attempt = 0
-        max_retries = max_retries or self.config.selenium['max_retries'] 
+        max_retries = max_retries or self.config.selenium.get('max_retries', 5)
         while True:
             try:
                 element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
@@ -626,6 +626,7 @@ class BaseProcessor:
                 if max_retries and attempt >= max_retries:
                     raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_retries} attempts.") from e
                 time.sleep(self.config.selenium['wait_time'])
+                return False
 
     def subtract_lists(self, list1, list2):
         """
@@ -833,8 +834,6 @@ class BaseProcessor:
                 # print(f"Database '{database_name}' does not exist. Creating...")
                 with self._get_db_connection(db_filepath) as conn:
                     # Create the database file if it doesn't exist
-                    conn.execute("PRAGMA journal_mode=WAL;")
-                    conn.execute("PRAGMA synchronous=NORMAL;")
                     conn.execute("PRAGMA temp_store=MEMORY;")
                     conn.execute("PRAGMA locking_mode=EXCLUSIVE;")
 
@@ -937,7 +936,7 @@ class BaseProcessor:
         """
         try:
             db_filepath = db_filepath or self.config.databases['raw']['filepath']
-            database_name = self.config.databases['raw']['filename']
+            database_name = os.path.basename(db_filepath)
             primary_keys = self._get_primary_key(table_name, database_name)
             dataframes = []
 
@@ -961,7 +960,8 @@ class BaseProcessor:
                                     cursor.execute(count_query, params)
                                 else:
                                     # Default to counting all rows in the table
-                                    cursor.execute(f"SELECT COUNT({primary_keys[0]}) FROM {table_name}")
+                                    count_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
+                                    cursor.execute(count_query)
                                 total_rows = cursor.fetchone()[0]
 
                             except Exception as e:
@@ -1081,7 +1081,7 @@ class BaseProcessor:
                         conn.commit()
 
                         if alert:
-                            print(f'Saved {database_name}')
+                            print(f'Updated {table_name} in {database_name}')
 
                         break  # While out with sucess
 
@@ -1285,11 +1285,15 @@ class BaseProcessor:
         Parameters:
             url (str): The URL to request (default: Google's favicon URL).
         """
-        if not wait_time:
-            wait_time = self.config.selenium['wait_time']  # Time to wait before retrying on failure
+        wait_time = wait_time = self.config.selenium['wait_time']  # Time to wait before retrying on failure
 
         while True:
             try:
+                # set random headers
+                headers = self.header_random()
+                session = requests.Session()
+                session.headers.update(headers)
+
                 # Make a lightweight GET request
                 response = requests.get(url, timeout=wait_time)  # Timeout in seconds
                 if response.status_code == 200:

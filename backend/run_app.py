@@ -9,17 +9,17 @@ from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
 if __name__ == '__main__':
     try:
         # Ask the user if they want to get company information
-        run_company_processor = 'F'
+        run_company_processor = 'N'
         prompt = 'Want to update company information? (YES/NO): '
         # run_company_processor = company_processor.timed_input(prompt)
         if run_company_processor.strip().upper().startswith('Y'):
             company_processor = CompanyProcessor()
             company_processor.close_driver()
-            company_processor.main(thread=False)
+            company_processor.main(thread=True)
             company_processor.close_driver()
 
         # Ask the user if they want to get nsd information
-        run_nsd_processor = 'Y'
+        run_nsd_processor = 'N'
         prompt = 'Want to update nsd information? (YES/NO): '
         # run_nsd_processor = nsd_processor.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith('Y'):
@@ -27,7 +27,7 @@ if __name__ == '__main__':
             nsd_processor.main(thread=True)
 
         # Ask the user if they want to get finantial statements
-        run_statements_processor = 'Y'
+        run_statements_processor = 'N'
         prompt = 'Want to update statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith('Y'):
@@ -43,7 +43,7 @@ if __name__ == '__main__':
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith('Y'):
             intel_processor = IntelProcessor()
-            intel_processor.main(thread=True)
+            intel_processor.main(thread=False)
 
 
         # Ask the user if they want to get corporate events from b3

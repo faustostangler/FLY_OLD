@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import TimeoutException
 from threading import Lock
 import re
 import time
@@ -18,8 +19,216 @@ class CompanyProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize database and table names
+        self.table_name = self.config.databases['raw']['tables']['company_info']
+        self.db_filepath = self.config.databases['raw']['filepath']
+
         # Initialize driver and other resources
         self.driver, self.driver_wait = self._initialize_driver()
+
+    def process_instance(self, sub_batch, progress):
+        """
+        Process a single batch by delegating to process_batch.
+        """
+        result = pd.DataFrame()
+
+        try:
+            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+
+            batch_processor = CompanyProcessor()
+
+            # Delegate to process_batch for the actual batch processing
+            result = batch_processor.process_batch(sub_batch, progress)
+
+            # Clean up driver after processing
+            batch_processor.close_driver()
+
+            # Save result to database
+            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
+
+        except Exception as e:
+            self.log_error(f"Error in process_instance: {e}")
+            self.close_driver()  # Ensure driver is closed even on errors
+
+        return result
+
+    def process_batch(self, sub_batch, progress):
+        """
+        Process a batch of company data by scraping details.
+        """
+        result = []
+
+        start_time = time.time()
+        for i, (_, row) in enumerate(sub_batch.iterrows()):
+            try:
+                company_name = row['company_name']
+                company_info = row.to_dict()  # Convert the row to a dictionary for processing
+
+                # Fetch and process company details
+                company_data = self._fetch_and_process_company(company_name, company_info)
+                result.append(company_data)
+
+                # Log progress
+                actual_item = progress['batch_start'] + i
+                total_items = progress['scrape_size'] + 1
+                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                extra_info = [
+                        worker_info, 
+                        company_info['ticker'], 
+                        company_data.get('cvm_code', ''), 
+                        company_name
+                    ]
+                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+
+            except Exception as e:
+                self.log_error(f"Error processing row {i}: {e}")
+
+        result = pd.DataFrame(result)
+
+        return result
+
+    def _fetch_and_process_company(self, company_name, company_info):
+        """
+        Fetch and process details for a single company.
+        """
+        try:
+            self.test_internet()
+            self.driver.get(self.config.domain['company_url'])
+
+            search_field_xpath = '//*[@id="keyword"]'
+            search_button_xpath = '//*[@id="divContainerIframeB3"]/form/button'
+
+            max_retries = self.config.selenium.get('max_retries', 5)  # Default to 5 retries if not set
+            retry_count = 0
+
+            while retry_count < max_retries:
+                self._search_company(company_name, search_field_xpath)  # Try searching again
+
+                # Wait for the button to appear after searching
+                if self.wait_forever(self.driver_wait, search_button_xpath):
+                    break  # Success, exit loop
+
+                self.test_internet()  # Check connection before retrying
+                retry_count += 1
+
+            # If the search was never successful, handle the failure
+            if retry_count == max_retries:
+                raise TimeoutException(f"Company search failed after {max_retries} retries.")
+
+            # Extract details
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            cards = soup.find_all('div', class_='card-body')
+
+            for card in cards:
+                card_ticker = self.clean_text(card.find('h5', class_='card-title2').text)
+                if card_ticker == company_info['ticker']:
+                    card_xpath = f'//h5[text()="{card_ticker}"]'
+                    self.click(card_xpath, self.driver_wait)
+
+                    max_retries = self.config.selenium.get('max_retries', 5)  # Set a default max retry value
+                    retry_count = 0
+                    xpath = '//*[@id="divContainerIframeB3"]/app-companies-overview/div/div/button'
+                    while not self.wait_forever(self.driver_wait, xpath) and retry_count < max_retries:
+                        self.test_internet()
+                        self.driver.refresh()  # Reloads the current page instead of navigating to a new one
+                        retry_count += 1
+
+                    # Extract additional company details
+                    company_soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                    company_details = self._extract_company_details(company_soup)
+                    company_info.update(company_details)
+                    break
+
+        except Exception as e:
+            self.log_error(f"Error processing company {company_name}: {e}")
+
+        return company_info
+
+    def _search_company(self, company_name, search_field_xpath):
+        """
+        Perform a search for a company using the search field on the page.
+        """
+        try:
+            search_field = self.wait_forever(self.driver_wait, search_field_xpath)
+            search_field.clear()
+            search_field.send_keys(company_name)
+            search_field.send_keys(Keys.RETURN)
+        except Exception as e:
+            self.log_error(f"Error searching for company {company_name}: {e}")
+
+        return True
+
+    def _extract_company_details(self, company_soup):
+        """
+        Extract detailed information about a company from its soup object.
+        """
+        company_details = {}
+        try:
+            match = re.search(r'/main/(\d+)/', self.driver.current_url)
+            cvm_code = match.group(1) if match else ''
+
+            ticker_table_id = 'accordionBody2'
+            company_info = company_soup.find('div', class_='card-body')
+
+            ticker_codes = []
+            isin_codes = []
+
+            accordion_body = company_soup.find('div', {'id': ticker_table_id})
+            if accordion_body:
+                rows = accordion_body.find_all('tr')
+                for row in rows[1:]:
+                    cols = row.find_all('td')
+                    if len(cols) > 1:
+                        ticker_codes.append(self.clean_text(cols[0].text))
+                        isin_codes.append(self.clean_text(cols[1].text))
+
+            # Serialize lists to strings
+            ticker_codes_text = json.dumps(ticker_codes)  # JSON serialization
+            isin_codes_text = json.dumps(isin_codes)
+
+            # Extract relevant data fields
+            cnpj_element = company_info.find(text='CNPJ')
+            cnpj = re.sub(r'\D', '', cnpj_element.find_next('p', class_='card-linha').text) if cnpj_element else ''
+
+            # Additional fields like activity, website, etc.
+            activity_element = company_info.find(text='Atividade Principal')
+            activity = activity_element.find_next('p', class_='card-linha').text if activity_element else ''
+
+            # Additional processing for sector and listing
+            sector_element = company_info.find(text='Classificação Setorial')
+            sector_classification = sector_element.find_next('p', class_='card-linha').text if sector_element else ''
+
+            # Extract sector, subsector, segment information
+            sectors = sector_classification.split('/')
+            sector = self.clean_text(sectors[0].strip()) if len(sectors) > 0 else ''
+            subsector = self.clean_text(sectors[1].strip()) if len(sectors) > 1 else ''
+            segment = self.clean_text(sectors[2].strip()) if len(sectors) > 2 else ''
+
+            # Extract website
+            website_element = company_info.find(text='Site')
+            website = website_element.find_next('a').text if website_element else ''
+
+            # Extract registrar
+            registrar_element = company_soup.find(text='Escriturador')
+            registrar = registrar_element.find_next('span').text.strip() if registrar_element else ''
+
+            company_details =  {
+                "cvm_code": cvm_code,  
+                "activity": activity,
+                "sector": sector,
+                "subsector": subsector,
+                "segment": segment,
+                "cnpj": cnpj,
+                "website": website,
+                "ticker_codes": ticker_codes_text,
+                "isin_codes": isin_codes_text,
+                "registrar": registrar,
+            }
+
+        except Exception as e:
+            self.log_error(f"Error extracting company details: {e}")
+
+        return company_details
 
     def get_web_companies(self):
         '''
@@ -107,175 +316,6 @@ class CompanyProcessor(BaseProcessor):
 
         return df
 
-    def process_instance(self, sub_batch, progress):
-        """
-        Process a single batch by delegating to process_batch.
-        """
-        result = pd.DataFrame()
-
-        try:
-            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
-            batch_processor = CompanyProcessor()
-
-            # Delegate to process_batch for the actual batch processing
-            result = batch_processor.process_batch(sub_batch, progress)
-
-            # Clean up driver after processing
-            batch_processor.close_driver()
-
-        except Exception as e:
-            self.log_error(f"Error in process_instance: {e}")
-            self.close_driver()  # Ensure driver is closed even on errors
-
-        return result
-
-    def process_batch(self, sub_batch, progress):
-        """
-        Process a batch of company data by scraping details.
-        """
-        processed_data = []
-
-        start_time = time.time()
-        for i, (_, row) in enumerate(sub_batch.iterrows()):
-            try:
-                company_name = row['company_name']
-                company_info = row.to_dict()  # Convert the row to a dictionary for processing
-
-                # Fetch and process company details
-                company_data = self._fetch_and_process_company(company_name, company_info)
-                processed_data.append(company_data)
-
-                # Log progress
-                extra_info = [
-                        f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", 
-                        company_info['ticker'], 
-                        company_data.get('cvm_code', ''), 
-                        company_name
-                    ]
-                self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info, indent_level=1)
-
-            except Exception as e:
-                self.log_error(f"Error processing row {i}: {e}")
-
-        result = pd.DataFrame(processed_data)
-
-        return result
-
-    def _fetch_and_process_company(self, company_name, company_info):
-        """
-        Fetch and process details for a single company.
-        """
-        try:
-            self.test_internet()
-            self.driver.get(self.config.domain['company_url'])
-
-            # Search for the company
-            search_field_xpath = '//*[@id="keyword"]'
-            self._search_company(company_name, search_field_xpath)
-
-            # Extract details
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            cards = soup.find_all('div', class_='card-body')
-
-            for card in cards:
-                card_ticker = self.clean_text(card.find('h5', class_='card-title2').text)
-                if card_ticker == company_info['ticker']:
-                    card_xpath = f'//h5[text()="{card_ticker}"]'
-                    self.click(card_xpath, self.driver_wait)
-
-                    # Extract additional company details
-                    company_soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-                    company_details = self._extract_company_details(company_soup)
-                    company_info.update(company_details)
-                    break
-
-        except Exception as e:
-            self.log_error(f"Error processing company {company_name}: {e}")
-
-        return company_info
-
-    def _search_company(self, company_name, search_field_xpath):
-        """
-        Perform a search for a company using the search field on the page.
-        """
-        try:
-            search_field = self.wait_forever(self.driver_wait, search_field_xpath)
-            search_field.clear()
-            search_field.send_keys(company_name)
-            search_field.send_keys(Keys.RETURN)
-        except Exception as e:
-            self.log_error(f"Error searching for company {company_name}: {e}")
-
-        return True
-
-    def _extract_company_details(self, company_soup):
-        """
-        Extract detailed information about a company from its soup object.
-        """
-        company_details = {}
-        try:
-            ticker_table_id = 'accordionBody2'
-            company_info = company_soup.find('div', class_='card-body')
-
-            ticker_codes = []
-            isin_codes = []
-
-            accordion_body = company_soup.find('div', {'id': ticker_table_id})
-            if accordion_body:
-                rows = accordion_body.find_all('tr')
-                for row in rows[1:]:
-                    cols = row.find_all('td')
-                    if len(cols) > 1:
-                        ticker_codes.append(self.clean_text(cols[0].text))
-                        isin_codes.append(self.clean_text(cols[1].text))
-
-            # Serialize lists to strings
-            ticker_codes_text = json.dumps(ticker_codes)  # JSON serialization
-            isin_codes_text = json.dumps(isin_codes)
-
-            # Extract relevant data fields
-            cnpj_element = company_info.find(text='CNPJ')
-            cnpj = re.sub(r'\D', '', cnpj_element.find_next('p', class_='card-linha').text) if cnpj_element else ''
-
-            # Additional fields like activity, website, etc.
-            activity_element = company_info.find(text='Atividade Principal')
-            activity = activity_element.find_next('p', class_='card-linha').text if activity_element else ''
-
-            # Additional processing for sector and listing
-            sector_element = company_info.find(text='Classificação Setorial')
-            sector_classification = sector_element.find_next('p', class_='card-linha').text if sector_element else ''
-
-            # Extract sector, subsector, segment information
-            sectors = sector_classification.split('/')
-            sector = self.clean_text(sectors[0].strip()) if len(sectors) > 0 else ''
-            subsector = self.clean_text(sectors[1].strip()) if len(sectors) > 1 else ''
-            segment = self.clean_text(sectors[2].strip()) if len(sectors) > 2 else ''
-
-            # Extract website
-            website_element = company_info.find(text='Site')
-            website = website_element.find_next('a').text if website_element else ''
-
-            # Extract registrar
-            registrar_element = company_soup.find(text='Escriturador')
-            registrar = registrar_element.find_next('span').text.strip() if registrar_element else ''
-
-            company_details =  {
-                "activity": activity,
-                "sector": sector,
-                "subsector": subsector,
-                "segment": segment,
-                "cnpj": cnpj,
-                "website": website,
-                "ticker_codes": ticker_codes_text,
-                "isin_codes": isin_codes_text,
-                "registrar": registrar,
-            }
-
-        except Exception as e:
-            self.log_error(f"Error extracting company details: {e}")
-
-        return company_details
-
     def get_scrape_targets(self, local_companies, web_companies):
         '''
         '''
@@ -293,11 +333,8 @@ class CompanyProcessor(BaseProcessor):
         Main method to process data.
         """
         try:
-            tbl_company_info = self.config.databases['raw']['tables']['company_info']
-            db_filepath = self.config.databases['raw']['filepath']
-
             # Load existing and new companies
-            local_companies = self.load_data(table_name=tbl_company_info, db_filepath=db_filepath)
+            local_companies = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
@@ -309,11 +346,11 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
-            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(processed_data, table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            if not result.empty:
+                self.save_to_db(result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

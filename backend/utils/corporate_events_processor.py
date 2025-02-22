@@ -505,11 +505,11 @@ class EventsStatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

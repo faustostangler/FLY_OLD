@@ -17,6 +17,11 @@ class IntelProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize database and table names
+        self.tbl_statements_raw = self.config.databases['raw']['tables']['statements_raw']
+        self.tbl_statements_normalized = self.config.databases['raw']['tables']['statements_normalized']
+        self.db_filepath = self.config.databases['raw']['filepath']
+
         self.section_criterias = {
             'Composição do Capital': intel.section_0_criteria, 
             'Balanço Patrimonial Ativo': intel.section_1_criteria,
@@ -38,17 +43,17 @@ class IntelProcessor(BaseProcessor):
 
         return result from process_batch
         """
+        result = pd.DataFrame()  # Return an empty DataFrame on failure
+
         try:
             print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
-            intel_processor = IntelProcessor()
+            batch_processor = IntelProcessor()
             
             # Delegate to process_batch for the actual batch processing
-            result = intel_processor.process_batch(sub_batch, progress)
-            self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
-            self.db_optimize(self.config.databases["raw"]["filepath"])
+            result = batch_processor.process_batch(sub_batch, progress)
 
-            # Clean up driver after processing
-            intel_processor.close_driver()
+            # Save result to database
+            self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
 
             # first = f"{sub_batch['company_name'].iloc[0]}"
             # last = f"{sub_batch['company_name'].iloc[-1]}"
@@ -77,7 +82,7 @@ class IntelProcessor(BaseProcessor):
 
                 # sanitize db
                 result = self.adjust_columns(result)
-                self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
+                self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath, alert=False)
 
                 extra_info = [progress['thread_id'], progress['batch_index'], company]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
@@ -106,8 +111,8 @@ class IntelProcessor(BaseProcessor):
             subsector = sub_batch.iloc[0]['subsector']
             segment = sub_batch.iloc[0]['segment']
             company_name = sub_batch.iloc[0]['company_name']
-            start_time = time.time()
             # Loop through each section in the standardization pack
+            start_time = time.time()
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
@@ -269,7 +274,7 @@ class IntelProcessor(BaseProcessor):
             df = df[self.config.domain['statements_columns']]
 
             # Step 5: Sort by the specified columns
-            df = df.sort_values(by=self.config.statements_order)
+            df = df.sort_values(by=self.config.domain['statements_order'])
 
         except Exception as e:
             self.log_error(e)
@@ -288,9 +293,9 @@ class IntelProcessor(BaseProcessor):
             pd.DataFrame: Filtered DataFrame containing only the new records.
         """
         # Define the primary key columns
-        primary_key_columns = self.config.statements_sheet_columns
         result = pd.DataFrame()
         try:
+            primary_key_columns = self.config.domain['statements_sheet_columns']
             # Check if new_data is empty
             if new_data.empty:
                 return existing_data
@@ -336,16 +341,15 @@ class IntelProcessor(BaseProcessor):
         docstring
         '''
         try:
-            # optimize db before run
-            self.db_optimize(self.config.databases['raw']['filepath'])
-            self.db_optimize(self.config.databases["raw"]["filepath"])
+            # # optimize db before run
+            # self.db_optimize(self.config.databases['raw']['filepath'])
 
             # Load necessary data as scrape targets
-            financial_statements = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
+            financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+            standart_statements = self.load_data(table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
+
             # # pre-debug
             # financial_statements[:1000000].to_csv('financial_statements.csv', index=False)
-
-            standart_statements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
             # # pre-debug
             # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
 
@@ -354,7 +358,7 @@ class IntelProcessor(BaseProcessor):
             # standart_statements = pd.read_csv('standart_statements.csv')
 
             # load statements and process intel
-            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements[:100000])
+            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
@@ -362,15 +366,14 @@ class IntelProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
 
             # optimize db before return
             self.db_optimize(self.config.databases['raw']['filepath'])
-            self.db_optimize(self.config.databases["raw"]["filepath"])
 
         except Exception as e:
             self.log_error(e)

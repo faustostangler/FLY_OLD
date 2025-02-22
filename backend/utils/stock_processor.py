@@ -238,7 +238,7 @@ class StockProcessor(BaseProcessor):
 
     def _extract_stock_data(self, soup, table_id, stock_entry_label, company_ticker, year, month):
         """Extract stock data from the parsed HTML."""
-        processed_data = []
+        result = []
         try:
             main_table = soup.find("table", id=table_id)
 
@@ -249,17 +249,17 @@ class StockProcessor(BaseProcessor):
                         try:
                             # Parse table into a DataFrame
                             df = self._parse_table_to_dataframe(table, year, month, company_ticker)
-                            processed_data.append(df)
+                            result.append(df)
                         except Exception as e:
                             self.log_error(f"Error parsing table for {company_ticker} {year}-{month}: {e}")
             else:
                 # Handle missing table scenario
                 df = self._create_empty_dataframe(company_ticker, year, month)
-                processed_data.append(df)
+                result.append(df)
         except Exception as e:
             self.log_error(f"Error extracting data: {e}")
 
-        return pd.concat(processed_data, ignore_index=True) if processed_data else None
+        return pd.concat(result, ignore_index=True) if result else None
 
     def _parse_table_to_dataframe(self, table, year, month, company_ticker):
         """Convert HTML table to a DataFrame."""
@@ -425,11 +425,11 @@ class StockProcessor(BaseProcessor):
             scrape_targets = self.get_scrape_targets(company_info, stock_info)
 
             # Run processing (threaded or sequential)
-            processed_data = self.run(scrape_targets, thread=thread)
+            result = self.run(scrape_targets, thread=thread)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

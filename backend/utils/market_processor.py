@@ -223,12 +223,12 @@ class MarketProcessor(BaseProcessor):
             historical_data_rows = self._create_new_rows(scrape_targets, historical_data, sector)
             new_rows = pd.DataFrame(historical_data_rows)
 
-            processed_data = pd.concat([scrape_targets, new_rows], ignore_index=True).drop_duplicates(keep='last')
-            processed_data = processed_data.sort_values(by=self.config.statements_order, ascending=[True] * len(self.config.statements_order))
+            result = pd.concat([scrape_targets, new_rows], ignore_index=True).drop_duplicates(keep='last')
+            result = result.sort_values(by=self.config.statements_order, ascending=[True] * len(self.config.statements_order))
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.statements_historical, db_filepath=self.config.databases['raw']['filepath'])
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.config.statements_historical, db_filepath=self.config.databases['raw']['filepath'])
 
             pass
         except Exception as e:

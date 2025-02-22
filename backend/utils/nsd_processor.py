@@ -17,6 +17,71 @@ class NsdProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # Initialize database and table names
+        self.table_name = self.config.databases['raw']['tables']['nsd']
+        self.db_filepath = self.config.databases['raw']['filepath']
+
+    def process_instance(self, sub_batch, progress):
+        """
+        Process a single batch by delegating to process_batch.
+        """
+        result = pd.DataFrame()
+
+        try:
+            print(f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
+
+            batch_processor = NsdProcessor()
+
+            # Delegate to process_batch for the actual batch processing
+            result = batch_processor.process_batch(sub_batch, progress)
+
+            # Save result to database
+            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
+
+        except Exception as e:
+            self.log_error(f"Error in process_instance: {e}")
+
+        return result
+
+    def process_batch(self, sub_batch, progress):
+        """
+        Process a batch of NSD data by scraping and extracting relevant information.
+        """
+        result = pd.DataFrame(columns=self.config.domain['columns_nsd'])
+        dfs = []
+        start_time = time.time()
+
+        for i, (_, row) in enumerate(sub_batch.iterrows()):
+            try:
+                nsd = row['nsd']
+                # Fetch and process NSD details
+                nsd_data = self._fetch_nsd_html(nsd)
+                if nsd_data:
+                    dfs.append(nsd_data)
+
+                # Log progress
+                actual_item = progress['batch_start'] + i
+                total_items = progress['scrape_size'] + 1
+                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                extra_info = [
+                        worker_info, 
+                        nsd,
+                        nsd_data.get('sent_date').strftime('%Y-%m-%d %H:%M:%S') if nsd_data.get('sent_date') else '',
+                        nsd_data.get('nsd_type', ''),
+                        nsd_data.get('company_name', ''),
+                        nsd_data.get('quarter').strftime('%Y-%m') if nsd_data.get('quarter') else '',
+                ]
+                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+
+            except Exception as e:
+                self.log_error(f"Error processing NSD {row['nsd']}: {e}")
+
+        # Combine results into a DataFrame
+        if dfs:
+            result = pd.DataFrame(dfs, columns=self.config.domain['columns_nsd'])
+        
+        return result
+
     def _generate_nsd_list(self, existing_nsd):
         """
         """
@@ -32,7 +97,7 @@ class NsdProcessor(BaseProcessor):
             min_date = existing_nsd['sent_date'].min() if not existing_nsd['sent_date'].isna().all() else datetime.datetime(2010, 1, 1)
             total_nsds = existing_nsd['nsd'].count() if existing_nsd['nsd'].count() > 0 else 1
             
-            if max_date != now:
+            if max_date.normalize() != pd.Timestamp(now).normalize():
                 days_span = (max_date - min_date).days
                 days_elapsed = (datetime.datetime.now() - max_date).days + 1 if max_date else 1
                 daily_submission_estimate =  total_nsds / days_span if days_span > 0 else 1
@@ -40,7 +105,7 @@ class NsdProcessor(BaseProcessor):
                 nsd_range = list(range(last_nsd + 1, 1 + last_nsd + estimated_new_nsds))
 
             else:
-                nsd_range = list(range(last_nsd + 1, 1 + last_nsd + self.config.scraping['batch_size']))
+                nsd_range = list(range(last_nsd + 1, last_nsd + 1 + self.config.scraping['batch_size']))
         except Exception as e:
             self.log_error(e)
         
@@ -48,42 +113,6 @@ class NsdProcessor(BaseProcessor):
         scrape_targets = pd.DataFrame({'nsd': list(nsd_range)})
 
         return scrape_targets
-
-    def process_batch(self, sub_batch, progress):
-        """
-        Process a batch of NSD data by scraping and extracting relevant information.
-        """
-        result = pd.DataFrame(columns=self.config.domain['columns_nsd'])
-        processed_data = []
-        start_time = time.time()
-
-        for i, (_, row) in enumerate(sub_batch.iterrows()):
-            try:
-                nsd = row['nsd']
-                # Fetch and process NSD details
-                nsd_data = self._fetch_nsd_html(nsd)
-                if nsd_data:
-                    processed_data.append(nsd_data)
-
-                # Log progress
-                extra_info = [
-                    f"Worker {progress['thread_id']} Item {i+1}/{len(sub_batch)}", 
-                    nsd,
-                    nsd_data.get('sent_date').strftime('%Y-%m-%d %H:%M:%S') if nsd_data.get('sent_date') else '',
-                    nsd_data.get('nsd_type', ''),
-                    nsd_data.get('company_name', ''),
-                    nsd_data.get('quarter').strftime('%Y-%m') if nsd_data.get('quarter') else '',
-                ]
-                self.print_info(progress['batch_start'] + i, progress['scrape_size'], start_time, extra_info)
-
-            except Exception as e:
-                self.log_error(f"Error processing NSD {row['nsd']}: {e}")
-
-        # Combine results into a DataFrame
-        if processed_data:
-            result = pd.DataFrame(processed_data, columns=self.config.domain['columns_nsd'])
-        
-        return result
 
     def _fetch_nsd_html(self, nsd):
         """
@@ -132,7 +161,7 @@ class NsdProcessor(BaseProcessor):
             for key, selector in selectors.items():
                 element = soup.select_one(selector)
                 if element:
-                    data[key] = self.clean_text(element.text) if key != 'sent_date' else element.text
+                    data[key] = self.clean_text(element.text) if key not in ['sent_date', 'quarter'] else element.text
 
             # Parse data information nsd_type, version, quarter and sent_date into datetime objects
             parts = data['nsd_type_version'].split()
@@ -159,16 +188,6 @@ class NsdProcessor(BaseProcessor):
 
         return result 
 
-    def process_instance(self, sub_batch, progress):
-        """
-        Process a single batch by delegating to process_batch.
-        """
-        try:
-            return self.process_batch(sub_batch, progress)
-        except Exception as e:
-            self.log_error(f"Error in process_instance: {e}")
-            return pd.DataFrame()  # Return an empty DataFrame on failure
-
     def main(self, thread=True):
         """
         Main method to scrape NSD data, parse it, and save it to the database.
@@ -178,7 +197,7 @@ class NsdProcessor(BaseProcessor):
             # self.driver, self.driver_wait = self._initialize_driver()
 
             # Load existing NSD data
-            existing_nsd = self.load_data(table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
+            existing_nsd = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
             try:
                 # Filter by the last sent_date
@@ -196,11 +215,11 @@ class NsdProcessor(BaseProcessor):
                 return True
 
             # Run processing (threaded or sequential)
-            processed_data = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
-            if not processed_data.empty:
-                self.save_to_db(dataframe=processed_data, table_name=self.config.databases['raw']['tables']['nsd'], db_filepath=self.config.databases['raw']['filepath'])
+            if not result.empty:
+                self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
