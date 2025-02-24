@@ -38,13 +38,12 @@ if __name__ == '__main__':
 
 
         # Ask the user if they want to sstandardize the statements
-        run_intel_processor = 'Y'
+        run_intel_processor = 'N'
         prompt = 'Want to standardize statements information? (YES/NO): '
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith('Y'):
             intel_processor = IntelProcessor()
-            intel_processor.main(thread=False)
-
+            intel_processor.main(thread=True)
 
         # Ask the user if they want to get corporate events from b3
         run_corporate_events_processor = 'Y'

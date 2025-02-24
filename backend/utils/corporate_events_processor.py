@@ -25,7 +25,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning, module='pandas')
 pd.set_option('future.no_silent_downcasting', True)
-
 class EventsStatementsProcessor(BaseProcessor):
     '''
     definitions
@@ -36,6 +35,15 @@ class EventsStatementsProcessor(BaseProcessor):
         '''
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
+
+        # Initialize database and table names
+        self.tbl_company_info = self.config.databases['raw']['tables']['company_info']
+        self.tbl_statements_corp_events = self.config.databases['raw']['tables']['statements_corp_events']
+        self.tbl_statements_normalized = self.config.databases['raw']['tables']['statements_normalized']
+
+        self.tbl_stock_data = self.config.databases['raw']['tables']['stock_data']
+
+        self.db_filepath = self.config.databases['raw']['filepath']
 
     def process_instance(self, sub_batch, progress):
         """
@@ -48,14 +56,14 @@ class EventsStatementsProcessor(BaseProcessor):
             batch_processor = EventsStatementsProcessor()
 
             # Delegate to process_batch for the actual batch processing
-            result = batch_processor.process_batch(sub_batch, progress)
+            result, benchmark_results = batch_processor.benchmark_function(batch_processor.process_batch, sub_batch, progress, benchmark_mode=False)
+            
+            # Save result to database
+            self.save_to_db(dataframe=result, table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath)
 
-            # # Clean up driver after processing
-            # batch_processor.close_driver()
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
@@ -181,10 +189,10 @@ class EventsStatementsProcessor(BaseProcessor):
             sql = '''SELECT * FROM statements_standart WHERE company_name = ?'''
 
             statements = self.load_data(
-                table_name=self.config.databases["raw"]["tables"]["statements_normalized"],
+                table_name=self.tbl_statements_normalized,
                 query=sql,
                 params=(company_name,),
-                db_filepath=self.config.databases["raw"]["filepath"],
+                db_filepath=self.db_filepath,
                 alert=False
             )
 
@@ -199,6 +207,32 @@ class EventsStatementsProcessor(BaseProcessor):
             self.log_error(e)
             return pd.DataFrame()
 
+    def _get_ticker_alternative(self):
+        '''
+        description
+        '''
+        ticker = ''
+        try:
+            # Query SQL para encontrar o ticker com o maior range de date
+            query = """
+            SELECT ticker_code, 
+                MIN(date) AS min_date, 
+                MAX(date) AS max_date, 
+                (JULIANDAY(MAX(date)) - JULIANDAY(MIN(date))) AS date_range
+            FROM tbl_stock_data
+            GROUP BY ticker_code
+            ORDER BY date_range DESC
+            LIMIT 1;
+            """
+            with sqlite3.connect(self.db_filepath) as conn:
+                df = pd.read_sql_query(query, conn)
+                ticker_code = df['ticker_code'].iloc[0]
+
+        except Exception as e:
+            self.log_error(e)
+
+        return ticker_code
+
     def _get_company_stock_data(self, ticker_code=None):
         """
         Obtém os dados históricos de ações de uma empresa específica.
@@ -206,28 +240,30 @@ class EventsStatementsProcessor(BaseProcessor):
         Retorna:
         - pd.DataFrame: DataFrame contendo os dados históricos de ações.
         """
-        ticker_code_alternative = 'PETR4'
         try:
             # Consulta SQL para obter os dados históricos de ações de um ticker específico de uma empresa específica
             sql_stock_data = '''SELECT *
                                 FROM stock_data
                                 WHERE ticker_code = ?'''
 
-            tk_cd = ticker_code if ticker_code is not None else ticker_code_alternative
+            tk_cd = ticker_code if ticker_code is not None else self._get_ticker_alternative()
             
             company_stock_data = self.load_data(
-                table_name=self.config.historical_stock_data_table,
+                table_name=self.tbl_stock_data,
                 query=sql_stock_data,
                 params=(tk_cd,),
-                db_filepath=self.config.databases['raw']['filepath'],
+                db_filepath=self.db_filepath,
                 alert=False
                 )
 
-            # Remove linhas onde a data esteja ausente
-            company_stock_data = company_stock_data.dropna(subset=['date'])
+            try:
+                # Remove linhas onde a data esteja ausente
+                company_stock_data = company_stock_data.dropna(subset=['date'])
 
-            # Converte a coluna 'date' para formato datetime para garantir consistência
-            company_stock_data['date'] = pd.to_datetime(company_stock_data['date'])
+                # Converte a coluna 'date' para formato datetime para garantir consistência
+                company_stock_data['date'] = pd.to_datetime(company_stock_data['date'])
+            except: 
+                pass
 
             if not company_stock_data.empty:
                 if ticker_code != None:
@@ -241,11 +277,12 @@ class EventsStatementsProcessor(BaseProcessor):
                     splits['date'] = pd.to_datetime(splits['date'])
             else:
                 company_stock_data, splits = self._get_company_stock_data()
-                splits = pd.DataFrame(columns=self.config.split_columns)
+                splits = pd.DataFrame(columns=self.config.domain['split_columns'])
 
         except Exception as e:
             self.log_error(e)
             company_stock_data = pd.DataFrame()
+            splits = pd.DataFrame(columns=self.config.domain['split_columns'])
 
         return company_stock_data, splits
 
@@ -490,12 +527,20 @@ class EventsStatementsProcessor(BaseProcessor):
         '''
         try:
 
-            # Carregar dados processados anteriormente
-            standart_statements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_normalized"], db_filepath=self.config.databases["raw"]["filepath"])
+            # # Carregar dados processados anteriormente
+            # standart_statements = self.load_data(table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
 
             # load existing company_info data
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
-            events_stattements = self.load_data(table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
+            company_info = self.load_data(table_name=self.tbl_company_info, db_filepath=self.db_filepath)
+            statements_corp_events = self.load_data(table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath)
+
+            # # pre-debug
+            # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
+            statements_corp_events[:1000000].to_csv('statements_corp_events.csv', index=False)
+
+            # debug
+            standart_statements = pd.read_csv('standart_statements.csv')
+            # statements_corp_events = pd.read_csv('statements_corp_events.csv')
 
             scrape_targets = self.get_scrape_targets(company_info)
 
@@ -509,7 +554,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
+                self.save_to_db(dataframe=result, table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

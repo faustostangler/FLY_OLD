@@ -265,7 +265,7 @@ class Config:
         """
         cpu = os.cpu_count() or 1
         batch_size = cpu * 10
-        max_workers = cpu  # ou outro cálculo
+        max_workers = cpu * 1 # ou outro cálculo
         chunk_size = 100_000
         stock_data_start_date = "1960-01-01"
         update_days = 2
@@ -448,6 +448,7 @@ class Config:
         sep_dash = " - "
         sep_pipe = " | "
         stock_prefix = "00."
+        indent = " " * 2
 
         # URLs de scraping B3
         companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"
@@ -625,6 +626,7 @@ class Config:
             "sep_dash": sep_dash,
             "sep_pipe": sep_pipe,
             "stock_prefix": stock_prefix,
+            "indent": indent, 
 
             "companies_url": companies_url,
             "company_url": company_url,

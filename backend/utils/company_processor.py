@@ -20,7 +20,7 @@ class CompanyProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.table_name = self.config.databases['raw']['tables']['company_info']
+        self.tbl_company_name = self.config.databases['raw']['tables']['company_info']
         self.db_filepath = self.config.databases['raw']['filepath']
 
         # Initialize driver and other resources
@@ -38,13 +38,13 @@ class CompanyProcessor(BaseProcessor):
             batch_processor = CompanyProcessor()
 
             # Delegate to process_batch for the actual batch processing
-            result = batch_processor.process_batch(sub_batch, progress)
+            result, benchmark_results = batch_processor.benchmark_function(batch_processor.process_batch, sub_batch, progress, benchmark_mode=FalseFalseTrue)
 
             # Clean up driver after processing
             batch_processor.close_driver()
 
             # Save result to database
-            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
+            self.save_to_db(dataframe=result, table_name=self.tbl_company_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -334,7 +334,7 @@ class CompanyProcessor(BaseProcessor):
         """
         try:
             # Load existing and new companies
-            local_companies = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
+            local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
@@ -350,7 +350,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(result, table_name=self.table_name, db_filepath=self.db_filepath)
+                self.save_to_db(result, table_name=self.tbl_company_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

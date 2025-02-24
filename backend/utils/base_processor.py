@@ -32,6 +32,9 @@ import warnings
 import urllib3
 import json
 
+import psutil
+import concurrent.futures
+
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -718,7 +721,68 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    # LOG & DEBUG METHODS
+    # BENCHMARK, LOG & DEBUG METHODS
+    def benchmark_function(self, function, *args, benchmark_mode=False, workers_list=None, **kwargs):
+        """
+        Generic benchmarking method to evaluate resource usage with different worker counts.
+
+        Parameters:
+        - function: The function to benchmark (e.g., process_batch).
+        - *args: Positional arguments for the function.
+        - benchmark_mode (bool): If True, runs the benchmark; otherwise, just calls the function normally.
+        - workers_list (list, optional): List of worker counts to test. Defaults to [1, half CPU, full CPU, double CPU].
+        - **kwargs: Keyword arguments for the function.
+
+        Returns:
+        - original_result: The actual result from the function being benchmarked.
+        - benchmark_results: A list of tuples containing (workers, time_taken, memory_used, cpu_usage).
+        """
+        try:
+            if not benchmark_mode:
+                # Just run the function normally without benchmarking
+                return function(*args, **kwargs), []
+
+            if workers_list is None:
+                workers_list = [1, max(2, os.cpu_count() // 2), os.cpu_count(), os.cpu_count() * 2]
+
+            print(f"\nRunning benchmark for {inspect.getmodule(function).__name__}.{function.__name__}")
+
+            benchmark_results = []
+            original_result = None  # Store the result of the first execution
+
+            for i, workers in enumerate(workers_list):
+                print(f"{self.config.domain['indent']}starting benchmark {i+1} of {len(workers_list)}")
+                start_time = time.time()
+                process = psutil.Process()
+                initial_memory = process.memory_info().rss / (1024 * 1024)  # MB
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                    future = executor.submit(function, *args, **kwargs)
+                    result = future.result()
+
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                final_memory = process.memory_info().rss / (1024 * 1024)  # MB
+                memory_used = final_memory - initial_memory
+                cpu_usage = process.cpu_percent(interval=0.5)
+
+                # Store the benchmark data
+                benchmark_results.append((workers, elapsed_time, memory_used, cpu_usage))
+
+                print(f"\n🔹 Workers: {workers}")
+                print(f"⏳ Time Taken: {elapsed_time:.2f} sec")
+                print(f"📈 Memory Used: {memory_used:.2f} MB")
+                print(f"⚡ CPU Usage: {cpu_usage:.2f}%\n")
+
+                # Store the original function's result (only from the first execution)
+                if original_result is None:
+                    original_result = result
+        except Exception as e:
+            self.log_error(e)
+            original_result, benchmark_results = [], []
+
+        return original_result, benchmark_results  # Return both the function result and benchmark data
+
     def log_error(self, error):
         """
         Logs an error to a file with detailed context, including caller info, 
@@ -802,7 +866,7 @@ class BaseProcessor:
             )
 
             # Add indentation
-            indent = " " * 2 * (indent_level + 1)
+            indent = self.config.domain['indent'] * (indent_level + 1)
             extra_info_str = " ".join(map(str, extra_info))
             print(f"{indent}{progress} {extra_info_str}")
 
@@ -929,7 +993,6 @@ class BaseProcessor:
         conn.close()
 
     def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None, alert=True):
-
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
         Dynamically creates databases and tables if they do not exist.
@@ -943,97 +1006,92 @@ class BaseProcessor:
             max_retries = max_retries or self.config.selenium['max_retries']
 
             self._configure_db(db_filepath)
-            
-            with self.db_lock:
+
+            # Retry logic for database connection
+            attempts = 0
+            while attempts < max_retries:
                 try:
-                    # Ensure the database and table exist
-                    self._initialize_database(db_filepath, database_name, table_name)
+                    with self.db_lock:
+                        # Ensure the database and table exist
+                        self._initialize_database(db_filepath, database_name, table_name)
 
-                    # Connect to the database and count total rows
-                    with self._get_db_connection(db_filepath) as conn:
-                        cursor = conn.cursor()
-                        if table_name:
-                            try:
-                                if query:
-                                    # Adjust query to count rows based on filters
-                                    count_query = f"SELECT COUNT(*) FROM ({query})"
-                                    cursor.execute(count_query, params)
-                                else:
-                                    # Default to counting all rows in the table
-                                    count_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
-                                    cursor.execute(count_query)
-                                total_rows = cursor.fetchone()[0]
-
-                            except Exception as e:
-                                self._initialize_table(db_filepath, database_name, table_name)
-                                total_rows = 0
-
-                        batch_size = self.config.scraping['chunk_size']
-                        number_of_batches = (total_rows // batch_size) + 1
-                        num_threads = min(self.config.scraping['max_workers'], number_of_batches)  # Use fewer threads if less data
-                        offsets = range(0, total_rows, batch_size)
-
-                        start_time = time.time()  # Start time for tracking progress
-
-                        # Define the worker function for reading batches with retry logic
-                        def read_batch(offset, batch_number):
-                            if alert:
-                                extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
-                                self.print_info(batch_number, number_of_batches, start_time, extra_info)
-
-                            attempt = 0
-                            while attempt < max_retries:
+                        # Connect to the database and count total rows
+                        with self._get_db_connection(db_filepath) as conn:
+                            cursor = conn.cursor()
+                            if table_name:
                                 try:
-                                    with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
-                                        if query:
-                                            paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                                            return pd.read_sql_query(paginated_query, conn, params=params)
-                                        elif table_name:
-                                            paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
-                                            return pd.read_sql_query(paginated_query, conn)
-                                        return pd.DataFrame()
+                                    if query:
+                                        count_query = f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
+                                        cursor.execute(count_query, params)
+                                    else:
+                                        count_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
+                                        cursor.execute(count_query)
+                                    total_rows = cursor.fetchone()[0]
                                 except Exception as e:
-                                    if "database is locked" in str(e):
-                                        attempt += 1
-                                        time.sleep(self.config.selenium['wait_time'])
-                                    else:
-                                        raise  # Raise other errors immediately
-                            raise Exception(f"Failed to read batch after {max_retries} attempts.")
+                                    self._initialize_table(db_filepath, database_name, table_name)
+                                    total_rows = 0
 
-                        # Read data using multithreading
-                        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-                            tasks = []
-                            for batch_number, offset in enumerate(offsets):
-                                task = executor.submit(read_batch, offset, batch_number)
-                                tasks.append(task)
-                                time.sleep(1)
+                            batch_size = self.config.scraping['chunk_size']
+                            number_of_batches = (total_rows // batch_size) + 1
+                            num_threads = min(self.config.scraping['max_workers'], number_of_batches)
+                            offsets = range(0, total_rows, batch_size)
 
-                            dataframes = [task.result() for task in tasks]
+                            start_time = time.time()
 
-                        # Concatenate all the dataframes
-                        if dataframes:
-                            final_df = pd.concat(dataframes, ignore_index=True)
-                        else:
-                            final_df = pd.DataFrame()
+                            def read_batch(offset, batch_number):
+                                if alert:
+                                    extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
+                                    self.print_info(batch_number, number_of_batches, start_time, extra_info)
 
-                        # Normalize columns if specified
-                        if normalize_columns:
-                            for col in normalize_columns:
-                                if col in final_df.columns:
-                                    if 'date' in col.lower() or 'time' in col.lower():
-                                        final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
-                                    else:
-                                        final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+                                attempt = 0
+                                while attempt < max_retries:
+                                    try:
+                                        with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
+                                            if query:
+                                                paginated_query = f"SELECT * FROM {table_name} WHERE ticker_code = ?"
+                                                df_query = pd.read_sql_query(paginated_query, conn, params=params)
+                                                return df_query
+                                            elif table_name:
+                                                paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
+                                                df_query = pd.read_sql_query(paginated_query, conn)
+                                                return df_query
+                                            return pd.DataFrame()
+                                    except Exception as e:
+                                        if "database is locked" in str(e):
+                                            attempt += 1
+                                            time.sleep(self.config.selenium['wait_time'])
+                                        else:
+                                            raise  
+                                raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
-                        return final_df
+                            with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                                tasks = [executor.submit(read_batch, offset, batch_number) for batch_number, offset in enumerate(offsets)]
+                                dataframes = [task.result() for task in tasks]
+
+                            final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
+
+                            if normalize_columns:
+                                for col in normalize_columns:
+                                    if col in final_df.columns:
+                                        if 'date' in col.lower() or 'time' in col.lower():
+                                            final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
+                                        else:
+                                            final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+
+                            return final_df
 
                 except Exception as e:
-                    self.log_error(e)
+                    if "database is locked" in str(e):
+                        attempts += 1
+                        time.sleep(self.config.selenium['wait_time'])
+                    else:
+                        raise  
+            
+            raise Exception(f"Failed to load data after {max_retries} attempts.")
+
         except Exception as e:
             self.log_error(e)
-        
-        return True
-
+            return pd.DataFrame()  # Return an empty DataFrame in case of failure
     def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True, max_retries=None):
         """
         Save or update a DataFrame in a SQLite database table.

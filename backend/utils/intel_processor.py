@@ -50,7 +50,7 @@ class IntelProcessor(BaseProcessor):
             batch_processor = IntelProcessor()
             
             # Delegate to process_batch for the actual batch processing
-            result = batch_processor.process_batch(sub_batch, progress)
+            result, benchmark_results = batch_processor.benchmark_function(batch_processor.process_batch, sub_batch, progress, benchmark_mode=False)
 
             # Save result to database
             self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
@@ -62,7 +62,6 @@ class IntelProcessor(BaseProcessor):
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
@@ -73,19 +72,37 @@ class IntelProcessor(BaseProcessor):
 
         try:
             companies = sub_batch['company_name'].unique()
+            total_companies = len(companies)
 
             start_time = time.time()
             for i, company in enumerate(companies):
                 mask = sub_batch['company_name'] == company
                 df = sub_batch[mask]
+                
                 result = self.generate_standard_financial_statements(df, progress)
 
                 # sanitize db
                 result = self.adjust_columns(result)
                 self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath, alert=False)
 
-                extra_info = [progress['thread_id'], progress['batch_index'], company]
-                self.print_info(i, len(companies), start_time, extra_info, indent_level=1)
+                # Log progress
+                actual_item = progress['batch_start'] + i
+                total_items = progress['scrape_size'] + 1
+                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+
+                # Retrieve quarter max and min values
+                quarter_max = pd.to_datetime(df['quarter'].max(), errors='coerce').strftime('%Y-%m') if not df['quarter'].isna().all() else None
+                quarter_min = pd.to_datetime(df['quarter'].min(), errors='coerce').strftime('%Y-%m') if not df['quarter'].isna().all() else None
+
+                # Retrieve first row values for sector, subsector, and segment
+                sector = df['sector'].iloc[0] if not df.empty else None
+                subsector = df['subsector'].iloc[0] if not df.empty else None
+                segment = df['segment'].iloc[0] if not df.empty else None
+
+                quarter_info = f"from {quarter_min} to {quarter_max}"
+                
+                extra_info = [worker_info, company, quarter_info, ]
+                self.print_info(i, len(companies), start_time, extra_info, indent_level=0)
 
         except Exception as e:
             self.log_error(e)
@@ -344,6 +361,10 @@ class IntelProcessor(BaseProcessor):
             # # optimize db before run
             # self.db_optimize(self.config.databases['raw']['filepath'])
 
+            # # debug
+            # financial_statements = pd.read_csv('financial_statements.csv')
+            # standart_statements = pd.read_csv('standart_statements.csv')
+
             # Load necessary data as scrape targets
             financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
             standart_statements = self.load_data(table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
@@ -353,12 +374,8 @@ class IntelProcessor(BaseProcessor):
             # # pre-debug
             # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
 
-            # # debug
-            # financial_statements = pd.read_csv('financial_statements.csv')
-            # standart_statements = pd.read_csv('standart_statements.csv')
-
             # load statements and process intel
-            scrape_targets = self.get_scrape_targets(financial_statements, standart_statements)
+            scrape_targets = self.get_scrape_targets(standart_statements, financial_statements)
 
             # Exit if no scrape_targets
             if scrape_targets.empty:
@@ -373,7 +390,7 @@ class IntelProcessor(BaseProcessor):
                 self.save_to_db(dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
 
             # optimize db before return
-            self.db_optimize(self.config.databases['raw']['filepath'])
+            self.db_optimize(self.db_filepath)
 
         except Exception as e:
             self.log_error(e)

@@ -33,7 +33,7 @@ class NsdProcessor(BaseProcessor):
             batch_processor = NsdProcessor()
 
             # Delegate to process_batch for the actual batch processing
-            result = batch_processor.process_batch(sub_batch, progress)
+            result, benchmark_results = batch_processor.benchmark_function(batch_processor.process_batch, sub_batch, progress, benchmark_mode=True)
 
             # Save result to database
             self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
