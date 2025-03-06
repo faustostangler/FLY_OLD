@@ -2,6 +2,8 @@ from threading import Lock
 import pandas as pd
 import time
 import re
+import sqlite3
+from tqdm import tqdm
 
 from utils.base_processor import BaseProcessor
 from utils import intel
@@ -15,12 +17,21 @@ class IntelProcessor(BaseProcessor):
         docstrings
         '''
         super().__init__()
-        self.db_lock = Lock()  # Initialize a threading Lock
+
+        # Initialize a threading Lock
+        self.db_lock = Lock()
+
+        # Store compiled regex to avoid redundant compilation
+        self.regex_cache = {}
 
         # Initialize database and table names
-        self.tbl_statements_raw = self.config.databases['raw']['tables']['statements_raw']
-        self.tbl_statements_normalized = self.config.databases['raw']['tables']['statements_normalized']
+        self.tbl_statements_raw = self.config.databases['raw']['table']['statements_raw']
+        self.idx_statements_raw = self.config.databases['raw']['index']['statements_raw']
+        self.tbl_statements_normalized = self.config.databases['raw']['table']['statements_normalized']
+        self.primary_key_columns = self.config.domain["statements_sheet_columns"]
+
         self.db_filepath = self.config.databases['raw']['filepath']
+
 
         self.section_criterias = {
             'Composição do Capital': intel.section_0_criteria, 
@@ -88,7 +99,7 @@ class IntelProcessor(BaseProcessor):
                 # Log progress
                 actual_item = progress['batch_start'] + i
                 total_items = progress['scrape_size'] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_companies})"
 
                 # Retrieve quarter max and min values
                 quarter_max = pd.to_datetime(df['quarter'].max(), errors='coerce').strftime('%Y-%m') if not df['quarter'].isna().all() else None
@@ -166,6 +177,99 @@ class IntelProcessor(BaseProcessor):
         return df
 
     def apply_criteria(self, df, section_name, criteria_item, parent_mask=None, output_file='output.txt', parent_criteria_info=None, level=1):
+        """
+        Applies a criterion and its sub-criteria to the DataFrame.
+        """
+        try:
+            target = criteria_item['target_line']
+            filters = criteria_item['criteria']
+            sub_criteria = criteria_item.get('sub_criteria', [])
+
+            if parent_criteria_info is None:
+                parent_criteria_info = []
+
+            df = df.reset_index(drop=True)
+            base_mask = pd.Series([True] * len(df)) if parent_mask is None else parent_mask.copy()
+            mask = base_mask.copy()
+
+            parent_criteria_info.append({'target': target, 'filters': filters})
+
+            # Precompile regex patterns and store in cache
+            def get_precompiled_regex(values):
+                """Fetch precompiled regex if exists, otherwise compile and store it."""
+                pattern_key = tuple(values)  # Convert list to tuple for immutability
+                if pattern_key not in self.regex_cache:
+                    self.regex_cache[pattern_key] = re.compile('|'.join(map(re.escape, values)), re.IGNORECASE)
+                return self.regex_cache[pattern_key]
+
+            # Define optimized condition mapping with precompiled regex
+            condition_map = {
+                'equals': lambda col, val: col == val.lower(),
+                'not_equals': lambda col, val: col != val.lower(),
+                'startswith': lambda col, val: col.astype(str).str.startswith(val),
+                'not_startswith': lambda col, val: ~col.str.startswith(val),
+                'endswith': lambda col, val: col.str.endswith(val),
+                'not_endswith': lambda col, val: ~col.str.endswith(val),
+                'contains_all': lambda col, val: col.apply(lambda x: all(term in x.lower() for term in val) if pd.notna(x) else False),
+                'contains_any': lambda col, val: col.str.contains(get_precompiled_regex(val), na=False),
+                'contains_none': lambda col, val: ~col.str.contains(get_precompiled_regex(val), na=False),
+                'not_contains': lambda col, val: col.apply(lambda x: not all(term in x.lower() for term in val) if pd.notna(x) else True),
+                'not_contains_any': lambda col, val: col.apply(lambda x: all(term not in x.lower() for term in val) if pd.notna(x) else True),
+                'level': lambda col, val: (col.str.count(r'\.') + 1) == int(val),
+            }
+
+            crits = []
+
+            for filter_column, filter_condition, filter_value in filters:
+                crits.append([filter_column, filter_condition, filter_value])
+
+                # Convert filter values to lists for conditions that need multiple values
+                if filter_condition in ['contains_any', 'contains_none', 'contains_all', 'not_contains_all']:
+                    if not isinstance(filter_value, list):
+                        filter_value = [filter_value]
+
+                df_column_lower = df[filter_column].astype(str).str.lower().str.strip()
+
+                # Apply filter condition using mapping
+                if filter_condition in condition_map:
+                    condition_mask = condition_map[filter_condition](df_column_lower, filter_value)
+                    mask &= condition_mask
+                else:
+                    raise ValueError(f"Unknown filter condition: {filter_condition}")
+
+            # Ensure necessary columns exist
+            for col in ['account_standard', 'description_standard', 'standard_criteria', 'items_match']:
+                if col not in df.columns:
+                    df[col] = ''
+
+            # Apply the target modifications to the DataFrame for the current mask
+            account, description = target.split(' - ')
+            df.loc[mask, 'account_standard'] = account
+            df.loc[mask, 'description_standard'] = description
+            df.loc[mask, 'standard_criteria'] = " | ".join([f"{c[0]} {c[1]} {c[2]}" for c in crits])
+
+            # Capture items that match the mask
+            items_example = df.loc[mask, ['account', 'description']].drop_duplicates().apply(
+                lambda row: f"{row['account']} - {row['description']}", axis=1
+            ).tolist()
+            df.loc[mask, 'items_match'] = " | ".join(items_example)
+
+            # Recursively apply subcriteria
+            for sub in sub_criteria:
+                sub_accounts = df.loc[mask, 'account'].unique()
+                sub_mask = df['account'].astype(str).apply(lambda x: any(x.startswith(str(acct)) for acct in sub_accounts))
+
+                df, section_name, account, description = self.apply_criteria(
+                    df, section_name, sub, parent_mask=sub_mask, output_file=output_file,
+                    parent_criteria_info=parent_criteria_info.copy(), level=level+1
+                )
+
+        except Exception as e:
+            print(f'criteria error {e}')
+
+        return df, section_name, account, description
+
+    def apply_criteria_old(self, df, section_name, criteria_item, parent_mask=None, output_file='output.txt', parent_criteria_info=None, level=1):
         """
         Applies a criterion and its sub-criteria to the DataFrame.
 
@@ -298,92 +402,81 @@ class IntelProcessor(BaseProcessor):
 
         return df
 
-    def get_scrape_targets(self, existing_data, new_data):
+    def get_targets(self, use_index=True, max_retries=None, wait_time=None):
         """
-        Filters out existing primary keys from new data.
-        
-        Args:
-            existing_data (pd.DataFrame): Existing financial statements data.
-            new_data (pd.DataFrame): Newly scraped financial statements data.
-            
+        Retrieve new rows from tbl_statements_raw that are not in tbl_statements_normalized.
+                    
         Returns:
             pd.DataFrame: Filtered DataFrame containing only the new records.
         """
-        # Define the primary key columns
-        result = pd.DataFrame()
-        try:
-            primary_key_columns = self.config.domain['statements_sheet_columns']
-            # Check if new_data is empty
-            if new_data.empty:
-                return existing_data
+        max_retries = max_retries or self.config.selenium['max_retries']
+        wait_time = wait_time or self.config.selenium['wait_time']
 
-            # Ensure the primary key columns exist in both datasets
-            if not all(col in existing_data.columns for col in primary_key_columns):
-                raise ValueError("Missing primary key columns in existing_data.")
-            if not all(col in new_data.columns for col in primary_key_columns):
-                raise ValueError("Missing primary key columns in new_data.")
-            
-            # Standardize data types for primary key columns
-            existing_data = existing_data.copy()  # Ensure it's a full copy
-            new_data = new_data.copy()  # Ensure it's a full copy
-            for col in primary_key_columns:
-                if col in existing_data.columns and col in new_data.columns:
-                    # Convert both columns to string (or other appropriate types)
-                    existing_data[col] = existing_data[col].astype(str)
-                    new_data[col] = new_data[col].astype(str)
+        # Gerar condição de JOIN baseada nas primary keys
+        on_conditions = " AND ".join([f"r.{col} = n.{col}" for col in self.primary_key_columns])
 
-            chunk_size = self.config.scraping['chunk_size']
-            result = pd.concat(
-                (
-                    pd.merge(
-                        existing_data.iloc[i:i + chunk_size], 
-                        new_data[primary_key_columns],  
-                        on=primary_key_columns,  
-                        how='left',  
-                        indicator=True
-                    ).query("_merge == 'left_only'").drop(columns=['_merge'])
-                    for i in range(0, len(existing_data), chunk_size)
-                ),
-                ignore_index=True
-            )
+        # Construção da SQL otimizada usando NOT EXISTS
+        query_base = f"""
+        FROM {self.tbl_statements_raw} AS r
+        {f"INDEXED BY {self.idx_statements_raw}" if use_index else ""}
+        WHERE NOT EXISTS (
+            SELECT 1 FROM {self.tbl_statements_normalized} AS n
+            WHERE {on_conditions}
+        )
+        """
 
-        except Exception as e:
-            self.log_error(e)
-            result = pd.DataFrame()
+        # Queries completas
+        query = f"SELECT r.* {query_base};"
+        query_count = f"SELECT COUNT(*) {query_base};"
 
-        return result
+        chunk_size = int(self.config.scraping['chunk_size'] / 10)  # Ajuste para processamento em batches
+
+        df_list = []
+        attempts = 0
+
+        while attempts < max_retries:
+            with self.db_lock:  # Garantia de acesso seguro ao banco
+                try:
+                    with sqlite3.connect(self.db_filepath) as conn:
+                        # Contar total de registros para processar
+                        total_rows = pd.read_sql_query(query_count, conn).iloc[0, 0]
+
+                        if total_rows == 0:
+                            return pd.DataFrame()  # Retorna um DataFrame vazio
+
+                        # Processamento por chunks com barra de progresso
+                        with tqdm(total=total_rows, unit="rows", desc="") as pbar:
+                            for chunk in pd.read_sql_query(query, conn, chunksize=chunk_size):
+                                df_list.append(chunk)
+                                pbar.update(len(chunk))  # Atualiza a barra de progresso
+
+                        df = pd.concat(df_list, ignore_index=True)
+                    return df 
+
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e):
+                        attempts += 1
+                        time.sleep(wait_time)  # Aguarda antes de tentar novamente
+                    else:
+                        raise  # Repassa qualquer outro erro inesperado
+
+        raise Exception(f"Falha ao buscar novos registros após {max_retries} tentativas.")
 
     def main(self, thread=True):
         '''
         docstring
         '''
         try:
-            # # optimize db before run
-            # self.db_optimize(self.config.databases['raw']['filepath'])
-
-            # # debug
-            # financial_statements = pd.read_csv('financial_statements.csv')
-            # standart_statements = pd.read_csv('standart_statements.csv')
-
-            # Load necessary data as scrape targets
-            financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
-            standart_statements = self.load_data(table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
-
-            # # pre-debug
-            # financial_statements[:1000000].to_csv('financial_statements.csv', index=False)
-            # # pre-debug
-            # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
-
-            # load statements and process intel
-            scrape_targets = self.get_scrape_targets(standart_statements, financial_statements)
-
-            # Exit if no scrape_targets
-            if scrape_targets.empty:
+            # Get updated targets
+            targets = self.get_targets()
+            targets.to_csv('targets.csv', index=False)
+            # Exit if no targets
+            if targets.empty:
                 self.db_optimize(self.config.databases["raw"]["filepath"])
                 return True
 
             # Process targets using threading or sequential logic
-            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not result.empty:

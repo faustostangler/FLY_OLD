@@ -740,7 +740,9 @@ class BaseProcessor:
         try:
             if not benchmark_mode:
                 # Just run the function normally without benchmarking
-                return function(*args, **kwargs), []
+                result = function(*args, **kwargs), []
+                
+                return result
 
             if workers_list is None:
                 workers_list = [1, max(2, os.cpu_count() // 2), os.cpu_count(), os.cpu_count() * 2]
@@ -899,7 +901,9 @@ class BaseProcessor:
                 with self._get_db_connection(db_filepath) as conn:
                     # Create the database file if it doesn't exist
                     conn.execute("PRAGMA temp_store=MEMORY;")
-                    conn.execute("PRAGMA locking_mode=EXCLUSIVE;")
+                    conn.execute("PRAGMA locking_mode=NORMAL;")
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
 
                 if table_name:
                     self._initialize_table(db_filepath, database_name, table_name)
@@ -919,7 +923,7 @@ class BaseProcessor:
                 if schema_table_name in table_name or schema_table_name == table_name:
                     with self._get_db_connection(db_filepath) as conn:
                         cursor = conn.cursor()
-                        cursor.execute(schema_sql.format(table_name=table_name))
+                        [cursor.execute(statement.strip()) for statement in schema_sql.split(";") if statement.strip()]
                         conn.commit()
                         # print(f"Table '{table_name}' initialized in '{database_name}'.")
                     return
@@ -933,6 +937,8 @@ class BaseProcessor:
         """Set persistent PRAGMA settings for the database."""
         try:
             with sqlite3.connect(db_filepath) as conn:
+                conn.execute("PRAGMA temp_store=MEMORY;")
+                conn.execute("PRAGMA locking_mode=NORMAL;")
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("PRAGMA synchronous=NORMAL;")
             # print("Database configured successfully.")
@@ -945,8 +951,6 @@ class BaseProcessor:
         """Return a new database connection with session-specific PRAGMA settings."""
         try:
             conn = sqlite3.connect(db_filepath, check_same_thread=False)  # Allow multithreading
-            conn.execute("PRAGMA temp_store=MEMORY;")
-            conn.execute("PRAGMA locking_mode=NORMAL;")
         except Exception as e:
             self.log_error(e)
             
@@ -992,70 +996,184 @@ class BaseProcessor:
 
         conn.close()
 
-    def load_data(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None, alert=True):
+    def load_data_new(self, table_name=None, query=None, params=None, normalize_columns=None, db_filepath=None, max_retries=None, alert=True):
+        """Main method to load data with batch processing."""
+        try:
+            db_filepath = db_filepath or self.config.databases['raw']['filepath']
+            max_retries = max_retries or self.config.selenium['max_retries']
+
+            with self.db_lock:
+                self._initialize_database(db_filepath, table_name)
+                self._configure_db(db_filepath)
+
+            attempts = 0
+            while attempts < max_retries:
+                try:
+                    total_rows = self._count_records(db_filepath, table_name, query, params)
+                    data = self._load_data_batches(db_filepath, table_name, query, params, total_rows, normalize_columns, alert)
+                    return data
+
+                except Exception as e:
+                    if "database is locked" in str(e):
+                        attempts += 1
+                        time.sleep(self.config.selenium['wait_time'])
+                    else:
+                        raise
+
+            raise Exception(f"Failed to load data after {max_retries} attempts.")
+
+        except Exception as e:
+            self.log_error(e)
+
+    def _count_records(self, db_filepath, table_name, query, params):
+        """Counts total records in the specified table or query."""
+        try:
+            with sqlite3.connect(db_filepath) as conn:
+                cursor = conn.cursor()
+                try:
+                    # primary_keys = self._get_primary_key(table_name, db_filepath)
+                    if query:
+                        sql_query = query if not params else f"SELECT COUNT(*) FROM ({query})"
+                        cursor.execute(sql_query, params) if params else cursor.execute(sql_query)
+                    elif table_name:
+                        if params:
+                            sql_query = f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
+                            cursor.execute(sql_query, params)
+                        else:
+                            sql_query = f"SELECT COUNT(*) FROM {table_name}"
+                            cursor.execute(sql_query)
+                    total_rows = cursor.fetchone()[0]
+
+                except Exception as e:
+                    total_rows = 0
+
+                return total_rows
+
+        except Exception as e:
+            self.log_error(e)
+
+    def _load_data_batches(self, db_filepath, table_name, query, params, total_rows, normalize_columns, alert):
+        """Loads data in batches using multi-threading."""
+        try:
+            batch_size = self.config.scraping['chunk_size']
+            batch_number = (total_rows // batch_size) + 1
+            batch_threads = min(self.config.scraping['max_workers'], batch_number)
+            offsets = range(0, total_rows, batch_size)
+
+            start_time = time.time()
+            with ThreadPoolExecutor(max_workers=batch_threads) as executor:
+                tasks = [executor.submit(self._read_batch, db_filepath, table_name, query, params, offset, batch_size, batch_num, total_rows, start_time, alert)
+                        for batch_num, offset in enumerate(offsets)]
+                dataframes = [task.result() for task in tasks]
+
+            final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
+
+            if normalize_columns:
+                final_df = self._normalize_columns(final_df, normalize_columns)
+
+        except Exception as e:
+            final_df = pd.DataFrame()
+            self.log_error(e)
+
+        return final_df
+
+    def _read_batch(self, db_filepath, table_name, query, params, offset, batch_size, batch_num, total_rows, start_time, alert):
+        """Reads a single batch of data."""
+        try:
+            if alert:
+                extra_info = [f"Batch {batch_num + 1}/{(total_rows // batch_size) + 1}"]
+                self.print_info(batch_num, (total_rows // batch_size) + 1, start_time, extra_info)
+
+            attempts = 0
+            max_retries = self.config.selenium['max_retries']
+            while attempts < max_retries:
+                try:
+                    with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
+                        try:
+                            sql_query = self._construct_query(table_name, query, params, batch_size, offset)
+                            df = pd.read_sql_query(sql_query, conn, params=params)
+                        except Exception as e:
+                            self.log_error(e)
+                        return df
+                except Exception as e:
+                    if "database is locked" in str(e):
+                        attempts += 1
+                        time.sleep(self.config.selenium['wait_time'])
+                    else:
+                        raise
+            raise Exception(f"Failed to read batch after {max_retries} attempts.")
+
+        except Exception as e:
+            self.log_error(e)
+
+    def load_data(self, table_name=None, query=None, params=None, db_filepath=None, max_retries=None, alert=True):
         """
         Load data from the SQLite database into a pandas DataFrame using multithreading for faster reads.
         Dynamically creates databases and tables if they do not exist.
         """
         try:
+            params = params or ()
             db_filepath = db_filepath or self.config.databases['raw']['filepath']
             database_name = os.path.basename(db_filepath)
-            primary_keys = self._get_primary_key(table_name, database_name)
             dataframes = []
 
-            max_retries = max_retries or self.config.selenium['max_retries']
-
-            self._configure_db(db_filepath)
-
             # Retry logic for database connection
+            max_retries = max_retries or self.config.selenium['max_retries']
             attempts = 0
             while attempts < max_retries:
                 try:
                     with self.db_lock:
                         # Ensure the database and table exist
                         self._initialize_database(db_filepath, database_name, table_name)
+                        self._configure_db(db_filepath)
 
-                        # Connect to the database and count total rows
+                        # Connect to the database
                         with self._get_db_connection(db_filepath) as conn:
                             cursor = conn.cursor()
-                            if table_name:
-                                try:
-                                    if query:
-                                        count_query = f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
-                                        cursor.execute(count_query, params)
-                                    else:
-                                        count_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
-                                        cursor.execute(count_query)
-                                    total_rows = cursor.fetchone()[0]
-                                except Exception as e:
-                                    self._initialize_table(db_filepath, database_name, table_name)
-                                    total_rows = 0
 
+                            # Count total rows
+                            try:
+                                if table_name:
+                                    primary_keys = self._get_primary_key(table_name, database_name)
+                                    sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
+                                elif query:
+                                    sql_query = f"SELECT COUNT(*) FROM ({query})"
+                                    # f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
+                                cursor.execute(sql_query, params)
+                                total_rows = cursor.fetchone()[0]
+                            except Exception as e:
+                                self._initialize_table(db_filepath, database_name, table_name)
+                                total_rows = 0
+
+                            # Load database
                             batch_size = self.config.scraping['chunk_size']
-                            number_of_batches = (total_rows // batch_size) + 1
-                            num_threads = min(self.config.scraping['max_workers'], number_of_batches)
+                            size = (total_rows // batch_size) + (1 if total_rows % batch_size > 0 else 0)  # Total number of batches
+                            batch_number = (total_rows // batch_size) + 1
+                            batch_threads = min(self.config.scraping['max_workers'], batch_number)
                             offsets = range(0, total_rows, batch_size)
 
                             start_time = time.time()
-
-                            def read_batch(offset, batch_number):
+                            def read_batch(offset, batch_number, table_name, query, params, size, alert=True):
                                 if alert:
-                                    extra_info = [f"Parte {batch_number + 1}/{number_of_batches}", f"{database_name}", f"{table_name}"]
-                                    self.print_info(batch_number, number_of_batches, start_time, extra_info)
+                                    extra_info = [f"Parte {batch_number + 1}/{size}", f"{database_name}"]
+                                    self.print_info(batch_number, size, start_time, extra_info)
 
                                 attempt = 0
                                 while attempt < max_retries:
                                     try:
                                         with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
-                                            if query:
-                                                paginated_query = f"SELECT * FROM {table_name} WHERE ticker_code = ?"
-                                                df_query = pd.read_sql_query(paginated_query, conn, params=params)
-                                                return df_query
-                                            elif table_name:
+                                            if table_name:
                                                 paginated_query = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
                                                 df_query = pd.read_sql_query(paginated_query, conn)
-                                                return df_query
-                                            return pd.DataFrame()
+                                            elif query:
+                                                params = params or ()
+                                                paginated_query = f"{query} LIMIT {batch_size} OFFSET {offset}"
+                                                df_query = pd.read_sql_query(paginated_query, conn, params=params)
+                                            else:
+                                                df_query = pd.DataFrame()
+
+                                            return df_query
+
                                     except Exception as e:
                                         if "database is locked" in str(e):
                                             attempt += 1
@@ -1064,19 +1182,23 @@ class BaseProcessor:
                                             raise  
                                 raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
-                            with ThreadPoolExecutor(max_workers=num_threads) as executor:
-                                tasks = [executor.submit(read_batch, offset, batch_number) for batch_number, offset in enumerate(offsets)]
+                            with ThreadPoolExecutor(max_workers=batch_threads) as executor:
+                                tasks = []
+                                for batch_number, offset in enumerate(offsets):
+                                    task = executor.submit(read_batch, offset, batch_number)
+                                    tasks.append(task)
+                                    time.sleep(1)
                                 dataframes = [task.result() for task in tasks]
 
                             final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
 
-                            if normalize_columns:
-                                for col in normalize_columns:
-                                    if col in final_df.columns:
-                                        if 'date' in col.lower() or 'time' in col.lower():
-                                            final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
-                                        else:
-                                            final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+                            # if normalize_columns:
+                            #     for col in normalize_columns:
+                            #         if col in final_df.columns:
+                            #             if 'date' in col.lower() or 'time' in col.lower():
+                            #                 final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
+                            #             else:
+                            #                 final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
 
                             return final_df
 
@@ -1092,6 +1214,7 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
             return pd.DataFrame()  # Return an empty DataFrame in case of failure
+
     def save_to_db(self, dataframe, table_name=None, db_filepath=None, alert=True, max_retries=None):
         """
         Save or update a DataFrame in a SQLite database table.
@@ -1156,10 +1279,11 @@ class BaseProcessor:
             dataframe.to_csv('dataframe.csv', index=False)
             self.log_error(f"Error saving to database: {e}")
 
-    def _get_primary_key(self, table_name, database_name):
+    def _get_primary_key(self, table_name, db_filepath):
         """
         """
         primary_key = ''
+        database_name = os.path.basename(db_filepath)
 
         try:
             schema = self.config.schemas[database_name][table_name]
@@ -1263,7 +1387,7 @@ class BaseProcessor:
                             except Exception as e_inner:
                                 # Fallback to automatic inference of format
                                 dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
-                                self.print(e_outer, e_inner)
+                                print(e_outer, e_inner)
 
                         # Apply the conversion to ISO format
                         dataframe[col] = dataframe[col].apply(
@@ -1441,16 +1565,16 @@ class TemplateProcessor(BaseProcessor):
             data_2 = self.load_data()
 
             # Fetch Scrape targets
-            scrape_targets = ''
+            targets = ''
 
-            # if no scrape_targets, optimize db and return True
-            if scrape_targets:
-                if scrape_targets.size == 0:  # Check if the array is empty
+            # if no targets, optimize db and return True
+            if targets:
+                if targets.size == 0:  # Check if the array is empty
                     self.db_optimize(self.config.databases['raw']['filepath'])
                     return True
 
             # Process targets using threading or sequential logic
-            processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            processed_batch = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # save/update db
             if not processed_batch.empty:

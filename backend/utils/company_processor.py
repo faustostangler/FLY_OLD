@@ -20,7 +20,7 @@ class CompanyProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.tbl_company_name = self.config.databases['raw']['tables']['company_info']
+        self.tbl_company_name = self.config.databases['raw']['table']['company_info']
         self.db_filepath = self.config.databases['raw']['filepath']
 
         # Initialize driver and other resources
@@ -316,7 +316,7 @@ class CompanyProcessor(BaseProcessor):
 
         return df
 
-    def get_scrape_targets(self, local_companies, web_companies):
+    def get_targets(self, local_companies, web_companies):
         '''
         '''
         result = []
@@ -338,15 +338,15 @@ class CompanyProcessor(BaseProcessor):
             web_companies = self.get_web_companies()
             
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(local_companies, web_companies)
+            targets = self.get_targets(local_companies, web_companies)
 
-            # Exit if no scrape_targets
-            if scrape_targets.empty:
+            # Exit if no targets
+            if targets.empty:
                 self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Run batch processing
-            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not result.empty:

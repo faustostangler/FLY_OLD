@@ -54,12 +54,12 @@ class MarketProcessor(BaseProcessor):
             self.log_error(f"Error calculating median data: {e}")
             return pd.DataFrame()
 
-    def _create_new_rows(self, scrape_targets, historical_data, sector):
+    def _create_new_rows(self, targets, historical_data, sector):
         """
         Create new rows for historical data in the financial statements.
 
         Args:
-            scrape_targets (DataFrame): DataFrame containing financial statements and company info.
+            targets (DataFrame): DataFrame containing financial statements and company info.
             historical_data (dict): Dictionary containing historical data for each ticker.
 
         Returns:
@@ -67,7 +67,7 @@ class MarketProcessor(BaseProcessor):
         """
         new_rows = []
         try:
-            statements_quarters = scrape_targets[['company_name', 'ticker_codes', 'quarter']].drop_duplicates()
+            statements_quarters = targets[['company_name', 'ticker_codes', 'quarter']].drop_duplicates()
 
             new_value = 0
             start_time = time.time()
@@ -83,7 +83,7 @@ class MarketProcessor(BaseProcessor):
                 for ticker in tickers:
                     if ticker:
                         # Handle ticker and historical data creation
-                        one_row = self._create_one_row(scrape_targets, company_name, quarter, ticker, historical_data)
+                        one_row = self._create_one_row(targets, company_name, quarter, ticker, historical_data)
                         # If a valid row (pd.Series) is returned, convert it to a dict and add to new_rows list
                         if one_row is not None and isinstance(one_row, pd.Series):
                             new_rows.append(one_row.to_dict())  # Convert Series to dictionary before appending
@@ -102,12 +102,12 @@ class MarketProcessor(BaseProcessor):
 
         return new_rows
 
-    def _create_one_row(self, scrape_targets, company_name, quarter, ticker, historical_data):
+    def _create_one_row(self, targets, company_name, quarter, ticker, historical_data):
         """
         Helper function to create a new row for historical data.
 
         Args:
-            scrape_targets (DataFrame): DataFrame containing financial statements.
+            targets (DataFrame): DataFrame containing financial statements.
             company_name (str): Company name.
             quarter (str): Quarter identifier.
             ticker (str): Ticker symbol.
@@ -130,11 +130,11 @@ class MarketProcessor(BaseProcessor):
             one_row_description = self.config.domain["tipos_acoes"].get(tick_type, 'Tipo de Ação Desconhecido')
 
             # Filtering for matching rows
-            mask = (scrape_targets['company_name'] == company_name) & \
-                (scrape_targets['quarter'] == quarter) & \
-                (scrape_targets['ticker_codes'].str.contains(ticker))
+            mask = (targets['company_name'] == company_name) & \
+                (targets['quarter'] == quarter) & \
+                (targets['ticker_codes'].str.contains(ticker))
 
-            dff = scrape_targets[mask]
+            dff = targets[mask]
 
             # Check if dff has any rows
             if not dff.empty:
@@ -177,15 +177,15 @@ class MarketProcessor(BaseProcessor):
         The main method to scrape NSD data, parse it, and save it to the database.
         """
         try:
-            statements_data = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
-            companies_data = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            statements_data = self.load_data(table_name=self.config.databases['raw']['table']['statements_raw'], db_filepath=self.config.databases['raw']['filepath'])
+            companies_data = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 
             historical_data = self.load_data(table_name=self.config.historical_data, db_filepath=self.config.databases['raw']['filepath'])
 
 
             # Merge the two DataFrames on 'company_name'
-            scrape_targets = pd.merge(statements_data, companies_data, on=self.config.historical_columns_both, how='left')
-            scrape_tickets = scrape_targets[self.config.historical_columns_both + self.config.historical_columns_new].drop_duplicates()
+            targets = pd.merge(statements_data, companies_data, on=self.config.historical_columns_both, how='left')
+            scrape_tickets = targets[self.config.historical_columns_both + self.config.historical_columns_new].drop_duplicates()
 
             historical_data = {}
             last_date='1950-01-01'
@@ -220,10 +220,10 @@ class MarketProcessor(BaseProcessor):
                 extra_info = ['STOCK PRICES', sector, company_name, ' '.join(tickers)]
                 self.print_info(i, len(scrape_tickets), start_time, extra_info)
 
-            historical_data_rows = self._create_new_rows(scrape_targets, historical_data, sector)
+            historical_data_rows = self._create_new_rows(targets, historical_data, sector)
             new_rows = pd.DataFrame(historical_data_rows)
 
-            result = pd.concat([scrape_targets, new_rows], ignore_index=True).drop_duplicates(keep='last')
+            result = pd.concat([targets, new_rows], ignore_index=True).drop_duplicates(keep='last')
             result = result.sort_values(by=self.config.statements_order, ascending=[True] * len(self.config.statements_order))
 
             # Save processed data

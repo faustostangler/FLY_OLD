@@ -18,7 +18,7 @@ class NsdProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.table_name = self.config.databases['raw']['tables']['nsd']
+        self.table_name = self.config.databases['raw']['table']['nsd']
         self.db_filepath = self.config.databases['raw']['filepath']
 
     def process_instance(self, sub_batch, progress):
@@ -110,9 +110,9 @@ class NsdProcessor(BaseProcessor):
             self.log_error(e)
         
 
-        scrape_targets = pd.DataFrame({'nsd': list(nsd_range)})
+        targets = pd.DataFrame({'nsd': list(nsd_range)})
 
-        return scrape_targets
+        return targets
 
     def _fetch_nsd_html(self, nsd):
         """
@@ -207,15 +207,15 @@ class NsdProcessor(BaseProcessor):
             except Exception as e:
                 self.log_error(e)
 
-            scrape_targets = self._generate_nsd_list(existing_nsd)
+            targets = self._generate_nsd_list(existing_nsd)
 
-            # Exit if no scrape_targets
-            if scrape_targets.empty:
+            # Exit if no targets
+            if targets.empty:
                 self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Run processing (threaded or sequential)
-            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not result.empty:

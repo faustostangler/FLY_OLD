@@ -36,7 +36,6 @@ if __name__ == '__main__':
             statements_processor.main(thread=True)
             statements_processor.close_driver()
 
-
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = 'Y'
         prompt = 'Want to standardize statements information? (YES/NO): '

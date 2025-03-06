@@ -124,7 +124,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
 
         return urls
 
-    def get_scrape_targets(self, company_info, ticker_urls):
+    def get_targets(self, company_info, ticker_urls):
         '''
         '''
         try:
@@ -134,11 +134,11 @@ class HistoricalStockUrlProcessor(BaseProcessor):
                 tickers_to_remove = ticker_urls['ticker'].unique()
             except Exception as e:
                 tickers_to_remove = []
-            scrape_targets = np.setdiff1d(tickers_existing, tickers_to_remove)
+            targets = np.setdiff1d(tickers_existing, tickers_to_remove)
         except Exception as e:
             self.log_error(e)
 
-        return scrape_targets
+        return targets
 
     def main(self, thread=True):
         """
@@ -146,18 +146,18 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         """
         try:
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
             ticker_urls = self.load_data(table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.databases['raw']['filepath'])
 
-            scrape_targets = self.get_scrape_targets(company_info, ticker_urls)
+            targets = self.get_targets(company_info, ticker_urls)
 
-            # Exit if no scrape_targets
-            if scrape_targets.size == 0:  # Check if the array is empty
+            # Exit if no targets
+            if targets.size == 0:  # Check if the array is empty
                 self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
-            processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            processed_batch = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             if not processed_batch.empty:
                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_tickers_urls_table, db_filepath=self.config.databases['raw']['filepath'])
@@ -174,7 +174,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         try:
 
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 
             tickers = company_info['ticker'].unique()
 

@@ -37,11 +37,11 @@ class EventsStatementsProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.tbl_company_info = self.config.databases['raw']['tables']['company_info']
-        self.tbl_statements_corp_events = self.config.databases['raw']['tables']['statements_corp_events']
-        self.tbl_statements_normalized = self.config.databases['raw']['tables']['statements_normalized']
+        self.tbl_company_info = self.config.databases['raw']['table']['company_info']
+        self.tbl_statements_corp_events = self.config.databases['raw']['table']['statements_corp_events']
+        self.tbl_statements_normalized = self.config.databases['raw']['table']['statements_normalized']
 
-        self.tbl_stock_data = self.config.databases['raw']['tables']['stock_data']
+        self.tbl_stock_data = self.config.databases['raw']['table']['stock_data']
 
         self.db_filepath = self.config.databases['raw']['filepath']
 
@@ -125,7 +125,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         return result
 
-    def get_scrape_targets(self, company_info):
+    def get_targets(self, company_info):
         """
         Obtém os alvos de raspagem de dados para a empresa.
 
@@ -139,14 +139,14 @@ class EventsStatementsProcessor(BaseProcessor):
         """
         try:
             # Expande a lista de empresas e seus respectivos alvos para raspagem
-            scrape_targets = self.explode_company(company_info).reset_index(drop=True)
+            targets = self.explode_company(company_info).reset_index(drop=True)
 
         except Exception as e:
             # Registra qualquer erro ocorrido
             self.log_error(e)
-            scrape_targets = pd.DataFrame()
+            targets = pd.DataFrame()
 
-        return scrape_targets
+        return targets
 
     def get_company_financials(self, company_name, ticker_code=None):
         """
@@ -542,15 +542,15 @@ class EventsStatementsProcessor(BaseProcessor):
             standart_statements = pd.read_csv('standart_statements.csv')
             # statements_corp_events = pd.read_csv('statements_corp_events.csv')
 
-            scrape_targets = self.get_scrape_targets(company_info)
+            targets = self.get_targets(company_info)
 
-            # Exit if no scrape_targets
-            if scrape_targets.empty:
+            # Exit if no targets
+            if targets.empty:
                 self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
-            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not result.empty:
@@ -656,7 +656,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
 #         return result
 
-#     def get_scrape_targets(self, company_info, historical_data, statements_company):
+#     def get_targets(self, company_info, historical_data, statements_company):
 #         '''
 #         docstrings
 #         '''
@@ -676,8 +676,8 @@ class EventsStatementsProcessor(BaseProcessor):
 #                 historical_data = historical_data.drop_duplicates(subset=historical_data_primary_key_columns, keep='first')
 #             except Exception as e:
 #                 company_info['date'] = self.config.scraping["stock_data_start_date"]
-#                 scrape_targets = company_info[merging_columns]
-#                 return scrape_targets
+#                 targets = company_info[merging_columns]
+#                 return targets
 
 #             # get unprocessed companies
 #             # Merge to find unprocessed companies (companies in `company_info` not in `historical_data`)
@@ -702,18 +702,18 @@ class EventsStatementsProcessor(BaseProcessor):
 
 #             # Combine the datasets
 #             if not unprocessed_companies.empty:
-#                 scrape_targets = pd.concat([unprocessed_companies, processed_companies], ignore_index=True)
-#                 scrape_targets['date'] = pd.to_datetime(scrape_targets['date'], errors='coerce')
-#                 scrape_targets['date'] = scrape_targets['date'].dt.strftime('%Y-%m-%d')
-#                 scrape_targets = scrape_targets.dropna(subset=['date']).reset_index(drop=True)
+#                 targets = pd.concat([unprocessed_companies, processed_companies], ignore_index=True)
+#                 targets['date'] = pd.to_datetime(targets['date'], errors='coerce')
+#                 targets['date'] = targets['date'].dt.strftime('%Y-%m-%d')
+#                 targets = targets.dropna(subset=['date']).reset_index(drop=True)
 #             else:
-#                 scrape_targets = processed_companies
+#                 targets = processed_companies
 
 #         except Exception as e:
 #             self.log_error(e)
-#             scrape_targets = pd.DataFrame(columns=merging_columns)
+#             targets = pd.DataFrame(columns=merging_columns)
 
-#         return scrape_targets
+#         return targets
 
 #     def main(self, thread=True):
 #         '''
@@ -721,20 +721,20 @@ class EventsStatementsProcessor(BaseProcessor):
 #         '''
 #         try:
 #             # Load existing information
-#             company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+#             company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
 #             historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.databases['raw']['filepath'])
-#             # statements_company = self.load_data(table_name=self.config.databases['raw']['tables']['statements_raw'] , db_filepath=self.config.databases['raw']['filepath'])
+#             # statements_company = self.load_data(table_name=self.config.databases['raw']['table']['statements_raw'] , db_filepath=self.config.databases['raw']['filepath'])
 #             statements_company = pd.DataFrame(columns=self.config.domain['statements_columns'])
 
-#             scrape_targets = self.get_scrape_targets(company_info, historical_data, statements_company)
+#             targets = self.get_targets(company_info, historical_data, statements_company)
 
-#             # if no scrape_targets, optimize db and return True
-#             if scrape_targets.size == 0:  # Check if the array is empty
+#             # if no targets, optimize db and return True
+#             if targets.size == 0:  # Check if the array is empty
 #                 self.db_optimize(self.config.databases['raw']['filepath'])
 #                 return True
 
 #             # Process targets using threading or sequential logic
-#             processed_batch = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+#             processed_batch = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
 #             # save/update db
 #             if not processed_batch.empty:

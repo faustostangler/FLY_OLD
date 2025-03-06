@@ -19,7 +19,7 @@ class StatementsProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.tbl_statements_raw = self.config.databases['raw']['tables']['statements_raw']
+        self.tbl_statements_raw = self.config.databases['raw']['table']['statements_raw']
         self.db_filepath = self.config.databases['raw']['filepath']
 
         # Initialize driver and other resources
@@ -150,7 +150,7 @@ class StatementsProcessor(BaseProcessor):
             self.log_error(f"Error processing company quarter data: {e}")
             return []  # Return an empty list to prevent the process from stopping
 
-    def get_scrape_targets(self, company_info, existing_nsd, financial_statements):
+    def get_targets(self, company_info, existing_nsd, financial_statements):
         '''
         '''
         last_order = 'ZZZZZZZZZZ'
@@ -163,29 +163,29 @@ class StatementsProcessor(BaseProcessor):
             # merge nsd and company info
             nsd_company_df = pd.merge(nsd_df, company_info, on='company_name', how='inner')
             try:
-                scrape_targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
+                targets = nsd_company_df[~nsd_company_df['nsd'].isin(financial_statements['nsd'].unique())]
             except:
-                scrape_targets = nsd_company_df
+                targets = nsd_company_df
 
             # Custom sorting to place empty fields last
-            scrape_targets.loc[scrape_targets['sector'] == '', 'sector'] = last_order
-            scrape_targets.loc[scrape_targets['subsector'] == '', 'subsector'] = last_order
-            scrape_targets.loc[scrape_targets['segment'] == '', 'segment'] = last_order
+            targets.loc[targets['sector'] == '', 'sector'] = last_order
+            targets.loc[targets['subsector'] == '', 'subsector'] = last_order
+            targets.loc[targets['segment'] == '', 'segment'] = last_order
 
             # Order the list by sector, subsector, segment, company_name, quarter, and version
-            scrape_targets = scrape_targets.sort_values(by=scrape_order, ascending=True)
+            targets = targets.sort_values(by=scrape_order, ascending=True)
 
             # Restore empty fields
-            scrape_targets.loc[scrape_targets['sector'] == last_order, 'sector'] = ''
-            scrape_targets.loc[scrape_targets['subsector'] == last_order, 'subsector'] = ''
-            scrape_targets.loc[scrape_targets['segment'] == last_order, 'segment'] = ''
+            targets.loc[targets['sector'] == last_order, 'sector'] = ''
+            targets.loc[targets['subsector'] == last_order, 'subsector'] = ''
+            targets.loc[targets['segment'] == last_order, 'segment'] = ''
 
-            return scrape_targets
+            return targets
 
         except Exception as e:
             self.log_error(e)
 
-        return scrape_targets
+        return targets
 
     def _scrape_financial_data(self, cmbGrupo, cmbQuadro):
         """
@@ -343,8 +343,8 @@ class StatementsProcessor(BaseProcessor):
         Main method to process data.
         """
         try:
-            self.tbl_company = self.config.databases['raw']['tables']['company_info']
-            self.tbl_nsd = self.config.databases['raw']['tables']['nsd']
+            self.tbl_company = self.config.databases['raw']['table']['company_info']
+            self.tbl_nsd = self.config.databases['raw']['table']['nsd']
 
             # Load necessary data
             company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
@@ -352,15 +352,15 @@ class StatementsProcessor(BaseProcessor):
             financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
 
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(company_info, existing_nsd, financial_statements)
+            targets = self.get_targets(company_info, existing_nsd, financial_statements)
 
-            # Exit if no scrape_targets
-            if scrape_targets.empty:
+            # Exit if no targets
+            if targets.empty:
                 self.db_optimize(self.config.databases['raw']['filepath'])
                 return True
 
             # Process targets using threading or sequential logic
-            result = self.run(scrape_targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
 
             # Save processed data
             if not result.empty:

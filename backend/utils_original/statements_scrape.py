@@ -338,7 +338,7 @@ class StatementsDataScraper:
         except Exception as e:
             system.log_error(f"Error saving data for sector {setor}: {e}")
 
-    def identify_scrape_targets(self):
+    def identify_targets(self):
         """
         Identifies and returns companies that need new financial data scraping.
 
@@ -380,25 +380,25 @@ class StatementsDataScraper:
                     scrape_target.append(filtered_df)
 
             try:
-                scrape_targets = pd.concat(scrape_target)
+                targets = pd.concat(scrape_target)
             except Exception as e:
-                scrape_targets = pd.DataFrame(columns=settings.statements_columns)
+                targets = pd.DataFrame(columns=settings.statements_columns)
 
             # Custom sorting to place empty fields last
-            scrape_targets['sector'] = scrape_targets['sector'].replace('', last_order)  # Replace empty strings with a placeholder
-            scrape_targets['subsector'] = scrape_targets['subsector'].replace('', last_order)
-            scrape_targets['segment'] = scrape_targets['segment'].replace('', last_order)
+            targets['sector'] = targets['sector'].replace('', last_order)  # Replace empty strings with a placeholder
+            targets['subsector'] = targets['subsector'].replace('', last_order)
+            targets['segment'] = targets['segment'].replace('', last_order)
 
             # Order the list by sector, subsector, segment, company_name, quarter, and version
-            scrape_targets = scrape_targets.sort_values(by=scrape_order, ascending=True)
+            targets = targets.sort_values(by=scrape_order, ascending=True)
 
             # Restore empty fields
-            scrape_targets['sector'] = scrape_targets['sector'].replace(last_order, '')  # Restore empty fields
-            scrape_targets['subsector'] = scrape_targets['subsector'].replace(last_order, '')
-            scrape_targets['segment'] = scrape_targets['segment'].replace(last_order, '')
+            targets['sector'] = targets['sector'].replace(last_order, '')  # Restore empty fields
+            targets['subsector'] = targets['subsector'].replace(last_order, '')
+            targets['segment'] = targets['segment'].replace(last_order, '')
 
-            print(f'{len(nsd_list)} items found and {len(scrape_targets)} items to download')
-            return scrape_targets
+            print(f'{len(nsd_list)} items found and {len(targets)} items to download')
+            return targets
 
         except Exception as e:
             # Log any errors encountered during the process
@@ -464,20 +464,20 @@ class StatementsDataScraper:
             system.log_error(f"Error processing company quarter data: {e}")
             return []  # Return an empty list to prevent the process from stopping
 
-    def run_scraper(self, scrape_targets, batch_number=None):
+    def run_scraper(self, targets, batch_number=None):
         """
         Run the entire scraping process for the identified NSD entries, iterating over all financial data statements.
         """
         try:
             # Initialize the overall counter
             start_time = time.time()  # Record the start time for the entire process
-            total_items = len(scrape_targets)  # Total number of items across all sectors
+            total_items = len(targets)  # Total number of items across all sectors
 
             # Initialize a counter to track the total number of processed items
             processed_items = 0
-            scrape_targets_groups = scrape_targets.groupby('sector', sort=False)
+            targets_groups = targets.groupby('sector', sort=False)
             # Process data sector by sector, processing sectors with empty strings last
-            for sector, sector_data in scrape_targets_groups:
+            for sector, sector_data in targets_groups:
                 all_data = []  # List to store all the processed data
 
                 for i, row in sector_data.iterrows():
@@ -514,21 +514,21 @@ class StatementsDataScraper:
                     db_filepath = self.save_to_db(batch_df, sector)
                     # system.db_optimize(db_filepath)
 
-            return scrape_targets
+            return targets
 
         except Exception as e:
             # Log any errors encountered during the main scraping process
             system.log_error(f"Error in run_scraper: {e}")
             return None  # Return None to indicate that the scraping process did not complete
 
-    def main_thread(self, scrape_targets, total_items, batch_size):
+    def main_thread(self, targets, total_items, batch_size):
         try:
             with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
                 futures = []
                 for batch_index, start in enumerate(range(0, total_items, batch_size)):
                     end = min(start + batch_size, total_items)
                     futures.append(executor.submit(
-                        lambda targets=scrape_targets[start:end], index=batch_index + 0: (
+                        lambda targets=targets[start:end], index=batch_index + 0: (
                             self.run_scraper_with_new_instance(targets, index)
                         )
                     ))
@@ -541,16 +541,16 @@ class StatementsDataScraper:
         finally:
             self.close_scraper()
 
-    def main_sequential(self, scrape_targets):
+    def main_sequential(self, targets):
         """
         Sequentially process all scrape targets at once.
         
         Parameters:
-        - scrape_targets (DataFrame): DataFrame containing all the targets to scrape.
+        - targets (DataFrame): DataFrame containing all the targets to scrape.
         """
         try:
             # Process all scrape targets at once without batching
-            self.run_scraper_with_new_instance(scrape_targets, batch_number=None)
+            self.run_scraper_with_new_instance(targets, batch_number=None)
 
         except Exception as e:
             system.log_error(f"Error during sequential processing: {e}")
@@ -562,31 +562,31 @@ class StatementsDataScraper:
         self.close_scraper()
         
         # Identify the scrape targets
-        scrape_targets = self.identify_scrape_targets()
-        total_items = len(scrape_targets)
+        targets = self.identify_targets()
+        total_items = len(targets)
         batch_size = int(total_items / settings.max_workers)
 
         if batch_size == 0:
             thread = False
 
-        if not scrape_targets.empty: 
+        if not targets.empty: 
             if thread:
                 # Run with threading
-                self.main_thread(scrape_targets, total_items, batch_size)
+                self.main_thread(targets, total_items, batch_size)
             else:
                 # Run sequentially
-                self.main_sequential(scrape_targets)  # Pass only scrape_targets
+                self.main_sequential(targets)  # Pass only targets
 
         return True
 
-    def run_scraper_with_new_instance(self, scrape_targets, batch_number):
+    def run_scraper_with_new_instance(self, targets, batch_number):
         """
         Create a new instance of StatementsDataScraper and run the scraper.
         This ensures each batch has its own WebDriver instance.
         """
         scraper = StatementsDataScraper()
         try:
-            scraper.run_scraper(scrape_targets, batch_number)
+            scraper.run_scraper(targets, batch_number)
         finally:
             scraper.close_scraper()
 

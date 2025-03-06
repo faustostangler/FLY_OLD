@@ -21,7 +21,7 @@ class StockProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
-    def get_scrape_targets(self, company_info, stock_info, start_year=2000, start_month=1):
+    def get_targets(self, company_info, stock_info, start_year=2000, start_month=1):
         """
         Generate scrape targets for missing data combinations.
         """
@@ -48,7 +48,7 @@ class StockProcessor(BaseProcessor):
             company_tickers = company_info['ticker'].unique().tolist()
 
             # Generate combinations directly and filter in one step
-            scrape_targets_set = {
+            targets_set = {
                 (ticker, f"{year}", f"{month:02}")
                 for ticker in company_tickers
                 for year in years
@@ -61,18 +61,18 @@ class StockProcessor(BaseProcessor):
             current_year_month = (f"{end_year}", f"{end_month:02}")
             for ticker in company_tickers:
                 current_combination = (ticker, *current_year_month)
-                scrape_targets_set.add(current_combination)
+                targets_set.add(current_combination)
 
             # Convert to DataFrame
-            scrape_targets = pd.DataFrame(
-                list(scrape_targets_set), columns=['company_ticker', 'year', 'month']
+            targets = pd.DataFrame(
+                list(targets_set), columns=['company_ticker', 'year', 'month']
             )
 
         except Exception as e:
             self.logerror(e)
-            scrape_targets = pd.DataFrame(columns=['company_ticker', 'year', 'month'])
+            targets = pd.DataFrame(columns=['company_ticker', 'year', 'month'])
 
-        return scrape_targets
+        return targets
 
     def process_batch_old(self, sub_batch, progress):
         '''
@@ -418,14 +418,14 @@ class StockProcessor(BaseProcessor):
             # self.driver, self.driver_wait = self._initialize_driver()
 
             # Load necessary data
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
             stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
             # Identify scrape targets
-            scrape_targets = self.get_scrape_targets(company_info, stock_info)
+            targets = self.get_targets(company_info, stock_info)
 
             # Run processing (threaded or sequential)
-            result = self.run(scrape_targets, thread=thread)
+            result = self.run(targets, thread=thread)
 
             # Save processed data
             if not result.empty:
@@ -444,13 +444,13 @@ class StockProcessor(BaseProcessor):
             # # Initialize the WebDriver
             # self.driver, self.driver_wait = self._initialize_driver()
 
-            company_info = self.load_data(table_name=self.config.databases['raw']['tables']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
+            company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
             stock_info = self.load_data(table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
-            scrape_targets = self.get_scrape_targets(company_info, stock_info)
+            targets = self.get_targets(company_info, stock_info)
 
             progress = {}
-            progress['scrape_size'] = len(scrape_targets)
+            progress['scrape_size'] = len(targets)
             progress['batch_size'] = self.config.scraping['batch_size']
 
             start_time = time.time()
@@ -460,7 +460,7 @@ class StockProcessor(BaseProcessor):
                 progress['batch_start'] = batch_start
 
                 # Slice the DataFrame for the current batch
-                batch = scrape_targets.iloc[batch_start:batch_start + progress['batch_size']]
+                batch = targets.iloc[batch_start:batch_start + progress['batch_size']]
 
                 if thread:
                     # Run with threading
@@ -472,7 +472,7 @@ class StockProcessor(BaseProcessor):
                 if not processed_batch.empty:
                     self.save_to_db(dataframe=processed_batch, table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath)
 
-                # stock_raw = self.scrape_url(scrape_targets)
+                # stock_raw = self.scrape_url(targets)
 
         except Exception as e:
             self.log_error(e)
