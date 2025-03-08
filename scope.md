@@ -1,82 +1,151 @@
-# Project Requirements: Web Scraping and Financial Data Processing
+# Project Scope: Web Scraping and Financial Data Processing
 
-**Overall Objective:**  
-The goal of this project is to capture, process, and store data related to companies, NSDs (Sequential Document Numbers), and financial data from an online source. The system must update the data periodically, identifying and processing only new or modified information.
+## **1. Objective**
+The **Finance Ledger Yearly (FLY)** project is designed to **capture, process, and store** financial data related to **companies, NSDs (Sequential Document Numbers), corporate events, and stock market data**. The system ensures **periodic updates** by identifying and processing only **new or modified** data.
 
-## 1. Company Data Capture
-Company data will be captured in two stages:
+## **2. Data Capture Overview**
+The system extracts data from various online sources using **web scraping** and **automated data processing**. It is structured into the following main components:
 
-1. **General Company List Capture:**
-   - Navigate through the paginated webpage listing all companies.
-   - Extract basic information (e.g., name, ID, industry) for each listed company.
-   - Store the captured data for later comparison and updates.
+1. **Company Information Scraping** (Handled by `company_processor.py`)
+2. **NSD Data Scraping** (Handled by `nsd_processor.py`)
+3. **Financial Statements Extraction & Processing** (Handled by `statements_processor.py` and `intel_processor.py`)
+4. **Corporate Events Data Extraction** (Handled by `corporate_events_processor.py`)
+5. **Stock Market & Historical Data Processing** (Handled by `market_processor.py`, `historical_stock_url_processor.py`, `stock_processor.py`)
 
-2. **Company Detail Capture:**
-   - From the general list, access individual company detail pages.
-   - Extract detailed and specific data for each company (e.g., address, contacts, available financial data).
-   - Merge new data with the existing database, intelligently avoiding duplicates and keeping the data updated.
+---
 
-## 2. NSD (Sequential Document Number) Data Capture
-The NSD data will be captured with the following steps:
+## **3. Data Collection and Processing Workflow**
 
-1. **Sequential NSD Capture:**
-   - Extract a sequential list of NSDs published online, containing information such as the company name, submission date, and other relevant details.
-   - Infer the latest available NSD using the following methodologies:
-     - **Dynamic Gap Filling and Interpretation of Skips:** Implement a logic to cross-check captured NSDs with the subsequent unutilized NSD numbers, identifying possible skips in sequence and dynamically filling in gaps without needing to estimate large intervals.
-     - **Adjustable Safety Margin:** Implement a variable safety margin that can be adjusted to ensure capture accuracy, factoring in patterns in the frequency and timing of NSD publications.
+### **3.1 Company Data Capture**
+**Modules:** `company_processor.py`
+- **General Company List Extraction:**
+  - Navigate paginated company listings.
+  - Extract **basic metadata** (e.g., name, ticker, industry).
+  - Store extracted data in the `tbl_company_info` table.
 
-2. **Gap Filling and Interpretation of Skips:**
-   - Develop logic to detect gaps in the sequential NSD numbers and intelligently infer whether these gaps are due to non-utilization or errors in capture.
-   - Implement strategies to backfill these gaps by re-querying and ensuring no valid NSD is missed.
+- **Company Detail Extraction:**
+  - Fetch **detailed financial and governance information**.
+  - Scrape **CNPJ, sector, subsector, listing type, and trading details**.
+  - Merge with existing data, ensuring **no duplication**.
 
-3. **Exception Handling and Re-querying:**
-   - Include robust exception handling to manage scenarios where NSD capture fails or unexpected patterns are detected.
-   - If an anomaly is detected (e.g., large gaps or unexpected sequence jumps), trigger a re-query of the NSD source to ensure the data is accurate and complete.
-   - Implement notifications or alerts in case of recurring issues, so that these can be manually reviewed if needed.
+---
 
-## 3. Financial Data Capture and Processing
-Financial data will be captured from the NSD details. Processing will be done as follows:
+### **3.2 NSD Data Capture**
+**Modules:** `nsd_processor.py`
+- **Sequential NSD Capture:**
+  - Extract published **NSD numbers, submission dates, and company associations**.
+  - Implement **gap filling & dynamic sequence tracking**:
+    - Detect **missing NSD numbers** and intelligently estimate missing data.
+    - Adjust for **irregular NSD publication** patterns.
 
-1. **Financial Data Capture:**
-   - Access a specific URL linked to the NSD to extract financial data using XPATH.
-   - Store the captured financial data in its raw form, preserving all versions and history.
+- **Re-query and Error Handling:**
+  - If a gap is detected, re-query to verify missing NSDs.
+  - Exception handling ensures **no failures in sequential data processing**.
 
-2. **Version Control and Financial Data Updates:**
-   - Implement a version control logic that ensures only the latest version of the financial data is marked as current.
-   - The system should compare updated financial data with previous versions to identify and process new information.
+- **Database Storage:**
+  - Data is saved to `tbl_nsd`, **maintaining historical versions**.
 
-3. **Reprocessing Financial Data:**
-   - After financial data updates, specific mathematical operations must be performed to recalculate values based on quarterly financial statements.
-   - For example:
-     - **For accounts starting with '3' or '4':** The last quarter's value must be adjusted by subtracting the previous quarters' values from the December value.
-     - **For accounts starting with '6' or '7':** All quarters' values must be adjusted similarly by subtracting the values of the preceding quarters.
-     - If the account prefix is not in these categories, no adjustments are needed.
+---
 
-## 4. Periodic Updates and Data Comparison
-- **Database Comparison:**
-  - In all data capture stages, the system must compare captured data with the current database to identify new or modified information.
-  - Only changes in data should trigger re-capture and reprocessing, minimizing redundancy and ensuring system efficiency.
+### **3.3 Financial Statements Capture & Processing**
+**Modules:** `statements_processor.py`, `intel_processor.py`
+- **Financial Statement Scraping:**
+  - Extract **financial statements and quarterly reports** linked to NSD.
+  - Process **income statements, balance sheets, and cash flows**.
 
-- **Scheduled Captures and Processing:**
-  - Data capture will be performed at irregular and random intervals to reflect online updates.
-  - The system should be configured for automated data capture and processing, based on *on-demand* requests.
+- **Data Standardization & Processing:**
+  - `intel_processor.py` **applies categorization criteria** to standardize financial data.
+  - Adjusts:
+    - **Accounts starting with '3' or '4'** → Adjust quarterly values.
+    - **Accounts starting with '6' or '7'** → Ensure correct aggregation.
 
-## 5. Additional Requirements and Clarifications
+- **Storage & Versioning:**
+  - Data is stored in:
+    - `tbl_statements_raw` (Raw statements before processing)
+    - `tbl_statements_normalized` (Standardized financial data)
+  - Only the **latest version** is marked as "current" while preserving **historical changes**.
 
-1. **Safety Margin for NSDs:**
-   - The safety margin for NSD capture should be adjustable to account for variability in NSD publication frequency.
+---
 
-2. **Performance Considerations:**
-   - The system must minimize rework during updates, focusing on efficient data processing and updating.
+### **3.4 Corporate Events Capture**
+**Modules:** `corporate_events_processor.py`
+- **Captures** corporate actions such as:
+  - **Stock splits, dividend payments, capital increases, mergers.**
+- **Processes** financial impacts on stock valuation.
+- **Integrates** corporate events data into:
+  - `tbl_statements_corp_events`
+  - `tbl_stock_data`
 
-3. **Version Control for Financial Data:**
-   - Only the latest version of financial data is relevant for updates, though previous versions should be maintained for comparison purposes.
+---
 
-4. **Mathematical Operations for Financial Data:**
-   - Operations are specific to the type of financial statement, with different adjustments for different categories of accounts (e.g., last quarter adjustments for '3' and '4', full quarter adjustments for '6' and '7').
+### **3.5 Stock Market & Historical Data Processing**
+**Modules:** `market_processor.py`, `historical_stock_url_processor.py`, `stock_processor.py`
+- **Historical Stock Data Collection:**
+  - Uses `historical_stock_url_processor.py` to fetch **historical prices** for each company.
+  - Extracts **monthly and quarterly median stock prices** for **fundamental analysis**.
 
-5. **Logging:**
-   - Maintain logs of errors and successes to facilitate troubleshooting and ensure traceability of all operations.
+- **Daily Market Updates:**
+  - `market_processor.py` fetches **daily stock prices, volume, and corporate event effects**.
+  - Computes **quarterly averages** and integrates with financial statement analysis.
 
-6. **Code Stability:**
-   - The code is to be delivered *as-is*, with no expectation of further changes or adjustments unless required by new updates from the data source.
+- **Final Storage & Processing:**
+  - Stores cleaned and structured data in:
+    - `tbl_stock_data` (Daily market data)
+    - `tbl_statements_corp_events` (Corporate events affecting stock)
+
+---
+
+## **4. System Features & Automation**
+
+### **4.1 Periodic Data Updates**
+- The system performs **scheduled and on-demand updates**:
+  - **On-Demand Scraping** (Triggered manually or via API request).
+  - **Scheduled Batch Updates** (Irregular/randomized execution to reflect real-world updates).
+
+- Ensures **only new or modified data is reprocessed**, optimizing efficiency.
+
+---
+
+### **4.2 Database & Storage Structure**
+#### **Database Schema Highlights**
+- **Company Data:** `tbl_company_info`
+- **NSD Tracking:** `tbl_nsd`
+- **Raw Financial Statements:** `tbl_statements_raw`
+- **Standardized Financial Statements:** `tbl_statements_normalized`
+- **Corporate Events & Market Data:** `tbl_statements_corp_events`
+- **Stock Market History:** `tbl_stock_data`
+
+---
+
+### **4.3 Performance & Benchmarking**
+- `base_processor.py` includes **benchmarking utilities** to:
+  - Compare processing performance under **different worker/thread configurations**.
+  - Optimize **database I/O and memory usage**.
+
+- **Log-based performance tracking** ensures:
+  - **Consistent execution time measurement** (`log_execution_time()`).
+  - **Thread-based batch processing performance monitoring**.
+
+---
+
+## **5. Error Handling & Data Validation**
+- **Robust exception handling** across all processors ensures:
+  - **Missing/Incomplete Data Handling** (`try-except` for failed requests).
+  - **Re-querying for failed NSDs** when gaps are detected.
+  - **Logging of unexpected data patterns** (`log_error()` standard).
+
+- **Validation Checks:**
+  - **Company data** is checked against duplicate entries.
+  - **Financial statements** are validated against expected schema structures.
+  - **Stock market data** is compared against previous records to detect anomalies.
+
+---
+
+## **6. Conclusion**
+The FLY project ensures:
+- **Accurate and timely financial data extraction**.
+- **Standardized data processing and storage**.
+- **Automated updates with high efficiency**.
+- **Scalable architecture to integrate new financial data sources**.
+
+By continuously improving **scraping logic, database management, and processing efficiency**, the system remains a **robust financial intelligence tool**.

@@ -1,20 +1,17 @@
-import time
 import os
 import shutil
-import pandas as pd
-import numpy as np
 import sqlite3
+import time
 
-from utils_original import settings
-from utils_original import system
-from utils_original import intel
+import numpy as np
+import pandas as pd
+from utils_original import intel, settings, system
 
 
 class FinancialRatios:
     def __init__(self):
-        """
-        Initialize the FinancialRatios class with the provided financial data.
-        """
+        """Initialize the FinancialRatios class with the provided financial
+        data."""
         try:
             self.data_folder = settings.data_folder
             self.db_filepath = settings.db_filepath
@@ -22,9 +19,9 @@ class FinancialRatios:
             system.log_error(f"Error initializing FinancialRatios: {e}")
 
     def load_data(self):
-        """
-        Load financial data from the database and process it into DataFrames.
-        
+        """Load financial data from the database and process it into
+        DataFrames.
+
         Args:
             files (str): The name part of the database file to load.
 
@@ -41,7 +38,9 @@ class FinancialRatios:
             cursor = conn.cursor()
 
             # Fetch all table names excluding internal SQLite tables
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+            )
             tables = cursor.fetchall()
 
             dfs = {}
@@ -56,23 +55,27 @@ class FinancialRatios:
                     df = pd.read_sql_query(f"SELECT * FROM {sector}", conn)
 
                     # Normalize date columns to datetime format
-                    df['quarter'] = pd.to_datetime(df['quarter'], errors='coerce')
+                    df["quarter"] = pd.to_datetime(df["quarter"], errors="coerce")
 
                     # Normalize numeric columns
-                    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+                    df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
                     # Fill missing 'value' with 0
-                    df['value'] = df['value'].fillna(0)
+                    df["value"] = df["value"].fillna(0)
 
                     # Identify rows where 'account' is missing or NaN and 'value' has been set to 0
-                    missing_account = df['account'].isna() | df['account'].str.strip().eq('')
-                    df.loc[missing_account, 'account'] = '0'  # Set 'account' to '0' (as text) for these rows
+                    missing_account = df["account"].isna() | df[
+                        "account"
+                    ].str.strip().eq("")
+                    df.loc[missing_account, "account"] = (
+                        "0"  # Set 'account' to '0' (as text) for these rows
+                    )
 
                     dfs[sector] = df  # Store the DataFrame with the sector as the key
                     total_lines += len(df)  # Update the total number of processed lines
 
                     # Display progress
-                    extra_info = [f'{sector} {len(df)} of {total_lines} items']
+                    extra_info = [f"{sector} {len(df)} of {total_lines} items"]
                     system.print_info(i, len(tables), start_time, extra_info)
 
                     # print('break loading market')
@@ -89,9 +92,9 @@ class FinancialRatios:
             return {}
 
     def save_to_db(self, sector, df):
-        """
-        Save the transformed data to the SQLite database, creating or replacing tables as necessary.
-        Updates existing data and inserts new data.
+        """Save the transformed data to the SQLite database, creating or
+        replacing tables as necessary. Updates existing data and inserts new
+        data.
 
         Args:
             sector (str): The sector name.
@@ -113,7 +116,9 @@ class FinancialRatios:
             with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
-                table_name = sector.upper().replace(' ', '_')  # Create a table name from sector name
+                table_name = sector.upper().replace(
+                    " ", "_"
+                )  # Create a table name from sector name
 
                 # SQL for creating the table if it does not exist
                 create_table_sql = f"""
@@ -149,31 +154,54 @@ class FinancialRatios:
                 """
 
                 # Ensure 'quarter' column is datetime and convert it to string format for SQLite compatibility
-                df.loc[:, 'quarter'] = pd.to_datetime(df['quarter'], errors='coerce').dt.strftime('%Y-%m-%d')
-                
+                df.loc[:, "quarter"] = pd.to_datetime(
+                    df["quarter"], errors="coerce"
+                ).dt.strftime("%Y-%m-%d")
+
                 # Replace NaN and NaT with None for SQLite compatibility
                 df = df.where(pd.notnull(df), None)
 
                 # Drop rows where any of the primary key columns are NULL
-                pk_columns = ['company_name', 'quarter', 'version', 'type', 'frame', 'account', 'description']
+                pk_columns = [
+                    "company_name",
+                    "quarter",
+                    "version",
+                    "type",
+                    "frame",
+                    "account",
+                    "description",
+                ]
                 df = df.dropna(subset=pk_columns)
 
                 # Convert data types explicitly
-                df['nsd'] = df['nsd'].astype(int)
-                string_columns = ['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'frame', 'account', 'description']
+                df["nsd"] = df["nsd"].astype(int)
+                string_columns = [
+                    "sector",
+                    "subsector",
+                    "segment",
+                    "company_name",
+                    "quarter",
+                    "version",
+                    "type",
+                    "frame",
+                    "account",
+                    "description",
+                ]
                 for col in string_columns:
                     df[col] = df[col].astype(str)
-                df['value'] = pd.to_numeric(df['value'], errors='coerce')
+                df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
                 # Check for non-string 'company_name'
-                non_string_company_names = df[~df['company_name'].apply(lambda x: isinstance(x, str))]
+                non_string_company_names = df[
+                    ~df["company_name"].apply(lambda x: isinstance(x, str))
+                ]
                 if not non_string_company_names.empty:
                     print("Non-string values found in 'company_name':")
                     print(non_string_company_names)
                     # Handle or remove these rows as appropriate
 
                 # Check for null 'company_name'
-                null_company_names = df[df['company_name'].isnull()]
+                null_company_names = df[df["company_name"].isnull()]
                 if not null_company_names.empty:
                     print("Null values found in 'company_name':")
                     print(null_company_names)
@@ -189,26 +217,33 @@ class FinancialRatios:
                 for idx, row in enumerate(data_to_insert):
                     for i, value in enumerate(row):
                         if not isinstance(value, (type(None), int, float, str, bytes)):
-                            print(f"Row {idx} has unsupported type at parameter {i+1}: {value}, type: {type(value)}")
+                            print(
+                                f"Row {idx} has unsupported type at parameter {i+1}: {value}, type: {type(value)}"
+                            )
 
                 # Execute batch insert
                 cursor.executemany(insert_sql, data_to_insert)
 
                 # Commit the transaction
                 conn.commit()
-                print(f'{sector} saved to {specific_db_path}')
+                print(f"{sector} saved to {specific_db_path}")
             return df
-                    
+
         except Exception as e:
             system.log_error(f"Error saving transformed data to database: {e}")
-            if 'conn' in locals() and conn:
+            if "conn" in locals() and conn:
                 conn.rollback()  # Rollback in case of error to maintain consistency
             raise  # Re-raise the exception to ensure the error is properly handled
 
-    def adjust_dfs_types(self, df, source_types=['Dados da Empresa', 'Cotações Históricas'], target_types=['DFs Consolidadas', 'DFs Individuais']):
-        """
-        Conditionally duplicates rows of specific types for other types, 
-        based on the prior existence of these types for the same company and quarter.
+    def adjust_dfs_types(
+        self,
+        df,
+        source_types=["Dados da Empresa", "Cotações Históricas"],
+        target_types=["DFs Consolidadas", "DFs Individuais"],
+    ):
+        """Conditionally duplicates rows of specific types for other types,
+        based on the prior existence of these types for the same company and
+        quarter.
 
         Parameters:
         - df (pd.DataFrame): Original DataFrame containing the financial data.
@@ -232,7 +267,9 @@ class FinancialRatios:
             # Step 1: Identify existing combinations of company_name and quarter for each target_type
             existing_combinations = {}
             for target in target_types:
-                existing_keys = df[df['type'] == target][['company_name', 'quarter']].drop_duplicates()
+                existing_keys = df[df["type"] == target][
+                    ["company_name", "quarter"]
+                ].drop_duplicates()
                 existing_combinations[target] = existing_keys
 
             # Step 2: Initialize a list to store all duplicated DataFrames
@@ -241,7 +278,7 @@ class FinancialRatios:
             # Step 3: Loop through each source_type and perform the duplication logic
             for source_type in source_types:
                 # Filter the rows of the source_type
-                source_df = df[df['type'] == source_type].copy()
+                source_df = df[df["type"] == source_type].copy()
 
                 # For each target_type, check where to duplicate
                 for target in target_types:
@@ -249,12 +286,17 @@ class FinancialRatios:
                     target_keys = existing_combinations[target]
 
                     # Perform a merge to identify which rows from source_df have an existing combination
-                    to_duplicate = source_df.merge(target_keys, on=['company_name', 'quarter'], how='inner', suffixes=('', '_target'))
+                    to_duplicate = source_df.merge(
+                        target_keys,
+                        on=["company_name", "quarter"],
+                        how="inner",
+                        suffixes=("", "_target"),
+                    )
 
                     if not to_duplicate.empty:
                         # Duplicate the rows and change the 'type' to the target_type
                         duplicated = to_duplicate.copy()
-                        duplicated['type'] = target
+                        duplicated["type"] = target
                         all_duplicated_dfs.append(duplicated)
 
             # Step 4: Concatenate all the duplications
@@ -264,7 +306,7 @@ class FinancialRatios:
                 duplicated_df = pd.DataFrame(columns=df.columns)
 
             # Step 5: Remove the original rows from source_types
-            df_filtered = df[~df['type'].isin(source_types)].copy()
+            df_filtered = df[~df["type"].isin(source_types)].copy()
 
             # Step 6: Add the duplications to the DataFrame
             if not duplicated_df.empty:
@@ -275,18 +317,26 @@ class FinancialRatios:
             # Step 7: Reset index and sort the DataFrame
             df_updated.reset_index(drop=True, inplace=True)
             df_updated = df_updated.sort_values(
-                by=['sector', 'subsector', 'segment', 'company_name', 'quarter', 'version', 'type', 'account', 'description']
+                by=[
+                    "sector",
+                    "subsector",
+                    "segment",
+                    "company_name",
+                    "quarter",
+                    "version",
+                    "type",
+                    "account",
+                    "description",
+                ]
             ).reset_index(drop=True)
 
             return df_updated
         except Exception as e:
             system.log_error(f"Error processing: {e}")
-            
-
 
     def add_indicators(self, df, frame_name, indicator_list, sector):
-        """
-        Calculates financial indicators and adds them as new rows in the DataFrame.
+        """Calculates financial indicators and adds them as new rows in the
+        DataFrame.
 
         Parameters:
         - df (pd.DataFrame): Original DataFrame containing financial data.
@@ -304,22 +354,22 @@ class FinancialRatios:
 
         # Step 1: Pivot the DataFrame with accounts as columns and include 'quarter' in the index
         pivot_df = df.pivot_table(
-            index=['company_name', 'type', 'quarter'],
-            columns='account',
-            values='value',
-            aggfunc='sum',
-            fill_value=0  # Replace missing values with 0
+            index=["company_name", "type", "quarter"],
+            columns="account",
+            values="value",
+            aggfunc="sum",
+            fill_value=0,  # Replace missing values with 0
         ).reset_index()
-        
+
         df2 = df.copy()
-        df2['account_description'] = df2['account'] + ' - ' + df2['description']
+        df2["account_description"] = df2["account"] + " - " + df2["description"]
         # Now pivot the DataFrame using the new 'account_description' column
         pivot_df2 = df2.pivot_table(
-            index=['company_name', 'type', 'quarter'],
-            columns='account_description',  # Use the new concatenated column
-            values='value',
-            aggfunc='sum',
-            fill_value=0  # Replace missing values with 0
+            index=["company_name", "type", "quarter"],
+            columns="account_description",  # Use the new concatenated column
+            values="value",
+            aggfunc="sum",
+            fill_value=0,  # Replace missing values with 0
         ).reset_index()
 
         # # print("Pivoted DataFrame created successfully.")
@@ -329,9 +379,9 @@ class FinancialRatios:
 
         # Step 2: Calculate the Indicators
         for indicator in indicator_list:
-            column_description = indicator['description']
-            column_account = indicator['account']
-            formula = indicator['formula']
+            column_description = indicator["description"]
+            column_account = indicator["account"]
+            formula = indicator["formula"]
 
             try:
                 # Apply the formula
@@ -342,52 +392,80 @@ class FinancialRatios:
 
             except KeyError as e:
                 print(f"'KeyError {column_account} - {column_description}': {e}")
-                pivot_df[column_account] = np.nan  # Assign NaN if any required account is missing
+                pivot_df[column_account] = (
+                    np.nan
+                )  # Assign NaN if any required account is missing
             except Exception as e:
-                print(f"Error calculating the indicator '{column_account} - {column_description}': {e}")
+                print(
+                    f"Error calculating the indicator '{column_account} - {column_description}': {e}"
+                )
                 pivot_df[column_account] = np.nan  # Assign NaN in case of other errors
 
         # Step 3: Create New Rows for the Indicators
         new_rows = []
 
         for indicator in indicator_list:
-            column_account = indicator['account']
-            column_description = indicator['description']
+            column_account = indicator["account"]
+            column_description = indicator["description"]
 
             if column_account not in pivot_df.columns:
-            # if description not in pivot_df.columns:
-                print(f"Indicator '{column_account} - {column_description}' was not calculated and will be ignored.")
+                # if description not in pivot_df.columns:
+                print(
+                    f"Indicator '{column_account} - {column_description}' was not calculated and will be ignored."
+                )
                 continue
 
             # Extract the calculated values for the indicator
-            indicator_values = pivot_df[['company_name', 'type', 'quarter', column_account]].copy()
-            indicator_values.rename(columns={column_account: 'value'}, inplace=True)
+            indicator_values = pivot_df[
+                ["company_name", "type", "quarter", column_account]
+            ].copy()
+            indicator_values.rename(columns={column_account: "value"}, inplace=True)
             # indicator_values = pivot_df[['company_name', 'type', 'quarter', column_description]].copy()
             # indicator_values.rename(columns={column_description: 'value'}, inplace=True)
 
-            indicator_values['account'] = column_account
-            indicator_values['description'] = column_description
+            indicator_values["account"] = column_account
+            indicator_values["description"] = column_description
 
             # Assign 'frame' as the provided frame_name to easily identify the new rows
-            indicator_values['frame'] = frame_name
+            indicator_values["frame"] = frame_name
 
             # Fill in the missing columns with information from the original DataFrame
             # Select unique combinations of 'company_name', 'type', and 'quarter'
-            metadata = df[['company_name', 'type', 'quarter', 'nsd', 'sector', 'subsector', 'segment', 'version']].drop_duplicates(
-                subset=['company_name', 'type', 'quarter'],
-                keep='first'
-            )
+            metadata = df[
+                [
+                    "company_name",
+                    "type",
+                    "quarter",
+                    "nsd",
+                    "sector",
+                    "subsector",
+                    "segment",
+                    "version",
+                ]
+            ].drop_duplicates(subset=["company_name", "type", "quarter"], keep="first")
 
             # Merge with 'metadata' to fill in 'nsd', 'sector', etc.
             indicator_row = indicator_values.merge(
-                metadata,
-                on=['company_name', 'type', 'quarter'],
-                how='left'
+                metadata, on=["company_name", "type", "quarter"], how="left"
             )
 
             # Reorder the columns to match the original DataFrame
-            indicator_row = indicator_row[['nsd', 'sector', 'subsector', 'segment', 'company_name', 'quarter',
-                                        'version', 'type', 'frame', 'account', 'description', 'value']]
+            indicator_row = indicator_row[
+                [
+                    "nsd",
+                    "sector",
+                    "subsector",
+                    "segment",
+                    "company_name",
+                    "quarter",
+                    "version",
+                    "type",
+                    "frame",
+                    "account",
+                    "description",
+                    "value",
+                ]
+            ]
 
             # Add to the list of new rows
             new_rows.append(indicator_row)
@@ -410,29 +488,27 @@ class FinancialRatios:
         return updated_df
 
     def main(self):
-        """
-        Run the financial ratios calculation using the main thread.
-        """
+        """Run the financial ratios calculation using the main thread."""
         dfs = {}
         try:
             dict_df = self.load_data()
 
             # Define the dictionary with the indicator names and their corresponding values
             indicators = {
-                'Relações Entre Ativos e Passivos': intel.indicators_11,
-                'Patrimônio': intel.indicators_11b,
-                'Dívida': intel.indicators_12,
-                'Resultados Fundamentalistas 1': intel.indicators_13,
-                'Resultados Fundamentalistas 2': intel.indicators_14,
-                'Resultados Fundamentalistas 3': intel.indicators_15,
-                'Resultados Fundamentalistas 4': intel.indicators_16,
-                'Fluxo de Caixa': intel.indicators_17,
-                'Valor Agregado': intel.indicators_18,
-                'Preço e Lucro por Ação': intel.indicators_21,
-                'Crescimento e PEG': intel.indicators_22,
-                'Dividendos e TSR': intel.indicators_23,
-                'Múltiplos de Valuation': intel.indicators_24,
-                'Fluxo de Caixa Livre e P/FC': intel.indicators_25
+                "Relações Entre Ativos e Passivos": intel.indicators_11,
+                "Patrimônio": intel.indicators_11b,
+                "Dívida": intel.indicators_12,
+                "Resultados Fundamentalistas 1": intel.indicators_13,
+                "Resultados Fundamentalistas 2": intel.indicators_14,
+                "Resultados Fundamentalistas 3": intel.indicators_15,
+                "Resultados Fundamentalistas 4": intel.indicators_16,
+                "Fluxo de Caixa": intel.indicators_17,
+                "Valor Agregado": intel.indicators_18,
+                "Preço e Lucro por Ação": intel.indicators_21,
+                "Crescimento e PEG": intel.indicators_22,
+                "Dividendos e TSR": intel.indicators_23,
+                "Múltiplos de Valuation": intel.indicators_24,
+                "Fluxo de Caixa Livre e P/FC": intel.indicators_25,
             }
             # print('selected indicators only')
             start_time = time.time()
@@ -453,7 +529,7 @@ class FinancialRatios:
                 dfs[sector] = df
 
                 df = self.save_to_db(sector, df)
-                
+
                 extra_info = [sector]
                 system.print_info(i, len(dict_df), start_time, extra_info)
 
@@ -461,7 +537,8 @@ class FinancialRatios:
             system.log_error(f"Error initializing MinancialRatios: {e}")
 
         return dfs
-    
+
+
 if __name__ == "__main__":
     financial_ratios = FinancialRatios()
     financial_ratios.main()

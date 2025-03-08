@@ -7,7 +7,9 @@ This manual outlines coding style guidelines to ensure consistency, readability,
 ## 1. Code Structure and Organization
 
 ### 1.1 Import Statements
-- **Order**: Organize imports into three sections, separated by a blank line:
+- **Order**: Organize imports into three sections, separated by a blank line, and sort imports alphabetically within each section. You may use 'isort .'. Consider using black formatter 
+'isort --profile black .'
+'black .'
   1. Standard library imports
   2. Third-party imports
   3. Local application/library-specific imports
@@ -25,9 +27,9 @@ This manual outlines coding style guidelines to ensure consistency, readability,
   ```
 
 ### 1.2 Functions
-- **Separation**: Place two blank lines between function definitions to visually separate them.
+- **Separation**: Place two blank lines between function definitions to visually separate them. 
   
-- **Documentation**: Each function must include a docstring that:
+- **Documentation**: Consider using the Google Style for docstrings: 'pydocstyle --convention=google .' and 'docformatter --in-place --recursive .'. Each function must include a docstring that
   - Explains its purpose.
   - Describes parameters (including their types).
   - Specifies return values and types.
@@ -61,7 +63,7 @@ This manual outlines coding style guidelines to ensure consistency, readability,
 ## 2. Naming Conventions
 
 ### 2.1 Variables and Functions
-- **Convention**: Use `snake_case` for naming variables and functions.
+- **Convention**: Use `snake_case` for naming variables and functions. Consider using 'pylint .'. 
 - **Descriptive Names**: Names should clearly convey their purpose or action.
 - **Example**:
   ```python
@@ -213,14 +215,16 @@ This manual outlines coding style guidelines to ensure consistency, readability,
   - Otherwise, return `True`.
   - If neither is applicable, return `None`.
 
-## 7. Testing and Debugging
+## 7. Performance Logging and Benchmarking
 
-### 7.1 Testable Code
-- **Isolation**: Write functions that are easy to test in isolation.
+### 7.1 Performance Logging
+- **Guidelines**: All time-based measurements should use a centralized performance logging function rather than time.time() directly. Purpose: Standardized performance logging ensures consistent reporting and benchmarking across modules.
+
 - **Avoid Side Effects**: Avoid side effects in functions; instead, return values that can be tested.
 
-### 7.2 Debugging
-- **Logging**: Use logging instead of print statements for debugging. Ensure that log messages are clear and informative.
+### 7.2 Benchmarking Function Performance
+- **Guidelines**: Benchmarking should be used when testing different configurations of a function (e.g., varying the number of workers in ThreadPoolExecutor).
+A benchmark function should: Test performance using different numbers of workers; Measure execution time, memory usage, and CPU load. Provide comparable results for optimization.
 
 ## 8. Specific Guidelines for Code Clarity and Maintenance
 

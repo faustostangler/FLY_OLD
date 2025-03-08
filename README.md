@@ -1,68 +1,58 @@
 # Finance Ledger Yearly (FLY)
 
-## Overview
+### What is This?
+Finance Ledger Yearly (**FLY**) is a comprehensive **financial data app** designed to automate the extraction and processing of financial data from various online sources. The app retrieves detailed company information, financial documents, and **standardized financial statements**, storing this data in a local database for easy access and analysis.
 
-Finance Ledger Yearly (FLY) is a comprehensive financial data app designed to automate the extraction and processing of financial data from various online sources. The app retrieves detailed company information, financial documents, and standardized financial statements, storing this data in a local SQLite database for easy access and analysis.
+## How It Works, Behind the Wheels
+1. **Company Information Scraping**  
+   - Finds company names, tickers, sectors, and registration data.
+   - Saves the latest updates to avoid redundant data.
 
-## Features
+2. **Financial Reports Processing**  
+   - Extracts and standardizes company financial statements.
+   - Ensures that data follows a structured, readable format.
+   - Only updates reports if new information is available.
 
-- **Company Information Scraping**: Extracts details such as ticker symbols, trading information, governance levels, CNPJ, sector classification, website, and more from the B3 (Brasil, Bolsa, Balcão) website.
-- **NSD (Document Number) Scraping**: Generates and scrapes NSD values to fetch detailed financial documents and metadata, including auditor information and document dates.
-- **Financial Sheets Scraping**: Retrieves standardized financial statements and quarterly information, processes the data, and stores it in a structured format.
+3. **NSD (Document Number) Tracking**  
+   - Keeps track of financial disclosure documents.
+   - Fills in missing document sequences intelligently.
 
-## Getting Started
+4. **Stock Market & Corporate Events Analysis**  
+   - Fetches stock prices, stock splits, and dividend information.
+   - Matches stock performance with financial statements.
 
-### Prerequisites
+5. **Performance & Optimization**  
+   - Uses a multi-threaded system to process data efficiently.
+   - Tracks memory and execution time to keep things running smoothly.
 
-- Python 3.7 or higher
-- Required Python packages listed in `requirements.txt`
-- Google Chrome browser installed
+## How to Install
 
-### Installation
+### **Requirements**
+To run FLY, you need:
+- **Python 3.7 or newer** installed on your system.
+- **Google Chrome** (used for web scraping).
+- Required Python libraries (install them using the command below).
 
-1. **Clone the repository:**
-   ```sh
-   git clone https://github.com/your-username/finance-ledger-yearly.git
-   cd finance-ledger-yearly
-   ```
+### **Installation Steps**
+1. **Download the software**  
+If you haven't already, get the project files by running:
+```sh
+git clone https://github.com/faustostangler/FLY.git
+cd FLY
+```
 
-2. **Install the required packages:**
-   ```sh
-   pip install -r requirements.txt
-   ```
+2. **Install required libraries**  
+Install the necessary Python packages by running:
+```sh
+pip install -r requirements.txt
+```
 
-3. **Set up the database:**
-   Ensure the SQLite database file `b3.db` is in the specified folder (`backend/data`).
-
-### Configuration
-
-Configure system-wide settings in `settings.py`:
-
-- `batch_size`: Batch size for data processing
-- `db_name`: Database name (default is `b3.db`)
-- `db_folder`: Folder where the database is stored
-- `wait_time`: Wait time for Selenium operations
-- `companies_url`: URL for the B3 companies search page
-- `company_url`: URL for the B3 company detail page
-
-### Usage
-
-1. **Run the main script:**
-   ```sh
-   python b3.py
-   ```
-
-   This will start the process of scraping company information, NSD values, and financial sheets.
-
-### Modules
-
-- **`b3.py`**: The main script that orchestrates the scraping and data processing tasks.
-- **`settings.py`**: Contains configuration settings for the app.
-- **`selenium_driver.py`**: Manages the setup and operation of the Selenium WebDriver.
-- **`nsd_scrap.py`**: Handles the generation and scraping of NSD values.
-- **`finsheet.py`**: Scrapes and processes standardized financial statements and quarterly information.
-- **`company_scrap.py`**: Extracts company details from the B3 website.
-- **`system.py`**: Provides utility functions for logging, web interactions, and database operations.
+## How to Use
+### **Run the Full System**
+To run everything at once and process all available data:
+```sh
+python b3.py
+```
 
 ## Contributing
 
@@ -82,11 +72,9 @@ Configure system-wide settings in `settings.py`:
 5. **Create a new Pull Request**
 
 ## License
-
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
-
 - **Selenium** for web automation
 - **BeautifulSoup** for parsing HTML
 - **SQLite** for the database
