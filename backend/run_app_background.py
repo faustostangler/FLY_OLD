@@ -41,7 +41,7 @@ if __name__ == "__main__":
         # run_statements_processor = statements_processor.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith("Y"):
             intel_processor = IntelProcessor()
-            intel_processor.main(thread=True)
+            intel_processor.main(thread=False)
 
         # Ask the user if they want to get corporate events from b3
         run_corporate_events_processor = "Y"

@@ -796,6 +796,76 @@ class BaseProcessor:
         else:
             return 0.1  # Low delay if CPU usage is low
 
+    def detect_and_correct_outliers(self, df):
+        '''
+        definitions
+        '''
+        try:
+
+            # Define primary key columns
+            statements_sheet_columns = self.config.domain["statements_sheet_columns"]
+
+            # Initiate variables
+            group_cols = ['company_name', 'account']
+            value_col = 'value'
+            date_col = 'quarter'
+            neighbor_count = 5  # Quantidade de vizinhos a considerar para média
+
+            df_sorted = df.sort_values(by=group_cols + [date_col]).reset_index(drop=True)
+            df_sorted['original_value'] = df_sorted[value_col]  # Preserva o valor original
+
+            def process_group(group):
+                group = group.copy()  # Evita modificar os dados originais
+
+                # Remove duplicates by keeping the row with the highest value (ignoring 0)
+                group = group.loc[group.groupby(statements_sheet_columns)["value"].idxmax()].reset_index(drop=True)
+
+                for idx in range(len(group)):
+                    try:
+                        # Get Value
+                        value = group.iloc[idx][value_col]
+
+                        # Seleciona vizinhos
+                        prev_values = group.iloc[max(0, idx - neighbor_count):idx][value_col].tolist()
+                        next_values = group.iloc[idx + 1:idx + 1 + neighbor_count][value_col].tolist()
+
+                        if not prev_values or not next_values:
+                            continue  # Se não há vizinhos suficientes, pula a verificação
+
+                        # Loop regressivo de neighbor_count até 1
+                        for n in range(neighbor_count, 0, -1):
+                            prev_values_n = prev_values[-n:]  # Considera últimos n valores anteriores
+                            next_values_n = next_values[:n]   # Considera primeiros n valores posteriores
+
+                            if prev_values_n and next_values_n:
+                                mean_prev = sum(prev_values_n) / len(prev_values_n)
+                                mean_next = sum(next_values_n) / len(next_values_n)
+
+                                # Se a média for 1000x maior ou menor e for diferente de 0, aplica a correção
+                                if (mean_prev == value * 1000 or mean_prev == value / 1000) and mean_prev != 0:
+                                    group.iloc[idx, group.columns.get_loc(value_col)] = mean_prev
+                                    break  # Sai do loop ao encontrar um valor válido
+
+                                elif (mean_next == value * 1000 or mean_next == value / 1000) and mean_next != 0:
+                                    group.iloc[idx, group.columns.get_loc(value_col)] = mean_next
+                                    break  # Sai do loop ao encontrar um valor válido
+
+                    except Exception as e:
+                        self.log_error(e)
+
+                return group
+
+            corrected_df = (
+                df_sorted.groupby(group_cols, group_keys=False)
+                .apply(process_group)
+                .reset_index(drop=True)
+            )
+
+        except Exception as e:
+            self.log_error(e)
+
+        return corrected_df
+
     # BENCHMARK, LOG & DEBUG METHODS
     def benchmark_function(
         self, function, *args, benchmark_mode=False, workers_list=None, **kwargs
@@ -1070,6 +1140,7 @@ class BaseProcessor:
             # Log the error if the connection fails
             self.log_error(f"SQLite connection error: {e}")
             return None
+
     def prepare_db_conn(self, db):
         """description."""
         try:
@@ -1403,15 +1474,28 @@ class BaseProcessor:
             return pd.DataFrame()  # Return an empty DataFrame in case of failure
 
     def save_to_db(
-        self, dataframe, table_name=None, db_filepath=None, alert=True, max_retries=None, update=True
+        self, 
+        dataframe, 
+        table_name=None, 
+        db_filepath=None, 
+        alert=True, 
+        max_retries=None, 
+        update=True, 
+        sql_update=None,  # New parameter for optional SQL update
+        sql_update_params=None  # Parameters for the update query
     ):
-        """Save or update a DataFrame in a SQLite database table.
+        """
+        Save or update a DataFrame in a SQLite database table.
 
         Args:
-            table_name (str): Name of the table where the data will be saved.
-            dataframe (DataFrame): DataFrame containing the data to save.
-            db_filepath (str): Path to the database file. Defaults to self.config.db_filepath.
-            primary_key (str): The column used to identify unique rows in the table.
+            dataframe (DataFrame): The DataFrame containing data to insert or update.
+            table_name (str): The name of the database table.
+            db_filepath (str): The SQLite database file path.
+            alert (bool): Whether to print update messages.
+            max_retries (int): Maximum retry attempts if the database is locked.
+            update (bool): Whether to update existing rows on conflict.
+            sql_update (str, optional): SQL command to execute instead of inserting data.
+            sql_update_params (tuple, optional): Parameters for the `sql_update` statement.
         """
         try:
             db_filepath = db_filepath or self.config.db_filepath
@@ -1422,8 +1506,12 @@ class BaseProcessor:
 
             # Prepare and Insert Data
             sql = self._get_sql_statement(dataframe, primary_keys, table_name, update=update)
-            dataframe = self._prepare_dataframe(dataframe)
-            data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+
+            if sql_update:
+                pass
+            else:
+                dataframe = self._prepare_dataframe(dataframe)
+                data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
 
             # Acquire the lock to ensure thread safety
             with self.db_lock, self._get_db_connection(db_filepath, read_only=False) as conn:
@@ -1439,9 +1527,7 @@ class BaseProcessor:
 
                 for _, col in enumerate(missing_columns):
                     safe_col = f'"{col}"'  # Ensure proper escaping of column names
-                    alter_query = (
-                        f"ALTER TABLE {table_name} ADD COLUMN {safe_col} REAL;"
-                    )
+                    alter_query = f"ALTER TABLE {table_name} ADD COLUMN {safe_col} REAL;"
                     cursor.execute(alter_query)
 
                 conn.commit()  # Apply table modifications
@@ -1450,13 +1536,30 @@ class BaseProcessor:
 
                 while attempts < max_retries:
                     try:
-                        cursor.executemany(sql, data_tuples)
-                        conn.commit()
+                        if sql_update:
+                            # If sql_update is provided, execute it instead of inserting data
+                            cursor.execute(sql_update, sql_update_params or ())
+                            conn.commit()
+                            # debug
+                            row_count = cursor.rowcount
+
+                            verify_sql = f"""
+                                SELECT COUNT(*) FROM {table_name} WHERE processed IS NOT NULL AND company_name = ?;
+                            """
+                            cursor.execute(verify_sql, sql_update_params or ())
+                            row_updated = cursor.fetchone()[0]
+                            print(f"DEBUG executed: {row_count}, updated: {row_updated}")
+                            print(f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';")
+
+                        else:
+                            # Otherwise, proceed with batch insertion
+                            cursor.executemany(sql, data_tuples)
+                            conn.commit()
 
                         if alert:
                             print(f"Updated {table_name} in {database_name}")
 
-                        break  # While out with sucess
+                        break  # Exit loop on success
 
                     except Exception as e:
                         if "database is locked" in str(e):
@@ -1470,7 +1573,6 @@ class BaseProcessor:
             print(sql)
             dataframe.to_csv("dataframe.csv", index=False)
             self.log_error(f"Error saving to database: {e}")
-
     def _get_primary_key(self, table_name, db_filepath):
         """"""
         primary_key = ""

@@ -137,9 +137,7 @@ class Config:
         tbl_nsd = db_config["raw"]["table"]["nsd"]  # "nsd"
         tbl_stock_data = db_config["raw"]["table"]["stock_data"]  # "stock_data"
 
-        tbl_statements_raw = db_config["raw"]["table"][
-            "statements_raw"
-        ]  # "statements_raw"
+        tbl_statements_raw = db_config["raw"]["table"]["statements_raw"]  # "statements_raw"
         tbl_statements_normalized = db_config["raw"]["table"]["statements_normalized"]
         tbl_statements_corp_events = db_config["raw"]["table"]["statements_corp_events"]
 
@@ -218,6 +216,7 @@ class Config:
                         account TEXT,
                         description TEXT,
                         value REAL,
+                        processed TEXT DEFAULT NULL, 
                         PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
                     );
                     CREATE INDEX IF NOT EXISTS idx_statements_raw ON {tbl_statements_raw} (company_name, quarter, version, type, frame, account, description);
@@ -236,6 +235,7 @@ class Config:
                         account TEXT,
                         description TEXT,
                         value REAL,
+                        original_value REAL,
                         PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
                     );
                     CREATE INDEX IF NOT EXISTS idx_statements_normalized ON {tbl_statements_normalized} (company_name, quarter, version, type, frame, account, description);

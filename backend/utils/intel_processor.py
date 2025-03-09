@@ -103,12 +103,33 @@ class IntelProcessor(BaseProcessor):
 
                 # sanitize db
                 result = self.adjust_columns(result)
+
+                # Outlier detection
+                result = self.detect_and_correct_outliers(result)
+
+                # save results
                 self.save_to_db(
                     dataframe=result,
                     table_name=self.tbl_statements_normalized,
                     db_filepath=self.db_filepath,
                     alert=False,
                     update=False, 
+                )
+
+                # Atualiza a coluna processed para todas as linhas na tbl_statements_raw
+                sql_update = """
+                    UPDATE tbl_statements_raw
+                    SET processed = version
+                    WHERE company_name = ?;
+                """
+
+                self.save_to_db(
+                    dataframe=df,  # No dataframe needed
+                    table_name="tbl_statements_raw",
+                    db_filepath=self.db_filepath,
+                    alert=False,
+                    sql_update=sql_update,
+                    sql_update_params=(company,)  # Pass company name
                 )
 
                 # Log progress
@@ -586,79 +607,94 @@ class IntelProcessor(BaseProcessor):
 
         return df
 
-    def get_targets(self, use_index=True, max_retries=None, wait_time=None):
+    def get_targets(self, use_index=True, process_new=True, limit=False, max_retries=None, wait_time=None):
         """Retrieve new rows from tbl_statements_raw that are not in
         tbl_statements_normalized.
 
         Returns:
             pd.DataFrame: Filtered DataFrame containing only the new records.
         """
-        max_retries = max_retries or self.config.selenium["max_retries"]
-        wait_time = wait_time or self.config.selenium["wait_time"]
+        try:
+            max_retries = max_retries or self.config.selenium["max_retries"]
+            wait_time = wait_time or self.config.selenium["wait_time"]
 
-        # Gerar condição de JOIN baseada nas primary keys
-        on_conditions = " AND ".join(
-            [f"r.{col} = n.{col}" for col in self.primary_key_columns]
-        )
+            # Gerar condição de JOIN baseada nas primary keys
+            on_conditions = " AND ".join(
+                [f"r.{col} = n.{col}" for col in self.primary_key_columns]
+            )
 
-        # Construção da SQL otimizada usando NOT EXISTS
-        query_base = f"""
-        FROM {self.tbl_statements_raw} AS r
-        {f"INDEXED BY {self.idx_statements_raw}" if use_index else ""}
-        WHERE NOT EXISTS (
-            SELECT 1 FROM {self.tbl_statements_normalized} AS n
-            WHERE {on_conditions}
-        )
-        """
+            # Construção da SQL otimizada usando NOT EXISTS
+            query_base = f"""
+            FROM {self.tbl_statements_raw} AS r
+            {f"INDEXED BY {self.idx_statements_raw}" if use_index else ""}
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {self.tbl_statements_normalized} AS n
+                WHERE {on_conditions}
+            )
+            """
 
-        # Queries completas
-        query = f"SELECT r.* {query_base};"
-        query_count = f"SELECT COUNT(*) {query_base};"
+            # If process_all is False (default), exclude already processed records
+            if process_new:
+                query_base += " AND (r.processed IS NULL OR r.processed <> r.version)"
 
-        chunk_size = int(
-            self.config.scraping["chunk_size"] / 10
-        )  # Ajuste para processamento em batches
+            # Add limit (for debug speed)
+            limit_rows = 100000
+            limit_clause = f"LIMIT {limit_rows}" if limit else ""
 
-        df_list = []
-        attempts = 0
+            # Queries completas
+            query = f"SELECT r.* {query_base} {limit_clause};"
+            query_count = f"SELECT COUNT(*) {query_base};"
 
-        while attempts < max_retries:
-            with self.db_lock:  # Garantia de acesso seguro ao banco
-                try:
-                    with sqlite3.connect(self.db_filepath) as conn:
-                        # Contar total de registros para processar
-                        total_rows = pd.read_sql_query(query_count, conn).iloc[0, 0]
+            chunk_size = int(
+                self.config.scraping["chunk_size"] / 10
+            )  # Ajuste para processamento em batches
 
-                        if total_rows == 0:
-                            return pd.DataFrame()  # Retorna um DataFrame vazio
+            df_list = []
+            attempts = 0
 
-                        # Processamento por chunks com barra de progresso
-                        with tqdm(total=total_rows, unit="rows", desc="") as pbar:
-                            for chunk in pd.read_sql_query(
-                                query, conn, chunksize=chunk_size
-                            ):
-                                df_list.append(chunk)
-                                pbar.update(len(chunk))  # Atualiza a barra de progresso
+            while attempts < max_retries:
+                with self.db_lock:  # Garantia de acesso seguro ao banco
+                    try:
+                        with sqlite3.connect(self.db_filepath) as conn:
+                            if not limit:
+                                # Contar total de registros para processar
+                                total_rows = pd.read_sql_query(query_count, conn).iloc[0, 0]
+                            else:
+                                total_rows = limit_rows
 
-                        df = pd.concat(df_list, ignore_index=True)
-                    return df
+                            if total_rows == 0:
+                                return pd.DataFrame()  # Retorna um DataFrame vazio
 
-                except sqlite3.OperationalError as e:
-                    if "database is locked" in str(e):
-                        attempts += 1
-                        time.sleep(wait_time)  # Aguarda antes de tentar novamente
-                    else:
-                        raise  # Repassa qualquer outro erro inesperado
+                            # Processamento por chunks com barra de progresso
+                            with tqdm(total=total_rows, unit="rows", desc="") as pbar:
+                                for chunk in pd.read_sql_query(
+                                    query, conn, chunksize=chunk_size
+                                ):
+                                    df_list.append(chunk)
+                                    pbar.update(len(chunk))  # Atualiza a barra de progresso
 
-        raise Exception(
-            f"Falha ao buscar novos registros após {max_retries} tentativas."
-        )
+                            df = pd.concat(df_list, ignore_index=True)
+                        return df
+
+                    except sqlite3.OperationalError as e:
+                        if "database is locked" in str(e):
+                            attempts += 1
+                            time.sleep(wait_time)  # Aguarda antes de tentar novamente
+                        else:
+                            raise  # Repassa qualquer outro erro inesperado
+
+            raise Exception(
+                f"Falha ao buscar novos registros após {max_retries} tentativas."
+            )
+
+        except Exception as e:
+            self.log_error(e)
 
     def main(self, thread=True):
         """docstring."""
         try:
             # Get updated targets
-            targets = self.get_targets()
+            targets = self.get_targets(process_new=True, limit=False)
 
             # Exit if no targets
             if targets.empty:
