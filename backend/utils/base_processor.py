@@ -1540,7 +1540,9 @@ class BaseProcessor:
                             # If sql_update is provided, execute it instead of inserting data
                             cursor.execute(sql_update, sql_update_params or ())
                             conn.commit()
+
                             # debug
+                            time.sleep(self.config.selenium['wait_time'])
                             row_count = cursor.rowcount
 
                             verify_sql = f"""
@@ -1548,8 +1550,9 @@ class BaseProcessor:
                             """
                             cursor.execute(verify_sql, sql_update_params or ())
                             row_updated = cursor.fetchone()[0]
-                            print(f"DEBUG executed: {row_count}, updated: {row_updated}")
-                            print(f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';")
+                            if row_count != row_updated:
+                                print(f"DEBUG executed: {row_count}, updated: {row_updated}")
+                                print(f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';")
 
                         else:
                             # Otherwise, proceed with batch insertion

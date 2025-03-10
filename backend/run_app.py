@@ -48,8 +48,6 @@ if __name__ == "__main__":
         prompt = "Want to update corporate events? (YES/NO): "
         # run_corporate_events_processor = corporate_events_processor.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith("Y"):
-            # corporate_events_processor = CorporateEventsProcessor()
-            # corporate_events_processor.main(thread=True)
             events_states_processor = EventsStatementsProcessor()
             events_states_processor.main(thread=False)
 
