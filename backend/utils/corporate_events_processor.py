@@ -43,9 +43,11 @@ class EventsStatementsProcessor(BaseProcessor):
 
         self.tbl_stock_data = self.config.databases["raw"]["table"]["stock_data"]
 
+        self.statements_version_delimiter = self.config.domain["statements_version_delimiter"]
+
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
@@ -57,7 +59,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
             # Save result to database
@@ -72,7 +74,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """Process a batch of financial data by iterating over rows and
         scraping statements."""
         try:
@@ -87,9 +89,9 @@ class EventsStatementsProcessor(BaseProcessor):
                 company_name = row["company_name"]
 
                 statements_company, stock_data, stock_splits = (
-                    self.get_company_financials(company_name, ticker_code)
+                    self.get_company_financials(payload, company_name, ticker_code)
                 )
-                print(statements_company.columns)
+
                 if not statements_company.empty:
                     # get stock items
                     statements_stocks = statements_company[
@@ -100,7 +102,7 @@ class EventsStatementsProcessor(BaseProcessor):
                     stocks = self.process_financial_data(
                         stock_data, stock_splits, statements_stocks
                     )
-                    print(stocks.columns)
+
                     for group_type in ["DFs Individuais", "DFs Consolidadas"]:
                         group_statements = statements_company[
                             statements_company["type"] == group_type
@@ -110,7 +112,7 @@ class EventsStatementsProcessor(BaseProcessor):
                             group_stocks = self.process_financial_data(
                                 stock_data, stock_splits, group_statements
                             )
-                            print(group_stocks.columns)
+
                             df = pd.concat(
                                 [stock_data, stocks, group_stocks], axis=1
                             ).loc[
@@ -119,7 +121,7 @@ class EventsStatementsProcessor(BaseProcessor):
                                     [stock_data, stocks, group_stocks], axis=1
                                 ).columns.duplicated(),
                             ]
-                            print(df.columns)
+
                         else:
                             df = stocks
                             df = pd.concat([stock_data, stocks], axis=1).loc[
@@ -179,7 +181,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         return targets
 
-    def get_company_financials(self, company_name, ticker_code=None):
+    def get_company_financials(self, payload, company_name, ticker_code=None):
         """Obtém as demonstrações financeiras e os dados históricos de ações de
         uma empresa.
 
@@ -198,10 +200,10 @@ class EventsStatementsProcessor(BaseProcessor):
         """
         try:
             # Obter Demonstrações Financeiras
-            statements_company = self._get_company_statements(company_name)
+            statements_company = self._get_company_statements(payload, company_name)
 
             # Obter Dados Históricos de Ações
-            company_stock_data, splits = self._get_company_stock_data(ticker_code)
+            company_stock_data, splits = self._get_company_stock_data(payload, ticker_code)
 
         except Exception as e:
             self.log_error(e)
@@ -209,7 +211,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         return statements_company, company_stock_data, splits
 
-    def _get_company_statements(self, company_name):
+    def _get_company_statements(self, payload, company_name):
         """Obtém as demonstrações financeiras de uma empresa e filtra os dados
         mais recentes.
 
@@ -217,26 +219,19 @@ class EventsStatementsProcessor(BaseProcessor):
         - pd.DataFrame: DataFrame contendo as demonstrações financeiras organizadas.
         """
         try:
-            sql = """SELECT * FROM statements_standart WHERE company_name = ?"""
-
-            statements = self.load_data(
-                table_name=self.tbl_statements_normalized,
-                query=sql,
+            param = 'company_name'
+            sql_company = f"SELECT * FROM {self.tbl_statements_normalized} WHERE {param} = ?"
+            standart_statements = self.load_data(
+                query=sql_company,
                 params=(company_name,),
                 db_filepath=self.db_filepath,
-                alert=False,
+                alert=False
             )
 
-            if not statements.empty:
-                statements["quarter"] = pd.to_datetime(statements["quarter"])
-                latest_versions = (
-                    statements.groupby("quarter")["version"].max().reset_index()
-                )
-                statements = statements.merge(
-                    latest_versions, on=["quarter", "version"]
-                )
+            final_df = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
+            final_df["quarter"] = pd.to_datetime(final_df["quarter"])
 
-            return statements
+            return final_df
 
         except Exception as e:
             self.log_error(e)
@@ -266,7 +261,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         return ticker_code
 
-    def _get_company_stock_data(self, ticker_code=None):
+    def _get_company_stock_data(self, payload, ticker_code=None):
         """Obtém os dados históricos de ações de uma empresa específica.
 
         Retorna:
@@ -274,9 +269,8 @@ class EventsStatementsProcessor(BaseProcessor):
         """
         try:
             # Consulta SQL para obter os dados históricos de ações de um ticker específico de uma empresa específica
-            sql_stock_data = """SELECT *
-                                FROM stock_data
-                                WHERE ticker_code = ?"""
+            param = 'ticker_code'
+            sql_stock_data = f"SELECT * FROM {self.tbl_stock_data} WHERE {param} = ?"
 
             tk_cd = (
                 ticker_code
@@ -285,7 +279,6 @@ class EventsStatementsProcessor(BaseProcessor):
             )
 
             company_stock_data = self.load_data(
-                table_name=self.tbl_stock_data,
                 query=sql_stock_data,
                 params=(tk_cd,),
                 db_filepath=self.db_filepath,
@@ -338,7 +331,7 @@ class EventsStatementsProcessor(BaseProcessor):
                     )
                     splits["date"] = pd.to_datetime(splits["date"])
             else:
-                company_stock_data, splits = self._get_company_stock_data()
+                company_stock_data, splits = self._get_company_stock_data(payload)
                 splits = pd.DataFrame(columns=self.config.domain["split_columns"])
 
         except Exception as e:
@@ -420,8 +413,8 @@ class EventsStatementsProcessor(BaseProcessor):
 
     def _get_statements_quarterly(self, statements):
         """definitions."""
-        index_columns = self.config.statements_index_columns
-        pivot_columns = self.config.statements_pivot_columns
+        index_columns = self.config.domain['statements_index_columns']
+        pivot_columns = self.config.domain['statements_pivot_columns']
 
         try:
             # Cria uma tabela pivô para organizar os dados financeiros
@@ -675,26 +668,19 @@ class EventsStatementsProcessor(BaseProcessor):
         try:
 
             # # Carregar dados processados anteriormente
-            # standart_statements = self.load_data(table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath)
+            # standart_statements = self.load_data(
+            #     table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
+            # )
+            # standart_statements = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
 
             # load existing company_info data
             company_info = self.load_data(
                 table_name=self.tbl_company_info, db_filepath=self.db_filepath
             )
-            statements_corp_events = self.load_data(
-                table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath
-            )
-
-            # # pre-debug
-            # standart_statements[:1000000].to_csv('standart_statements.csv', index=False)
-            statements_corp_events[:1000000].to_csv(
-                "statements_corp_events.csv", index=False
-            )
-
-            # debug
-            standart_statements = pd.read_csv("standart_statements.csv")
-            # statements_corp_events = pd.read_csv('statements_corp_events.csv')
-
+            # statements_corp_events = self.load_data(
+            #     table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath
+            # )
+            standart_statements = statements_corp_events = pd.DataFrame()
             targets = self.get_targets(company_info)
 
             # Exit if no targets
@@ -703,8 +689,10 @@ class EventsStatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
+            payload = {"standart_statements": standart_statements, "statements_corp_events": statements_corp_events}
             result = self.run(
                 targets,
+                payload=payload, 
                 thread=thread,
                 module_name=self.inspect.getmodule(
                     self.inspect.currentframe()
@@ -723,187 +711,3 @@ class EventsStatementsProcessor(BaseProcessor):
             self.log_error(f"Error in main: {e}")
 
         return True
-
-
-# class CorporateEventsProcessor(BaseProcessor):
-#     '''
-#     docstrings
-#     '''
-#     def __init__(self):
-#         '''
-#         docstrings
-#         '''
-#         super().__init__()
-#         self.db_lock = Lock()  # Initialize a threading Lock
-
-#         # # Initialize the WebDriver
-#         # self.driver, self.driver_wait = self._initialize_driver()
-
-#     def process_instance(self, sub_batch, progress):
-#         """
-#         Process a single batch by delegating
-#         from abstract base_processor method
-#         to this class process_batch (true process info method)
-#         via this process_instance method (create instance method).
-
-#         sub_batch
-#         progress
-
-#         return result from process_batch
-#         """
-#         try:
-#             ticker_list = sub_batch['ticker_code']
-#             extra_info = [f"Worker {progress['thread_id']}", ' '.join(ticker_list)]
-#             self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
-
-#             # Delegate to process_batch for the actual batch processing
-#             result = self.process_batch(sub_batch, progress)
-
-#         except Exception as e:
-#             pass
-
-#         return result
-
-#     def process_batch(self, sub_batch, progress):
-#         '''
-#         '''
-#         result = pd.DataFrame()
-#         try:
-#             data = []
-#             start_time = time.time()
-#             for i, row in sub_batch.reset_index().iterrows():
-#                 start_date = row['date']
-#                 company_name = row['company_name']
-#                 ticker = row['ticker']
-#                 ticker_code = row['ticker_code']
-
-#                 try:
-#                     # Redirect stderr to silence error messages
-#                     old_stderr = sys.stderr
-#                     sys.stderr = io.StringIO()
-
-#                     ticker_obj = yf.Ticker(ticker_code + '.SA')
-#                     historical_data = ticker_obj.history(start=start_date, actions=True, auto_adjust=True).reset_index()
-
-#                     # historical_data = yf.download(ticker_code + '.SA', start=start_date, progress=False, actions=True, auto_adjust=True).reset_index()
-#                     if not historical_data.empty:
-#                         historical_data.columns = historical_data.columns.str.lower().str.replace(" ", "_")
-#                         historical_data['date'] = pd.to_datetime(historical_data['date']).dt.strftime('%Y-%m-%d')
-#                         historical_data['company_name'] = company_name
-#                         historical_data['ticker'] = ticker
-#                         historical_data['ticker_code'] = ticker_code
-#                         historical_data = historical_data[self.config.historical_stock_data_all_columns]
-#                     else:
-#                         new_row = {
-#                             'company_name': company_name,
-#                             'ticker': ticker,
-#                             'ticker_code': ticker_code,
-#                         }
-#                         historical_data = pd.DataFrame([new_row])
-
-#                 finally:
-#                     # Reset stderr to its original state
-#                     sys.stderr = old_stderr
-
-#                 data.append(historical_data)
-
-#                 extra_info = [f'Worker {progress["batch_index"]}', ticker_code, company_name]
-#                 self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=2)
-
-#             result = pd.concat(data)
-
-#         except Exception as e:
-#             self.log_error(e)
-
-#         self.save_to_db(dataframe=result, table_name=self.config.databases["raw"]["tables"]["statements_corp_events"], db_filepath=self.config.databases["raw"]["filepath"])
-
-#         return result
-
-#     def get_targets(self, company_info, historical_data, statements_company):
-#         '''
-#         docstrings
-#         '''
-#         historical_data_primary_key_columns = ['company_name', 'ticker', 'ticker_code']
-#         merging_columns = historical_data_primary_key_columns + ['date']
-
-#         try:
-#             # prepare company_info
-#             company_info = self.explode_company(company_info)
-
-#             # prepare historical_data
-#             try:
-#                 historical_data['date'] = pd.to_datetime(historical_data['date'])
-#                 # Sort the DataFrame by date in descending order (most recent first)
-#                 historical_data = historical_data.sort_values(by='date', ascending=False)
-#                 # Drop duplicates based on ['company_name', 'ticker', 'ticker_code'], keeping the most recent
-#                 historical_data = historical_data.drop_duplicates(subset=historical_data_primary_key_columns, keep='first')
-#             except Exception as e:
-#                 company_info['date'] = self.config.scraping["stock_data_start_date"]
-#                 targets = company_info[merging_columns]
-#                 return targets
-
-#             # get unprocessed companies
-#             # Merge to find unprocessed companies (companies in `company_info` not in `historical_data`)
-#             unprocessed_companies = pd.merge(
-#                 company_info,
-#                 historical_data[historical_data_primary_key_columns],
-#                 on=historical_data_primary_key_columns,
-#                 how='left',
-#                 indicator=True
-#             ).query('_merge == "left_only"').drop(columns=['_merge'])
-#             unprocessed_companies['date'] = pd.to_datetime('1960-01-01').strftime('%Y-%m-%d')
-#             unprocessed_companies = unprocessed_companies[merging_columns]
-
-#             # Filter rows based on the date threshold
-#             non_existing_historical_data = historical_data[historical_data['date'].isna()][merging_columns]
-
-#             delta = datetime.timedelta(days=self.config.scraping["update_days"] + 1)
-#             date_diff = datetime.datetime.now() - delta
-#             processed_companies = historical_data[historical_data['date'] < (date_diff)]
-#             processed_companies.loc[:, 'date'] = processed_companies['date'].dt.strftime('%Y-%m-%d')
-#             processed_companies = processed_companies[merging_columns]
-
-#             # Combine the datasets
-#             if not unprocessed_companies.empty:
-#                 targets = pd.concat([unprocessed_companies, processed_companies], ignore_index=True)
-#                 targets['date'] = pd.to_datetime(targets['date'], errors='coerce')
-#                 targets['date'] = targets['date'].dt.strftime('%Y-%m-%d')
-#                 targets = targets.dropna(subset=['date']).reset_index(drop=True)
-#             else:
-#                 targets = processed_companies
-
-#         except Exception as e:
-#             self.log_error(e)
-#             targets = pd.DataFrame(columns=merging_columns)
-
-#         return targets
-
-#     def main(self, thread=True):
-#         '''
-#         docstring
-#         '''
-#         try:
-#             # Load existing information
-#             company_info = self.load_data(table_name=self.config.databases['raw']['table']['company_info'], db_filepath=self.config.databases['raw']['filepath'])
-#             historical_data = self.load_data(table_name=self.config.historical_stock_data_table, db_filepath=self.config.databases['raw']['filepath'])
-#             # statements_company = self.load_data(table_name=self.config.databases['raw']['table']['statements_raw'] , db_filepath=self.config.databases['raw']['filepath'])
-#             statements_company = pd.DataFrame(columns=self.config.domain['statements_columns'])
-
-#             targets = self.get_targets(company_info, historical_data, statements_company)
-
-#             # if no targets, optimize db and return True
-#             if targets.size == 0:  # Check if the array is empty
-#                 self.db_optimize(self.config.databases['raw']['filepath'])
-#                 return True
-
-#             # Process targets using threading or sequential logic
-#             processed_batch = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__)
-
-#             # save/update db
-#             if not processed_batch.empty:
-#                 self.save_to_db(dataframe=processed_batch, table_name=self.config.historical_stock_data_table, db_filepath=self.config.databases['raw']['filepath'])
-
-#         except Exception as e:
-#             self.log_error(e)
-
-#         return True

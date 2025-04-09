@@ -23,7 +23,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         # # Initialize the WebDriver
         # self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
         try:
             # print(f'Requesting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
@@ -43,7 +43,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """"""
         rows = []
         months = [

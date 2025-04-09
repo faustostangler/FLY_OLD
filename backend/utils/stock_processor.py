@@ -198,7 +198,7 @@ class StockProcessor(BaseProcessor):
 
         return processed_batch_df
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """Process a batch of stock data by scraping and extracting relevant
         information.
 
@@ -361,7 +361,7 @@ class StockProcessor(BaseProcessor):
 
         return result
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
         try:
             return self.process_batch(sub_batch, progress)

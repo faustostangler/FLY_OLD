@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from threading import Lock
+from tqdm import tqdm
 
 import pandas as pd
 import psutil
@@ -51,7 +52,7 @@ class BaseProcessor:
         self.db_lock = Lock()  # Initialize a threading Lock
 
     # APP FLOW LOGIC
-    def run(self, data, thread=True, module_name=""):
+    def run(self, data, payload=None, thread=True, module_name=""):
         """Split data into batches and process them sequentially or with
         threads."""
         results = []
@@ -67,12 +68,12 @@ class BaseProcessor:
                 print(
                     f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["batch_size"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each throught {self.config.scraping["max_workers"]} simultaneous workers'
                 )
-                results = self._process_with_threads(batches)
+                results = self._process_with_threads(batches, payload=payload)
             else:
                 print(
                     f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each'
                 )
-                results = self._process_sequentially(batches)
+                results = self._process_sequentially(batches, payload=payload)
 
         except Exception as e:
             self.log_error(e)
@@ -154,7 +155,7 @@ class BaseProcessor:
 
         return batches
 
-    def _process_with_threads(self, batches):
+    def _process_with_threads(self, batches, payload):
         """Process batches with threading."""
         results = []
         try:
@@ -185,7 +186,7 @@ class BaseProcessor:
 
                     # Submit task with progress
                     futures.append(
-                        executor.submit(self.process_instance, batch, progress)
+                        executor.submit(self.process_instance, batch, payload, progress)
                     )
 
                 for future in as_completed(futures):
@@ -199,7 +200,7 @@ class BaseProcessor:
 
         return results
 
-    def _process_sequentially(self, batches):
+    def _process_sequentially(self, batches, payload):
         """"""
         results = []
         start_time = time.time()
@@ -221,7 +222,7 @@ class BaseProcessor:
             }
 
             try:
-                result = self.process_instance(batch, progress)
+                result = self.process_instance(batch, payload, progress)
                 results.append(result)
             except Exception as e:
                 self.log_error(f"Error in batch: {e}")
@@ -229,7 +230,7 @@ class BaseProcessor:
         return results
 
     @abstractmethod
-    def process_instance(self, batch, progress):
+    def process_instance(self, batch, payload, progress):
         """To be implemented by child classes."""
         pass
 
@@ -1356,16 +1357,20 @@ class BaseProcessor:
                                         table_name, database_name
                                     )
                                     sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
+                                    params = ()
                                 elif query:
-                                    sql_query = f"SELECT COUNT(*) FROM ({query})"
-                                    # f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
+                                    query_count_index = query.upper().find("FROM")
+                                    sql_query = f"SELECT COUNT(*) {query[query_count_index:]}"
+
                                 cursor.execute(sql_query, params)
                                 total_rows = cursor.fetchone()[0]
+
                             except Exception as e:
                                 self._initialize_table(
                                     db_filepath, database_name, table_name
                                 )
                                 total_rows = 0
+                    break
             except Exception as e:
                 self.log_error(e)
 
@@ -1373,12 +1378,11 @@ class BaseProcessor:
             try:
                 # basic parameters
                 batch_size = self.config.scraping["chunk_size"]
-                size = (total_rows // batch_size) + (
-                    1 if total_rows % batch_size > 0 else 0
-                )  
                 
                 # Total number of batches
-                batch_number = (total_rows // batch_size) + 1
+                size = batch_number = 1# (total_rows // batch_size) + (
+                #     1 if total_rows % batch_size > 0 else 0
+                # )  
                 batch_threads = min(
                     self.config.scraping["max_workers"], batch_number
                 )
@@ -1394,12 +1398,12 @@ class BaseProcessor:
                     query,
                     params,
                     size,
+                    start_time=start_time, 
                     alert=True,
                 ):
                     if alert:
                         extra_info = [
                             f"Parte {batch_number + 1}/{size}",
-                            f"{database_name}",
                         ]
                         self.print_info(
                             batch_number, size, start_time, extra_info
@@ -1410,11 +1414,10 @@ class BaseProcessor:
                     while attempt < max_retries:
                         try:
                             # Database Code
-                            with self.get_db_connection(db_filepath, read_only=True) as conn:
+                            with self._get_db_connection(db_filepath, read_only=True) as conn:
                                 if table_name:
                                     query_batch = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
                                 elif query:
-                                    params = params or ()
                                     query_batch = f"{query} LIMIT {batch_size} OFFSET {offset}"
                                 query_df = pd.read_sql_query(
                                     query_batch, conn, params=params
@@ -1434,17 +1437,19 @@ class BaseProcessor:
                         f"Failed to read batch after {max_retries} attempts."
                     )
 
-                with ThreadPoolExecutor(
-                    max_workers=batch_threads
-                ) as executor:
+                # **TQDM Progress Bar Inside Multithreading**
+                with ThreadPoolExecutor(max_workers=batch_threads) as executor:
                     tasks = []
-                    for batch_number, offset in enumerate(offsets):
-                        task = executor.submit(
-                            read_batch, offset, batch_number
-                        )
-                        tasks.append(task)
-                        time.sleep(1)
-                    dataframes = [task.result() for task in tasks]
+                    with tqdm(total=total_rows, unit="rows", desc="") as pbar:
+                        for batch_number, offset in enumerate(offsets):
+                            task = executor.submit(read_batch, offset, batch_number, table_name, query, params, size, alert=False)
+                            tasks.append(task)
+                            time.sleep(1)
+
+                        # Collect results while updating the progress bar
+                        for task in tasks:
+                            dataframes.append(task.result())
+                            pbar.update(batch_size)  # Update progress bar
 
                 final_df = (
                     pd.concat(dataframes, ignore_index=True)
@@ -1870,7 +1875,7 @@ class TemplateProcessor(BaseProcessor):
         # # Initialize the WebDriver
         # self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating from abstract base_processor
         method to this class process_batch (true process info method) via this
         process_instance method (create instance method).
@@ -1895,7 +1900,7 @@ class TemplateProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """"""
         result = ""
 

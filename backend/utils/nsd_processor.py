@@ -21,7 +21,7 @@ class NsdProcessor(BaseProcessor):
         self.table_name = self.config.databases["raw"]["table"]["nsd"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()
 
@@ -34,7 +34,7 @@ class NsdProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, progress, benchmark_mode=True
+                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=True
             )
 
             # Save result to database
@@ -49,7 +49,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """Process a batch of NSD data by scraping and extracting relevant
         information."""
         result = pd.DataFrame(columns=self.config.domain["columns_nsd"])

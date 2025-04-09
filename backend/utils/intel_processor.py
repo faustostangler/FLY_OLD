@@ -45,7 +45,7 @@ class IntelProcessor(BaseProcessor):
             "Demonstração de Valor Adiconado": intel.section_7_criteria,
         }
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating from abstract base_processor
         method to this class process_batch (true process info method) via this
         process_instance method (create instance method).
@@ -64,7 +64,7 @@ class IntelProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
             # Save result to database
@@ -86,7 +86,7 @@ class IntelProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """"""
         result = ""
 
@@ -651,7 +651,7 @@ class IntelProcessor(BaseProcessor):
 
             df_list = []
             attempts = 0
-
+            print('should use load_data!!!! adjust')
             while attempts < max_retries:
                 with self.db_lock:  # Garantia de acesso seguro ao banco
                     try:

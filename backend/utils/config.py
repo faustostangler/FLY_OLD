@@ -238,6 +238,7 @@ class Config:
                         original_value REAL,
                         PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
                     );
+
                     CREATE INDEX IF NOT EXISTS idx_statements_normalized ON {tbl_statements_normalized} (company_name, quarter, version, type, frame, account, description);
                 """,
                 tbl_statements_corp_events: f"""
@@ -536,6 +537,17 @@ class Config:
         safety_factor = 3
 
         # Configurações para statements
+        statements_version_delimiter = [
+            "company_name",
+            "quarter",
+            "type",
+            # "version",
+            "frame",
+            "account", 
+            "description", 
+        ]
+
+
         statements_sheet_columns = [
             "company_name",
             "quarter",
@@ -543,6 +555,7 @@ class Config:
             "type",
             "frame",
         ]
+
         statements_types = [
             "DEMONSTRACOES FINANCEIRAS PADRONIZADAS",
             "INFORMACOES TRIMESTRAIS",
@@ -582,6 +595,7 @@ class Config:
             "description",
             "type",
         ]
+
         accounts_year_end = ["3", "4"]
         accounts_cumulative_quarter = ["6", "7"]
 
@@ -612,7 +626,12 @@ class Config:
             "quarter",
             "version",
         ]
-        statements_pivot_columns = ["account", "description", "frame", "type"]
+        statements_pivot_columns = [
+            "account", 
+            "description", 
+            "frame", 
+            "type", 
+        ]
 
         # splits
         split_columns = [
@@ -761,6 +780,7 @@ class Config:
             "sort_order_nsd": sort_order_nsd,
             "default_daily_submission_estimate": default_daily_submission_estimate,
             "safety_factor": safety_factor,
+            "statements_version_delimiter": statements_version_delimiter, 
             "statements_sheet_columns": statements_sheet_columns,
             "statements_types": statements_types,
             "statements_columns_empty_df": statements_columns_empty_df,

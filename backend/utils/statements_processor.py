@@ -27,7 +27,7 @@ class StatementsProcessor(BaseProcessor):
         # Initialize driver and other resources
         self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, progress):
+    def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
@@ -61,7 +61,7 @@ class StatementsProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, progress):
+    def process_batch(self, sub_batch, payload, progress):
         """Process a batch of financial data by iterating over rows and
         scraping statements."""
         result = []
