@@ -386,7 +386,7 @@ class BaseProcessor:
 
         try:
             # Get random headers using the custom function
-            headers = self.header_random()
+            headers, proxies = self.header_random()
 
             chrome_service = Service(chromedriver_path)
             chrome_options = Options()
@@ -1798,12 +1798,35 @@ class BaseProcessor:
             headers = {
                 "User-Agent": user_agent,
                 "Referer": referer,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
                 "Accept-Language": language,
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "DNT": "1",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Sec-Fetch-Dest": "document",
             }
+
+            # Proxy configuration (optional)
+            proxies = None
+            if self.config.scraping.get("use_proxy", False):
+                proxy_list = self.config.scraping.get("proxies", [])
+                if proxy_list:
+                    proxy = random.choice(proxy_list)
+                    proxies = {
+                        "http": proxy,
+                        "https": proxy,
+                    }
+
+            return headers, proxies
 
         except Exception as e:
             self.log_error(e)
-        return headers
+
+        return headers, proxies
 
     def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
         """Test internet connection by sending an HTTP GET request to a
@@ -1819,7 +1842,7 @@ class BaseProcessor:
         while True:
             try:
                 # set random headers
-                headers = self.header_random()
+                headers, proxies = self.header_random()
                 session = requests.Session()
                 session.headers.update(headers)
 

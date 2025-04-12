@@ -88,7 +88,7 @@ class StockProcessor(BaseProcessor):
 
                 url = f"https://bvmf.bmfbovespa.com.br/sig/FormConsultaMercVista.asp?strTipoResumo=RES_MERC_VISTA&strSocEmissora={company_ticker}&strDtReferencia={month}-{year}&strIdioma=P&intCodNivel=2&intCodCtrl=160"
 
-                headers = (
+                headers, proxies = (
                     self.header_random()
                 )  # Use the random headers from the system module
                 self.test_internet()
@@ -268,7 +268,7 @@ class StockProcessor(BaseProcessor):
         """Fetch HTML content from the given URL."""
         results = None
         try:
-            headers = self.header_random()
+            headers, proxies = self.header_random()
             self.test_internet()
             response = requests.get(url, headers=headers, verify=False)
             response.raise_for_status()

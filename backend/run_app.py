@@ -13,7 +13,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get company information
         run_company_processor = "N"
         prompt = "Want to update company information? (YES/NO): "
-        # run_company_processor = base.timed_input(prompt)
+        run_company_processor = base.timed_input(prompt)
         if run_company_processor.strip().upper().startswith("Y"):
             company_processor = CompanyProcessor()
             company_processor.close_driver()
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         prompt = "Want to update statements information? (YES/NO): "
         run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
-YES            statements_processor = StatementsProcessor()
+            statements_processor = StatementsProcessor()
             statements_processor.close_driver()
             statements_processor.main(thread=True)
             statements_processor.close_driver()

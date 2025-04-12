@@ -160,7 +160,7 @@ class NsdProcessor(BaseProcessor):
         result = {"nsd": nsd}  # Minimal data to prevent stopping the process
         try:
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
-            headers = self.header_random()
+            headers, proxies = self.header_random()
             self.test_internet()
 
             response = requests.get(url, headers=headers)

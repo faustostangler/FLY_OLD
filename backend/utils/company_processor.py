@@ -105,6 +105,9 @@ class CompanyProcessor(BaseProcessor):
         """Fetch and process details for a single company."""
         try:
             self.test_internet()
+            # Obter headers e proxy (opcional)
+            headers, proxies = self.header_random()
+
             self.driver.get(self.config.domain["company_url"])
 
             search_field_xpath = '//*[@id="keyword"]'
