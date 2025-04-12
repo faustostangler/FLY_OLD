@@ -66,7 +66,7 @@ class BaseProcessor:
 
             if thread:
                 print(
-                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["batch_size"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each throught {self.config.scraping["max_workers"]} simultaneous workers'
+                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each'
                 )
                 results = self._process_with_threads(batches, payload=payload)
             else:
@@ -1440,7 +1440,7 @@ class BaseProcessor:
                 # **TQDM Progress Bar Inside Multithreading**
                 with ThreadPoolExecutor(max_workers=batch_threads) as executor:
                     tasks = []
-                    with tqdm(total=total_rows, unit="rows", desc="") as pbar:
+                    with tqdm(total=total_rows, unit=" rows", desc="") as pbar:
                         for batch_number, offset in enumerate(offsets):
                             task = executor.submit(read_batch, offset, batch_number, table_name, query, params, size, alert=False)
                             tasks.append(task)

@@ -34,7 +34,7 @@ class NsdProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=True
+                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
             # Save result to database
@@ -241,9 +241,6 @@ class NsdProcessor(BaseProcessor):
         """Main method to scrape NSD data, parse it, and save it to the
         database."""
         try:
-            # # Initialize the WebDriver
-            # self.driver, self.driver_wait = self._initialize_driver()
-
             # Load existing NSD data
             existing_nsd = self.load_data(
                 table_name=self.table_name, db_filepath=self.db_filepath

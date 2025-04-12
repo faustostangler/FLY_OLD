@@ -41,8 +41,9 @@ class CompanyProcessor(BaseProcessor):
             result, benchmark_results = batch_processor.benchmark_function(
                 batch_processor.process_batch,
                 sub_batch,
+                payload, 
                 progress,
-                benchmark_mode=FalseFalseTrue,
+                benchmark_mode=False,
             )
 
             # Clean up driver after processing
