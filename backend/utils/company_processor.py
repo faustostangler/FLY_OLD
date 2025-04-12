@@ -106,7 +106,7 @@ class CompanyProcessor(BaseProcessor):
         try:
             self.test_internet()
             # Obter headers e proxy (opcional)
-            headers, proxies = self.header_random()
+            headers = self.header_random()
 
             self.driver.get(self.config.domain["company_url"])
 

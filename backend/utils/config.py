@@ -289,7 +289,7 @@ class Config:
         }
 
     def _define_scraping_config(self):
-        """Configurações gerais de scraping, proxy e processamento em lote."""
+        """Configurações gerais de scraping e processamento em lote."""
         cpu = os.cpu_count() or 1
         batch_size = cpu * 10
         max_workers = cpu * 1  # ou outro cálculo
@@ -329,10 +329,6 @@ class Config:
                     chunk_size = sample_size
             break
 
-            # proxy
-            use_proxy = 'surfshark' # True, False, 'surfshark', others
-            proxies = self._get_proxies(use_proxy)
-
         return {
             "batch_size": batch_size,
             "max_workers": max_workers,
@@ -340,29 +336,6 @@ class Config:
             "stock_data_start_date": stock_data_start_date,
             "update_days": update_days,
         }
-
-    def _get_free_proxies(self, use_proxy):
-        """Retorna uma lista de proxies gratuitos."""
-
-        proxies = {}
-
-        if use_proxy == 'surfshark':
-            proxies = {
-                "http": "http://user:pass@surfshark_proxy_ip:port",
-                "https": "https://user:pass@surfshark_proxy_ip:port"
-
-            }
-
-        if use_proxy == True:
-            proxies = {
-            "http://proxy1.example.com:8080",
-            "http://proxy2.example.com:8080",
-            # Adicione outros proxies gratuitos aqui
-            }
-
-
-        return 
-
 
     def _define_selenium_config(self):
         """Configurações específicas do Selenium."""

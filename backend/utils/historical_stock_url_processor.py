@@ -74,7 +74,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
             url = f"https://bvmf.bmfbovespa.com.br/sig/FormConsultaHistorico.asp?strTipoResumo=HISTORICO&strSocEmissora={ticker}"
 
             # Generate randomized headers for the request and check internet connectivity
-            headers, proxies = self.header_random()
+            headers = self.header_random()
             self.test_internet()
 
             # Send an HTTP GET request to fetch the page content
@@ -276,7 +276,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
                             if 1 == 1:
                                 url = f"https://bvmf.bmfbovespa.com.br/sig/FormConsultaMercVista.asp?strTipoResumo=RES_MERC_VISTA&strSocEmissora={ticker}&strDtReferencia={month}-{year}&strIdioma=P&intCodNivel=2&intCodCtrl=160"
                                 urls.append([ticker, url])
-                                headers, proxies = self.header_random()
+                                headers = self.header_random()
                                 self.test_internet()
 
                                 response = requests.get(
