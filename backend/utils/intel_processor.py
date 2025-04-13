@@ -616,7 +616,7 @@ class IntelProcessor(BaseProcessor):
         """
         try:
             max_retries = max_retries or self.config.selenium["max_retries"]
-            wait_time = wait_time or self.config.selenium["wait_time"]
+            wait_time = wait_time or self.dynamic_sleep()
 
             # Gerar condição de JOIN baseada nas primary keys
             on_conditions = " AND ".join(

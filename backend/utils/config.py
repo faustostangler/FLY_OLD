@@ -314,10 +314,10 @@ class Config:
                             conn,
                             params=(sample_size,),
                         )
-                        memory_per_row = df_sample.memory_usage(deep=True).sum() / len(
-                            df_sample
-                        )
-
+                        if len(df_sample) > 0:
+                            memory_per_row = df_sample.memory_usage(deep=True).sum() / len(df_sample)
+                        else:
+                            memory_per_row = df_sample.memory_usage(deep=True).sum()
                         # memory parameters
                         memory_total = psutil.virtual_memory().total
                         memory_available = psutil.virtual_memory().available
@@ -355,6 +355,8 @@ class Config:
             self.paths["bin_folder"], "chromedriver-win64", "chromedriver.exe"
         )
 
+        proxy_socks5 = "" # "127.0.0.1:9050"  # deixe "" ou None para desativar
+
         return {
             "wait_time": wait_time,
             "max_retries": max_retries,
@@ -365,6 +367,7 @@ class Config:
             "chrome_path_32": chrome_path_32,
             "computer_name": computer_name,
             "chromedriver_path": chromedriver_path,
+            "proxy_socks5": proxy_socks5, 
         }
 
     def _define_requests_config(self):

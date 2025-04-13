@@ -38,6 +38,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
 from utils.config import Config
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -169,6 +170,7 @@ class BaseProcessor:
             ) as executor:
                 futures = []
                 for batch_index, batch in enumerate(batches):
+                    time.sleep(self.dynamic_sleep() * 5)
                     progress = {
                         "batch_index": batch_index,
                         "total_batches": len(batches),
@@ -387,15 +389,31 @@ class BaseProcessor:
         try:
             # Get random headers using the custom function
             headers = self.header_random()
+            width = random.randint(800, 1600)
+            height = random.randint(600, 1000)
 
-            chrome_service = Service(chromedriver_path)
+            chrome_service = Service(executable_path=chromedriver_path)
+
             chrome_options = Options()
-            chrome_options.add_argument(f"user-agent={headers['User-Agent']}")
-            chrome_options.add_argument("--window-size=960,540")
+
+            chrome_options.add_argument(f"--window-size={width},{height}")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--log-level=3")
             chrome_options.add_argument("--ignore-ssl-errors")
             chrome_options.add_argument("--disable-infobars")
+
+            # anti cloudflare
+            chrome_options.add_argument(f"user-agent={headers['User-Agent']}")
+            chrome_options.add_argument(f"--lang={headers['Accept-Language']}")
+            chrome_options.add_argument(f"--referer={headers['Referer']}")
+
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option("useAutomationExtension", False)
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+            if self.config.selenium.get("proxy_socks5"):
+                chrome_options.add_argument(f"--proxy-server=socks5://{self.config.selenium['proxy_socks5']}")
+
             # chrome_options.add_argument('--headless')
 
             driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
@@ -443,6 +461,31 @@ class BaseProcessor:
             except Exception as dynamic_error:
                 self.log_error(str(dynamic_error))
                 return None, None
+
+    def _simulate_human_interaction(self, driver):
+        """
+        Simula interações humanas leves que não exigem foco da janela.
+        - Faz scrolls aleatórios.
+        - Adiciona pequenas pausas para simular tempo de leitura.
+        """
+        try:
+            # Scroll aleatório para simular navegação
+            scroll_height = driver.execute_script("return document.body.scrollHeight")
+            max_scroll = max(50, scroll_height // 2)  # Garante valor mínimo razoável
+
+            for _ in range(random.randint(2, 5)):
+                scroll = random.randint(10, max_scroll)
+                driver.execute_script(f"window.scrollBy(0, {scroll});")
+                time.sleep(self.dynamic_sleep())
+
+            # Volta para o topo
+            driver.execute_script("window.scrollTo(0, 0);")
+
+            return True
+
+        except Exception as e:
+            self.log_error(f"Erro simulando interação humana: {e}")
+            return False
 
     def close_driver(self, driver=None, driver_wait=None):
         """Safely quits the Selenium WebDriver instance."""
@@ -526,10 +569,12 @@ class BaseProcessor:
 
         try:
             element = self.wait_forever(driver_wait, xpath)
+            if not element:
+                return False  # retorna False se o elemento não for encontrado
 
-            time.sleep(self.config.selenium["wait_time"] / 10)
+            # time.sleep(self.dynamic_sleep())
             element.click()
-            time.sleep(self.config.selenium["wait_time"] / 10)
+            # time.sleep(self.dynamic_sleep())
 
             return True
         except Exception as e:
@@ -672,12 +717,11 @@ class BaseProcessor:
                 return element
             except Exception as e:
                 attempt += 1
+                self.driver.refresh()
                 if max_retries and attempt >= max_retries:
-                    raise TimeoutException(
-                        f"Element with xpath '{xpath}' not found after {max_retries} attempts."
-                    ) from e
-                time.sleep(self.config.selenium["wait_time"])
-                return False
+                    return False
+                time.sleep(self.config.selenium['wait_time'])
+                # return False
 
     def subtract_lists(self, list1, list2):
         """
@@ -726,7 +770,7 @@ class BaseProcessor:
             if delay == None:
                 delay = self.config.selenium["wait_time"]
 
-            time.sleep(delay)
+            time.sleep(self.dynamic_sleep())
             pyautogui.typewrite(text)
 
         except Exception as e:
@@ -774,7 +818,7 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    def dynamic_sleep():
+    def dynamic_sleep(self):
         """
         Dynamically adjusts the sleep time based on the system's CPU usage.
 
@@ -786,16 +830,19 @@ class BaseProcessor:
         Returns:
             float: The sleep duration in seconds, based on current CPU usage.
         """
+
+        wait = self.config.selenium["wait_time"]
+
         # Get the current CPU usage
         cpu_usage = psutil.cpu_percent(interval=0.1)  # Get CPU usage over 0.1 second
         
         # Adjust sleep time based on CPU usage
         if cpu_usage > 80:
-            return 0.5  # Increase delay if CPU usage is high
+            return wait * random.uniform(0.3, 1.5)  # Increase delay if CPU usage is high
         elif cpu_usage > 50:
-            return 0.3  # Moderate delay for medium load
+            return wait * random.uniform(0.2, 1.0)  # delay if CPU usage is medium load
         else:
-            return 0.1  # Low delay if CPU usage is low
+            return wait * random.uniform(0.1, 0.5)  # delay if CPU usage is medium low
 
     def detect_and_correct_outliers(self, df):
         '''
@@ -1307,7 +1354,7 @@ class BaseProcessor:
                 except Exception as e:
                     if "database is locked" in str(e):
                         attempts += 1
-                        time.sleep(self.config.selenium["wait_time"])
+                        time.sleep(self.dynamic_sleep())
                     else:
                         raise
             raise Exception(f"Failed to read batch after {max_retries} attempts.")
@@ -1428,9 +1475,7 @@ class BaseProcessor:
                         except Exception as e:
                             if "database is locked" in str(e):
                                 attempt += 1
-                                time.sleep(
-                                    self.dynamic_sleep()
-                                )
+                                time.sleep(self.dynamic_sleep())
                             else:
                                 raise
                     raise Exception(
@@ -1470,7 +1515,7 @@ class BaseProcessor:
             except Exception as e:
                 if "database is locked" in str(e):
                     attempts += 1
-                    time.sleep(self.config.selenium["wait_time"])
+                    time.sleep(self.dynamic_sleep())
                 else:
                     raise
 
@@ -1547,7 +1592,7 @@ class BaseProcessor:
                             conn.commit()
 
                             # debug
-                            time.sleep(self.config.selenium['wait_time'])
+                            time.sleep(self.dynamic_sleep())
                             row_count = cursor.rowcount
 
                             verify_sql = f"""
@@ -1572,7 +1617,7 @@ class BaseProcessor:
                     except Exception as e:
                         if "database is locked" in str(e):
                             attempts += 1
-                            time.sleep(self.config.selenium["wait_time"])
+                            time.sleep(self.dynamic_sleep())
                         else:
                             raise  # Exit on other errors
 
@@ -1795,26 +1840,26 @@ class BaseProcessor:
             referer = random.choice(self.config.requests["referers"])
             language = random.choice(self.config.requests["languages"])
 
-            # headers = {
-            #     "User-Agent": user_agent,
-            #     "Referer": referer,
-            #     "Accept-Language": language,
-            # }
-
             headers = {
                 "User-Agent": user_agent,
                 "Referer": referer,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
                 "Accept-Language": language,
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "DNT": "1",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Sec-Fetch-Dest": "document",
             }
+
+            # headers = {
+            #     "User-Agent": user_agent,
+            #     "Referer": referer,
+            #     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            #     "Accept-Encoding": "gzip, deflate, br",
+            #     "Accept-Language": language,
+            #     "Connection": "keep-alive",
+            #     "Upgrade-Insecure-Requests": "1",
+            #     "DNT": "1",
+            #     "Sec-Fetch-Mode": "navigate",
+            #     "Sec-Fetch-Site": "none",
+            #     "Sec-Fetch-User": "?1",
+            #     "Sec-Fetch-Dest": "document",
+            # }
 
         except Exception as e:
             self.log_error(e)
@@ -1828,9 +1873,7 @@ class BaseProcessor:
         Parameters:
             url (str): The URL to request (default: Google's favicon URL).
         """
-        wait_time = wait_time = self.config.selenium[
-            "wait_time"
-        ]  # Time to wait before retrying on failure
+        wait_time = wait_time = self.dynamic_sleep() * 10
 
         while True:
             try:
@@ -1840,10 +1883,10 @@ class BaseProcessor:
                 session.headers.update(headers)
 
                 # Make a lightweight GET request
-                response = requests.get(url, timeout=wait_time)  # Timeout in seconds
+                response = session.get(url, timeout=wait_time)
                 if response.status_code == 200:
                     return True  # Connection is successful
-            except requests.RequestException as e:
+            except Exception as e:
                 # Log the error or suppress if preferred
                 # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
                 pass
