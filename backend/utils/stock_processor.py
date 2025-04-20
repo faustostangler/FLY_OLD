@@ -2,7 +2,6 @@ import datetime
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
-from itertools import product
 from threading import Lock
 
 import pandas as pd
@@ -31,10 +30,7 @@ class StockProcessor(BaseProcessor):
             stock_info["month"] = stock_info["date"].dt.month.astype(str).str.zfill(2)
 
             # Create a set of existing combinations for faster lookups
-            existing_combinations = set(
-                tuple(row)
-                for row in stock_info[["company_ticker", "year", "month"]].values
-            )
+            existing_combinations = set(tuple(row) for row in stock_info[["company_ticker", "year", "month"]].values)
 
             # Get the current year and month
             now = datetime.datetime.now()
@@ -64,9 +60,7 @@ class StockProcessor(BaseProcessor):
                 targets_set.add(current_combination)
 
             # Convert to DataFrame
-            targets = pd.DataFrame(
-                list(targets_set), columns=["company_ticker", "year", "month"]
-            )
+            targets = pd.DataFrame(list(targets_set), columns=["company_ticker", "year", "month"])
 
         except Exception as e:
             self.logerror(e)
@@ -88,9 +82,7 @@ class StockProcessor(BaseProcessor):
 
                 url = f"https://bvmf.bmfbovespa.com.br/sig/FormConsultaMercVista.asp?strTipoResumo=RES_MERC_VISTA&strSocEmissora={company_ticker}&strDtReferencia={month}-{year}&strIdioma=P&intCodNivel=2&intCodCtrl=160"
 
-                headers = (
-                    self.header_random()
-                )  # Use the random headers from the system module
+                headers = self.header_random()  # Use the random headers from the system module
                 self.test_internet()
                 response = requests.get(url, headers=headers, verify=False)
                 response.raise_for_status()
@@ -111,9 +103,7 @@ class StockProcessor(BaseProcessor):
                                 table_html = str(table)
 
                                 # Preprocess: Replace ',' with '.' for decimals and '.' with '' for thousands
-                                table_html = table_html.replace(".", "").replace(
-                                    ",", "."
-                                )
+                                table_html = table_html.replace(".", "").replace(",", ".")
 
                                 # Wrap the modified HTML string in StringIO
                                 html_string = StringIO(table_html)
@@ -121,9 +111,7 @@ class StockProcessor(BaseProcessor):
                                 # Read the table with pandas
                                 df = pd.read_html(html_string, header=0)[0]
                             except ValueError:
-                                print(
-                                    f"Skipping table for {company_ticker} {year}-{month} due to format issues."
-                                )
+                                print(f"Skipping table for {company_ticker} {year}-{month} due to format issues.")
                                 continue
 
                             # Extract the ticker from the first row
@@ -137,15 +125,9 @@ class StockProcessor(BaseProcessor):
 
                             # Rename Columns and Drop the first and last rows
                             df.columns = self.config.historical_columns
-                            df = df[1:-1].reset_index(
-                                drop=True
-                            )  # Reset index after dropping rows
+                            df = df[1:-1].reset_index(drop=True)  # Reset index after dropping rows
 
-                            df["date"] = pd.to_datetime(
-                                df["date"].apply(
-                                    lambda x: f"{year}-{month}-{x.strip()}"
-                                )
-                            )
+                            df["date"] = pd.to_datetime(df["date"].apply(lambda x: f"{year}-{month}-{x.strip()}"))
                             df["company_ticker"] = company_ticker
                             df["ticker"] = ticker
 
@@ -154,7 +136,7 @@ class StockProcessor(BaseProcessor):
                             processed_batch.append(df)
 
                             extra_info = [
-                                f"{i+1}/{len(sub_batch)} in batch",
+                                f"{i + 1}/{len(sub_batch)} in batch",
                                 progress["sub_batch_counter"],
                                 company_ticker,
                                 year,
@@ -168,14 +150,12 @@ class StockProcessor(BaseProcessor):
                         "company_ticker": company_ticker,
                         "date": pd.to_datetime(f"{year}-{month}-01", format="%Y-%m-%d"),
                     }
-                    df = pd.DataFrame(
-                        [new_row], columns=self.config.historical_all_columns
-                    )
+                    df = pd.DataFrame([new_row], columns=self.config.historical_all_columns)
                     df["date"] = pd.to_datetime(df["date"], errors="coerce")
                     df = df.fillna("")
                     processed_batch.append(df)
                     extra_info = [
-                        f"{i+1}/{len(sub_batch)} in batch",
+                        f"{i + 1}/{len(sub_batch)} in batch",
                         progress["sub_batch_counter"],
                         company_ticker,
                         year,
@@ -184,12 +164,7 @@ class StockProcessor(BaseProcessor):
 
                 # Print progress information
                 index_number = progress["batch_start"] + progress["sub_batch_start"] + i
-                self.print_info(
-                    index_number,
-                    progress["scrape_size"],
-                    progress["start_time"],
-                    extra_info,
-                )
+                self.print_info(index_number, progress["scrape_size"], progress["start_time"], extra_info)
 
         except Exception as e:
             self.print_info(e)
@@ -230,28 +205,22 @@ class StockProcessor(BaseProcessor):
                 # Fetch and parse HTML content
                 soup = self._fetch_html(url)
                 if not soup:
-                    self.log_error(
-                        f"Failed to fetch HTML for {company_ticker} {year}-{month}"
-                    )
+                    self.log_error(f"Failed to fetch HTML for {company_ticker} {year}-{month}")
                     continue
 
                 # Extract stock data from the HTML Soup
-                batch_data = self._extract_stock_data(
-                    soup, table_id, stock_entry_label, company_ticker, year, month
-                )
+                batch_data = self._extract_stock_data(soup, table_id, stock_entry_label, company_ticker, year, month)
                 if batch_data is not None:
                     processed_batch.append(batch_data)
 
                 # Track progress
                 extra_info = [
-                    f"{i+1}/{len(sub_batch)} in batch",
+                    f"{i + 1}/{len(sub_batch)} in batch",
                     progress.get("sub_batch_counter", 0),
                     processed_batch[-1]["ticker"].iloc[0] if processed_batch else "N/A",
                 ]
                 index_number = progress["batch_start"] + progress["sub_batch_start"] + i
-                self.print_info(
-                    index_number, progress["scrape_size"], start_time, extra_info
-                )
+                self.print_info(index_number, progress["scrape_size"], start_time, extra_info)
 
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
@@ -277,9 +246,7 @@ class StockProcessor(BaseProcessor):
             self.log_error(f"Error fetching HTML: {e}")
         return results
 
-    def _extract_stock_data(
-        self, soup, table_id, stock_entry_label, company_ticker, year, month
-    ):
+    def _extract_stock_data(self, soup, table_id, stock_entry_label, company_ticker, year, month):
         """Extract stock data from the parsed HTML."""
         result = []
         try:
@@ -291,14 +258,10 @@ class StockProcessor(BaseProcessor):
                     if stock_entry_label in table.get_text():
                         try:
                             # Parse table into a DataFrame
-                            df = self._parse_table_to_dataframe(
-                                table, year, month, company_ticker
-                            )
+                            df = self._parse_table_to_dataframe(table, year, month, company_ticker)
                             result.append(df)
                         except Exception as e:
-                            self.log_error(
-                                f"Error parsing table for {company_ticker} {year}-{month}: {e}"
-                            )
+                            self.log_error(f"Error parsing table for {company_ticker} {year}-{month}: {e}")
             else:
                 # Handle missing table scenario
                 df = self._create_empty_dataframe(company_ticker, year, month)
@@ -322,9 +285,7 @@ class StockProcessor(BaseProcessor):
 
             df.columns = self.config.historical_columns
             df = df[1:-1].reset_index(drop=True)
-            df["date"] = pd.to_datetime(
-                df["date"].apply(lambda x: f"{year}-{month}-{x.strip()}")
-            )
+            df["date"] = pd.to_datetime(df["date"].apply(lambda x: f"{year}-{month}-{x.strip()}"))
             df["company_ticker"] = company_ticker
             df["ticker"] = ticker
 
@@ -340,7 +301,7 @@ class StockProcessor(BaseProcessor):
         try:
             if "(" in ticker_row and ")" in ticker_row:
                 result = ticker_row.split("(")[-1].strip(")")
-        except Exception as e:
+        except Exception:
             self.log_error(f"Unexpected ticker format: {ticker_row}")
 
         return result
@@ -402,12 +363,8 @@ class StockProcessor(BaseProcessor):
             all_results = []  # To collect results from all futures
             sub_batch_counter = 0  # Initialize thread counter
 
-            with ThreadPoolExecutor(
-                max_workers=self.config.scraping["max_workers"]
-            ) as executor:
-                sub_batch_size = max(
-                    1, len(batch) // self.config.scraping["max_workers"]
-                )
+            with ThreadPoolExecutor(max_workers=self.config.scraping["max_workers"]) as executor:
+                sub_batch_size = max(1, len(batch) // self.config.scraping["max_workers"])
                 futures = []
 
                 for sub_batch_start in range(0, len(batch), sub_batch_size):
@@ -416,23 +373,17 @@ class StockProcessor(BaseProcessor):
                     sub_batch_progress["sub_batch_start"] = sub_batch_start
 
                     # Define the sub-batch
-                    sub_batch = batch.iloc[
-                        sub_batch_start : sub_batch_start + sub_batch_size
-                    ]
+                    sub_batch = batch.iloc[sub_batch_start : sub_batch_start + sub_batch_size]
 
                     sub_batch_counter += 1  # Increment thread counter
 
-                    future = executor.submit(
-                        self.process_instance, sub_batch, sub_batch_progress
-                    )
+                    future = executor.submit(self.process_instance, sub_batch, sub_batch_progress)
                     futures.append(future)
                     time.sleep(1)
 
                 # Collect results as sub-batches complete
                 for future in as_completed(futures):
-                    result = (
-                        future.result()
-                    )  # Will raise exceptions if any occurred during processing
+                    result = future.result()  # Will raise exceptions if any occurred during processing
                     if not result.empty:
                         all_results.append(result)
 
@@ -440,9 +391,7 @@ class StockProcessor(BaseProcessor):
             if all_results:
                 processed_batch = pd.concat(all_results, ignore_index=True)
             else:
-                processed_batch = pd.DataFrame(
-                    columns=self.config.historical_all_columns
-                )
+                processed_batch = pd.DataFrame(columns=self.config.historical_all_columns)
 
         except Exception as e:
             self.log_error(f"Error during threaded batch processing: {e}")
@@ -479,8 +428,7 @@ class StockProcessor(BaseProcessor):
                 db_filepath=self.config.databases["raw"]["filepath"],
             )
             stock_info = self.load_data(
-                table_name=self.config.statements_historical,
-                db_filepath=self.config.stock_filepath,
+                table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath
             )
 
             # Identify scrape targets
@@ -514,8 +462,7 @@ class StockProcessor(BaseProcessor):
                 db_filepath=self.config.databases["raw"]["filepath"],
             )
             stock_info = self.load_data(
-                table_name=self.config.statements_historical,
-                db_filepath=self.config.stock_filepath,
+                table_name=self.config.statements_historical, db_filepath=self.config.stock_filepath
             )
 
             targets = self.get_targets(company_info, stock_info)
@@ -526,9 +473,7 @@ class StockProcessor(BaseProcessor):
 
             start_time = time.time()
             progress["start_time"] = start_time
-            for batch_counter, batch_start in enumerate(
-                range(0, progress["scrape_size"], progress["batch_size"])
-            ):
+            for batch_counter, batch_start in enumerate(range(0, progress["scrape_size"], progress["batch_size"])):
                 progress["batch_counter"] = batch_counter
                 progress["batch_start"] = batch_start
 

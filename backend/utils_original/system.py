@@ -8,7 +8,6 @@ import string
 import subprocess
 import threading
 import time
-import winsound
 from datetime import datetime
 
 import pyautogui
@@ -17,6 +16,7 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
+
 from utils_original import settings
 
 # logging.basicConfig(level=logging.DEBUG)
@@ -46,9 +46,7 @@ def log_error(error):
 
     # Configure logging settings
     logging.basicConfig(
-        filename="app_errors.log",
-        level=logging.ERROR,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        filename="app_errors.log", level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
     # Detailed log message without stack trace
@@ -218,16 +216,12 @@ def wait_forever(driver_wait, xpath, max_attempts=None):
     attempt = 0
     while True:
         try:
-            element = driver_wait.until(
-                EC.presence_of_element_located((By.XPATH, xpath))
-            )
+            element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
             return element
         except Exception as e:
             attempt += 1
             if max_attempts and attempt >= max_attempts:
-                raise TimeoutException(
-                    f"Element with xpath '{xpath}' not found after {max_attempts} attempts."
-                ) from e
+                raise TimeoutException(f"Element with xpath '{xpath}' not found after {max_attempts} attempts.") from e
             time.sleep(settings.wait_time)
 
 
@@ -289,9 +283,7 @@ def print_info(index, size, start_time=time.time(), extra_info=[]):
     # Format elapsed time
     elapsed_hours, elapsed_remainder = divmod(int(elapsed_time), 3600)
     elapsed_minutes, elapsed_seconds = divmod(elapsed_remainder, 60)
-    elapsed_time_formatted = (
-        f"{int(elapsed_hours)}h {int(elapsed_minutes):02}m {int(elapsed_seconds):02}s"
-    )
+    elapsed_time_formatted = f"{int(elapsed_hours)}h {int(elapsed_minutes):02}m {int(elapsed_seconds):02}s"
 
     # Format remaining time
     remaining_hours, remaining_remainder = divmod(int(remaining_time), 3600)
@@ -301,9 +293,7 @@ def print_info(index, size, start_time=time.time(), extra_info=[]):
     # Format total estimated time
     total_hours, total_remainder = divmod(int(total_estimated_time), 3600)
     total_minutes, total_seconds = divmod(total_remainder, 60)
-    total_time_formatted = (
-        f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
-    )
+    total_time_formatted = f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
 
     # Prepare progress string
     progress = (
@@ -343,11 +333,7 @@ def timed_input(prompt, timeout=5, default="YES"):
     prefill_thread = threading.Thread(target=prefill_input, args=(default,))
     prefill_thread.start()
 
-    print(
-        f"{prompt} (default: {default}) [You have {timeout} seconds to answer]: ",
-        end="",
-        flush=True,
-    )
+    print(f"{prompt} (default: {default}) [You have {timeout} seconds to answer]: ", end="", flush=True)
 
     # Start a thread to run the input() call, which will block until the user provides input
     input_thread = threading.Thread(target=lambda: input())
@@ -369,11 +355,7 @@ def header_random():
     referer = random.choice(settings.REFERERS)
     language = random.choice(settings.LANGUAGES)
 
-    headers = {
-        "User-Agent": user_agent,
-        "Referer": referer,
-        "Accept-Language": language,
-    }
+    headers = {"User-Agent": user_agent, "Referer": referer, "Accept-Language": language}
 
     return headers
 
@@ -390,25 +372,16 @@ def test_internet(host="8.8.8.8"):
     while True:
         try:
             result = subprocess.run(
-                [
-                    "ping",
-                    "-n",
-                    "1",
-                    host,
-                ],  # Use "-n" for Windows; "-c" would be used on Unix systems.
+                ["ping", "-n", "1", host],  # Use "-n" for Windows; "-c" would be used on Unix systems.
                 stdout=subprocess.DEVNULL,  # Suppress standard output.
                 stderr=subprocess.DEVNULL,  # Suppress error output.
             )
             if result.returncode == 0:
                 break
             else:
-                print(
-                    f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds..."
-                )
+                print(f"No Internet connection: code {result.returncode}. Retrying in {wait_time} seconds...")
         except Exception as e:
-            print(
-                f"Error running ping command: {e}. Retrying in {wait_time} seconds..."
-            )
+            print(f"Error running ping command: {e}. Retrying in {wait_time} seconds...")
         time.sleep(wait_time)
 
 

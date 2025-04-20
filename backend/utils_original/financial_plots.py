@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+
 from utils_original import settings, system
 
 
@@ -61,15 +62,10 @@ class FinancialDataPlotter:
         if self.df["quarter"].dtype != "datetime64[ns]":
             self.df["quarter"] = pd.to_datetime(self.df["quarter"])
 
-    def plot_time_series(
-        self, company_name, description, start_date=None, end_date=None
-    ):
+    def plot_time_series(self, company_name, description, start_date=None, end_date=None):
         """Plot a time series of a financial metric for a given company."""
         # Filter data
-        data = self.df[
-            (self.df["company_name"] == company_name)
-            & (self.df["description"] == description)
-        ]
+        data = self.df[(self.df["company_name"] == company_name) & (self.df["description"] == description)]
 
         # Apply date filters if provided
         if start_date:
@@ -120,15 +116,10 @@ class FinancialDataPlotter:
         fig.update_layout(xaxis_title="Company Name", yaxis_title=description)
         fig.show()
 
-    def plot_indicator_comparison(
-        self, company_name, descriptions, start_date=None, end_date=None
-    ):
+    def plot_indicator_comparison(self, company_name, descriptions, start_date=None, end_date=None):
         """Plot multiple financial metrics over time for a single company."""
         # Filter data
-        data = self.df[
-            (self.df["company_name"] == company_name)
-            & (self.df["description"].isin(descriptions))
-        ]
+        data = self.df[(self.df["company_name"] == company_name) & (self.df["description"].isin(descriptions))]
 
         # Apply date filters if provided
         if start_date:
@@ -141,27 +132,16 @@ class FinancialDataPlotter:
             return
 
         # Pivot data for plotting
-        data_pivot = data.pivot_table(
-            index="quarter", columns="description", values="value"
-        ).reset_index()
+        data_pivot = data.pivot_table(index="quarter", columns="description", values="value").reset_index()
 
         # Create line plot with multiple traces
         fig = go.Figure()
         for desc in descriptions:
             if desc in data_pivot.columns:
-                fig.add_trace(
-                    go.Scatter(
-                        x=data_pivot["quarter"],
-                        y=data_pivot[desc],
-                        mode="lines+markers",
-                        name=desc,
-                    )
-                )
+                fig.add_trace(go.Scatter(x=data_pivot["quarter"], y=data_pivot[desc], mode="lines+markers", name=desc))
 
         fig.update_layout(
-            title=f"Financial Indicators Over Time for {company_name}",
-            xaxis_title="Quarter",
-            yaxis_title="Value",
+            title=f"Financial Indicators Over Time for {company_name}", xaxis_title="Quarter", yaxis_title="Value"
         )
         fig.show()
 
@@ -169,15 +149,10 @@ class FinancialDataPlotter:
         """Plot a correlation heatmap of financial metrics for a given company
         and date."""
         # Filter data
-        data = self.df[
-            (self.df["company_name"] == company_name)
-            & (self.df["quarter"] == pd.to_datetime(date))
-        ]
+        data = self.df[(self.df["company_name"] == company_name) & (self.df["quarter"] == pd.to_datetime(date))]
 
         # Pivot data to have descriptions as columns
-        data_pivot = data.pivot_table(
-            index="company_name", columns="description", values="value"
-        )
+        data_pivot = data.pivot_table(index="company_name", columns="description", values="value")
 
         if data_pivot.empty:
             print("No data available for the given filters.")
@@ -200,15 +175,13 @@ class FinancialDataPlotter:
         """Plot a scatter plot comparing two financial metrics across
         companies."""
         # Filter data
-        data_x = self.df[
-            (self.df["description"] == x_metric)
-            & (self.df["quarter"] == pd.to_datetime(date))
-        ][["company_name", "value"]].rename(columns={"value": x_metric})
+        data_x = self.df[(self.df["description"] == x_metric) & (self.df["quarter"] == pd.to_datetime(date))][
+            ["company_name", "value"]
+        ].rename(columns={"value": x_metric})
 
-        data_y = self.df[
-            (self.df["description"] == y_metric)
-            & (self.df["quarter"] == pd.to_datetime(date))
-        ][["company_name", "value"]].rename(columns={"value": y_metric})
+        data_y = self.df[(self.df["description"] == y_metric) & (self.df["quarter"] == pd.to_datetime(date))][
+            ["company_name", "value"]
+        ].rename(columns={"value": y_metric})
 
         data = pd.merge(data_x, data_y, on="company_name")
 

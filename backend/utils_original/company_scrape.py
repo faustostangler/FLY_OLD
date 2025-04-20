@@ -6,9 +6,8 @@ import time
 
 from bs4 import BeautifulSoup
 from cachetools import TTLCache, cached
-from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
+
 from utils_original import selenium_driver, settings, system
 
 
@@ -26,9 +25,7 @@ class CompanyScraper:
             select_page_xpath = '//*[@id="selectPage"]'
             pagination_xpath = '//*[@id="listing_pagination"]/pagination-template/ul'
             nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
-            next_page_xpath = (
-                '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
-            )
+            next_page_xpath = '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
 
             system.test_internet()
             self.driver.get(settings.companies_url)
@@ -77,18 +74,14 @@ class CompanyScraper:
             for card in cards:
                 try:
                     extracted_info = {
-                        key: system.clean_text(
-                            card.find(details["tag"], class_=details["class"]).text
-                        )
+                        key: system.clean_text(card.find(details["tag"], class_=details["class"]).text)
                         for key, details in field_mapping.items()
                     }
 
                     listing = extracted_info["listing"]
                     if listing:
                         for abbr, full_name in settings.governance_levels.items():
-                            new_listing = system.clean_text(
-                                listing.replace(abbr, full_name)
-                            )
+                            new_listing = system.clean_text(listing.replace(abbr, full_name))
                             if new_listing != listing:
                                 extracted_info["listing"] = new_listing
                                 break
@@ -120,31 +113,15 @@ class CompanyScraper:
                     isin_codes.append(system.clean_text(cols[1].text))
 
         cnpj_element = company_info.find(text="CNPJ")
-        cnpj = (
-            re.sub(r"\D", "", cnpj_element.find_next("p", class_="card-linha").text)
-            if cnpj_element
-            else ""
-        )
+        cnpj = re.sub(r"\D", "", cnpj_element.find_next("p", class_="card-linha").text) if cnpj_element else ""
         activity_element = company_info.find(text="Atividade Principal")
-        activity = (
-            activity_element.find_next("p", class_="card-linha").text
-            if activity_element
-            else ""
-        )
+        activity = activity_element.find_next("p", class_="card-linha").text if activity_element else ""
         sector_element = company_info.find(text="Classificação Setorial")
-        sector_classification = (
-            sector_element.find_next("p", class_="card-linha").text
-            if sector_element
-            else ""
-        )
+        sector_classification = sector_element.find_next("p", class_="card-linha").text if sector_element else ""
         website_element = company_info.find(text="Site")
         website = website_element.find_next("a").text if website_element else ""
         registrar_element = detail_soup.find(text="Escriturador")
-        registrar = (
-            registrar_element.find_next("span").text.strip()
-            if registrar_element
-            else ""
-        )
+        registrar = registrar_element.find_next("span").text.strip() if registrar_element else ""
 
         sectors = sector_classification.split("/")
         sector = system.clean_text(sectors[0].strip()) if len(sectors) > 0 else ""
@@ -170,11 +147,7 @@ class CompanyScraper:
 
         all_company_info = {}
 
-        companies_to_process = {
-            name: info
-            for name, info in new_companies.items()
-            if name not in existing_companies
-        }
+        companies_to_process = {name: info for name, info in new_companies.items() if name not in existing_companies}
         total_companies_to_process = len(companies_to_process)
 
         start_time = time.time()
@@ -199,9 +172,7 @@ class CompanyScraper:
 
                 company_found = False
                 for card in cards:
-                    card_ticker = system.clean_text(
-                        card.find("h5", class_="card-title2").text
-                    )
+                    card_ticker = system.clean_text(card.find("h5", class_="card-title2").text)
                     if card_ticker == info["ticker"]:
                         card_xpath = f'//h5[text()="{card_ticker}"]'
                         system.click(card_xpath, self.driver_wait)
@@ -211,9 +182,7 @@ class CompanyScraper:
                         cvm_code = match.group(1) if match else ""
                         info["cvm_code"] = cvm_code
 
-                        detail_soup = BeautifulSoup(
-                            self.driver.page_source, "html.parser"
-                        )
+                        detail_soup = BeautifulSoup(self.driver.page_source, "html.parser")
                         company_data = self.extract_company_data(detail_soup)
 
                         info.update(company_data)
@@ -257,9 +226,7 @@ class CompanyScraper:
         try:
             os.makedirs(settings.data_folder, exist_ok=True)
 
-            backup_name = (
-                f"{os.path.splitext(settings.db_filepath)[0]} {settings.backup_name}.db"
-            )
+            backup_name = f"{os.path.splitext(settings.db_filepath)[0]} {settings.backup_name}.db"
             backup_path = os.path.join(settings.data_folder, backup_name)
             if os.path.exists(settings.db_filepath):
                 shutil.copyfile(settings.db_filepath, backup_path)
@@ -337,11 +304,7 @@ class CompanyScraper:
             company_name = info["trading_name"]
             if company_name in existing_data:
                 existing_info = existing_data[company_name]
-                changes = {
-                    key: info[key]
-                    for key in info
-                    if info[key] != existing_info.get(key)
-                }
+                changes = {key: info[key] for key in info if info[key] != existing_info.get(key)}
                 if changes:
                     batch_to_save.append(info)
             else:

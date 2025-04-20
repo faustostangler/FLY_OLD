@@ -4,12 +4,11 @@ import shutil
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from threading import Lock
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
+
 from utils_original import settings, system
 
 
@@ -42,16 +41,16 @@ class StockMarketScraper:
         """
         try:
             # Construct the database path
-            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}"
+            specific_name = (
+                f"{settings.db_name.split('.')[0]} {settings.statements_standard}.{settings.db_name.split('.')[-1]}"
+            )
             specific_db_path = os.path.join(settings.data_folder, specific_name)
 
             conn = sqlite3.connect(specific_db_path)
             cursor = conn.cursor()
 
             # Fetch all table names, ignoring internal SQLite tables
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
             tables = cursor.fetchall()
 
             # Initialize variables
@@ -66,12 +65,7 @@ class StockMarketScraper:
                 # Get the sector name from the table name
                 sector = table[0]
                 already_done = ["CONSUMO_NAO_CICLICO", "FINANCEIRO"]
-                already_done = [
-                    "COMUNICACOES",
-                    "BENS_INDUSTRIAIS",
-                    "CONSTRUCAO_E_TRANSPORTE",
-                    "CONSUMO_CICLICO",
-                ]
+                already_done = ["COMUNICACOES", "BENS_INDUSTRIAIS", "CONSTRUCAO_E_TRANSPORTE", "CONSUMO_CICLICO"]
                 already_done = []
                 if sector not in already_done:
                     try:
@@ -87,9 +81,7 @@ class StockMarketScraper:
                         df["value"] = df["value"].fillna(0)
 
                         # Handle missing 'account' values, replacing empty or NaN values with '0'
-                        missing_account = df["account"].isna() | df[
-                            "account"
-                        ].str.strip().eq("")
+                        missing_account = df["account"].isna() | df["account"].str.strip().eq("")
                         df.loc[missing_account, "account"] = "0"
 
                         # Store the cleaned DataFrame in the dictionary
@@ -97,9 +89,7 @@ class StockMarketScraper:
                         total_lines += len(df)  # Update total processed lines
 
                         # Display progress information
-                        extra_info = [
-                            f"Loaded {len(df)} items from {sector} in {files}, total {total_lines}"
-                        ]
+                        extra_info = [f"Loaded {len(df)} items from {sector} in {files}, total {total_lines}"]
                         system.print_info(i, len(tables), start_time, extra_info)
 
                         # print('break loading standard data')
@@ -153,7 +143,9 @@ class StockMarketScraper:
         """
         try:
             # Construct the database path
-            specific_name = f"{settings.db_name.split('.')[0]} {settings.markets_file}.{settings.db_name.split('.')[-1]}"
+            specific_name = (
+                f"{settings.db_name.split('.')[0]} {settings.markets_file}.{settings.db_name.split('.')[-1]}"
+            )
             specific_db_path = os.path.join(settings.data_folder, specific_name)
 
             # Backup the existing database before saving new data
@@ -167,9 +159,7 @@ class StockMarketScraper:
             with sqlite3.connect(specific_db_path) as conn:
                 cursor = conn.cursor()
 
-                table_name = sector.upper().replace(
-                    " ", "_"
-                )  # Create a table name from sector name
+                table_name = sector.upper().replace(" ", "_")  # Create a table name from sector name
 
                 # SQL for creating the table if it does not exist
                 create_table_sql = f"""
@@ -205,23 +195,13 @@ class StockMarketScraper:
                 """
 
                 # Ensure 'quarter' column is datetime and convert it to string format for SQLite compatibility
-                df.loc[:, "quarter"] = pd.to_datetime(
-                    df["quarter"], errors="coerce"
-                ).dt.strftime("%Y-%m-%d")
+                df.loc[:, "quarter"] = pd.to_datetime(df["quarter"], errors="coerce").dt.strftime("%Y-%m-%d")
 
                 # Replace NaN and NaT with None for SQLite compatibility
                 df = df.where(pd.notnull(df), None)
 
                 # Drop rows where any of the primary key columns are NULL
-                pk_columns = [
-                    "company_name",
-                    "quarter",
-                    "version",
-                    "type",
-                    "frame",
-                    "account",
-                    "description",
-                ]
+                pk_columns = ["company_name", "quarter", "version", "type", "frame", "account", "description"]
                 df = df.dropna(subset=pk_columns)
 
                 # Convert data types explicitly
@@ -243,9 +223,7 @@ class StockMarketScraper:
                 df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
                 # Check for non-string 'company_name'
-                non_string_company_names = df[
-                    ~df["company_name"].apply(lambda x: isinstance(x, str))
-                ]
+                non_string_company_names = df[~df["company_name"].apply(lambda x: isinstance(x, str))]
                 if not non_string_company_names.empty:
                     print("Non-string values found in 'company_name':")
                     print(non_string_company_names)
@@ -268,9 +246,7 @@ class StockMarketScraper:
                 for idx, row in enumerate(data_to_insert):
                     for i, value in enumerate(row):
                         if not isinstance(value, (type(None), int, float, str, bytes)):
-                            print(
-                                f"Row {idx} has unsupported type at parameter {i+1}: {value}, type: {type(value)}"
-                            )
+                            print(f"Row {idx} has unsupported type at parameter {i + 1}: {value}, type: {type(value)}")
 
                 # Execute batch insert
                 cursor.executemany(insert_sql, data_to_insert)
@@ -298,18 +274,10 @@ class StockMarketScraper:
         """
         try:
             columns = ["company_name"]
-            cols_to_merge = columns + [
-                "cvm_code",
-                "ticker",
-                "ticker_codes",
-                "isin_codes",
-                "listing",
-            ]
+            cols_to_merge = columns + ["cvm_code", "ticker", "ticker_codes", "isin_codes", "listing"]
 
             # Merge the two DataFrames on 'company_name'
-            df_statements_companies = pd.merge(
-                df_statements, df_companies[cols_to_merge], on=columns, how="left"
-            )
+            df_statements_companies = pd.merge(df_statements, df_companies[cols_to_merge], on=columns, how="left")
 
             return df_statements_companies
 
@@ -340,12 +308,7 @@ class StockMarketScraper:
             last_quarter_dates = last_quarter_dates.dt.date.drop_duplicates()
 
             # Create a summary DataFrame
-            quarterly_summary = pd.DataFrame(
-                {
-                    "quarter": last_quarter_dates.values,
-                    "median": median.values,
-                }
-            )
+            quarterly_summary = pd.DataFrame({"quarter": last_quarter_dates.values, "median": median.values})
 
             return quarterly_summary
 
@@ -353,9 +316,7 @@ class StockMarketScraper:
             system.log_error(f"Error calculating median data: {e}")
             return pd.DataFrame()
 
-    def get_historical_data(
-        self, df_statements_companies, sector, last_date="1950-01-01"
-    ):
+    def get_historical_data(self, df_statements_companies, sector, last_date="1950-01-01"):
         """Fetch historical data for company tickers from Yahoo Finance.
 
         Args:
@@ -367,19 +328,13 @@ class StockMarketScraper:
         """
         historical_data = {}
         try:
-            list_of_tickers = df_statements_companies[
-                ["company_name", "ticker_codes"]
-            ].drop_duplicates()
+            list_of_tickers = df_statements_companies[["company_name", "ticker_codes"]].drop_duplicates()
 
             # Loop over tickers and fetch data
             start_time = time.time()
             for i, (_, row) in enumerate(list_of_tickers.iterrows()):
                 company_name = row["company_name"]
-                tickers = (
-                    row["ticker_codes"].split(",")
-                    if isinstance(row["ticker_codes"], str)
-                    else []
-                )
+                tickers = row["ticker_codes"].split(",") if isinstance(row["ticker_codes"], str) else []
 
                 extra_info = ["STOCK PRICES", sector, company_name, " ".join(tickers)]
                 system.print_info(i, len(list_of_tickers), start_time, extra_info)
@@ -387,12 +342,7 @@ class StockMarketScraper:
                 for ticker in tickers:
                     if ticker:
                         # Download historical data from Yahoo Finance
-                        df = yf.download(
-                            ticker + ".SA",
-                            start=last_date,
-                            group_by="ticker",
-                            progress=False,
-                        )
+                        df = yf.download(ticker + ".SA", start=last_date, group_by="ticker", progress=False)
                         # Set value to Adjusted Close price
                         df["value"] = df["Adj Close"]
                         # Process the median data
@@ -419,9 +369,7 @@ class StockMarketScraper:
         """
         new_rows = []
         try:
-            list_of_quarters = df_statements_companies[
-                ["company_name", "ticker_codes", "quarter"]
-            ].drop_duplicates()
+            list_of_quarters = df_statements_companies[["company_name", "ticker_codes", "quarter"]].drop_duplicates()
 
             new_value = 0
             start_time = time.time()
@@ -431,46 +379,26 @@ class StockMarketScraper:
             for i, (_, row) in enumerate(list_of_quarters.iterrows()):
                 company_name = row["company_name"]
                 quarter = row["quarter"]
-                tickers = (
-                    row["ticker_codes"].split(",")
-                    if isinstance(row["ticker_codes"], str)
-                    else []
-                )
+                tickers = row["ticker_codes"].split(",") if isinstance(row["ticker_codes"], str) else []
 
                 for ticker in tickers:
                     if ticker:
                         # Handle ticker and historical data creation
                         new_row = self.create_new_row(
-                            df_statements_companies,
-                            company_name,
-                            quarter,
-                            ticker,
-                            historical_data,
+                            df_statements_companies, company_name, quarter, ticker, historical_data
                         )
                         # If a valid row (pd.Series) is returned, convert it to a dict and add to new_rows list
                         if new_row is not None and isinstance(new_row, pd.Series):
-                            new_rows.append(
-                                new_row.to_dict()
-                            )  # Convert Series to dictionary before appending
+                            new_rows.append(new_row.to_dict())  # Convert Series to dictionary before appending
                             new_value = new_row["value"]
-                            new_value = (
-                                0 if pd.isna(new_value) else round(float(new_value), 2)
-                            )
+                            new_value = 0 if pd.isna(new_value) else round(float(new_value), 2)
 
                 # Print progress when remaining iterations are divisible by an interval
                 remaining = total_quarters - i - 1
                 if (
                     remaining == 0 or remaining % settings.batch_size == 0
                 ):  # Print when remaining is divisible by 100 or is the last iteration
-
-                    extra_info = [
-                        "ROW",
-                        sector,
-                        ticker,
-                        company_name,
-                        quarter.strftime("%Y-%m-%d"),
-                        new_value,
-                    ]
+                    extra_info = ["ROW", sector, ticker, company_name, quarter.strftime("%Y-%m-%d"), new_value]
                     system.print_info(i, total_quarters, start_time, extra_info)
 
         except Exception as e:
@@ -491,53 +419,29 @@ class StockMarketScraper:
         """
         new_rows = []
         try:
-            list_of_quarters = df_statements_companies[
-                ["company_name", "ticker_codes", "quarter"]
-            ].drop_duplicates()
+            list_of_quarters = df_statements_companies[["company_name", "ticker_codes", "quarter"]].drop_duplicates()
 
             def process_quarter(row, worker_number, item_number):
                 try:
                     company_name = row["company_name"]
                     quarter = row["quarter"]
-                    tickers = (
-                        row["ticker_codes"].split(",")
-                        if isinstance(row["ticker_codes"], str)
-                        else []
-                    )
+                    tickers = row["ticker_codes"].split(",") if isinstance(row["ticker_codes"], str) else []
 
                     for ticker in tickers:
                         if ticker:
                             # Handle ticker and historical data creation
                             new_row = self.create_new_row(
-                                df_statements_companies,
-                                company_name,
-                                quarter,
-                                ticker,
-                                historical_data,
+                                df_statements_companies, company_name, quarter, ticker, historical_data
                             )
                             # If a valid row (pd.Series) is returned, convert it to a dict and add to new_rows list
                             if new_row is not None and isinstance(new_row, pd.Series):
-                                new_rows.append(
-                                    new_row.to_dict()
-                                )  # Convert Series to dictionary before appending
+                                new_rows.append(new_row.to_dict())  # Convert Series to dictionary before appending
                             # Print progress with worker number and item number
                             new_value = new_row["value"]
-                            new_value = (
-                                0 if pd.isna(new_value) else round(float(new_value), 2)
-                            )
-                            extra_info = [
-                                worker_number,
-                                company_name,
-                                quarter.strftime("%Y-%m-%d"),
-                                new_value,
-                            ]
+                            new_value = 0 if pd.isna(new_value) else round(float(new_value), 2)
+                            extra_info = [worker_number, company_name, quarter.strftime("%Y-%m-%d"), new_value]
                             with self.print_lock:  # Acquire lock before printing
-                                system.print_info(
-                                    item_number,
-                                    len(list_of_quarters),
-                                    time.time(),
-                                    extra_info,
-                                )
+                                system.print_info(item_number, len(list_of_quarters), time.time(), extra_info)
                 except Exception as e:
                     system.log_error(
                         f"Error processing row for company {row['company_name']}, quarter {row['quarter']}: {e}"
@@ -548,14 +452,9 @@ class StockMarketScraper:
             with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
                 futures = {
                     executor.submit(
-                        process_quarter,
-                        row,
-                        worker_number % settings.max_workers,
-                        item_number,
+                        process_quarter, row, worker_number % settings.max_workers, item_number
                     ): item_number
-                    for item_number, (worker_number, row) in enumerate(
-                        list_of_quarters.iterrows()
-                    )
+                    for item_number, (worker_number, row) in enumerate(list_of_quarters.iterrows())
                 }
 
                 for future in as_completed(futures):
@@ -570,9 +469,7 @@ class StockMarketScraper:
 
         return new_rows
 
-    def create_new_row(
-        self, df_statements_companies, company_name, quarter, ticker, historical_data
-    ):
+    def create_new_row(self, df_statements_companies, company_name, quarter, ticker, historical_data):
         """Helper function to create a new row for historical data.
 
         Args:
@@ -589,18 +486,14 @@ class StockMarketScraper:
 
         try:
             # Split the ticker into 'tick' (non-digits) and 'ticker_type' (digits)
-            tick = "".join(
-                re.findall(r"[^\d]", ticker)
-            )  # Extract all non-digit characters
+            tick = "".join(re.findall(r"[^\d]", ticker))  # Extract all non-digit characters
             ticker_type = "".join(re.findall(r"\d", ticker))  # Extract all digits
 
             # Set attributes for the new row
             new_row_type = "Cotações Históricas"
             new_row_frame = "Cotação Mediana do Trimestre"
             new_row_account = "99." + ticker_type
-            new_row_description = settings.tipos_acoes.get(
-                ticker_type, "Tipo de Ação Desconhecido"
-            )
+            new_row_description = settings.tipos_acoes.get(ticker_type, "Tipo de Ação Desconhecido")
 
             # Filtering for matching rows
             mask = (
@@ -627,20 +520,14 @@ class StockMarketScraper:
                 # Check if df_historical is empty
                 if not df_historical.empty:
                     # Convert quarter to datetime.date for comparison
-                    quarter_date = pd.to_datetime(
-                        quarter
-                    ).date()  # Convert Timestamp to datetime.date
+                    quarter_date = pd.to_datetime(quarter).date()  # Convert Timestamp to datetime.date
 
                     # Perform comparison to get the corresponding value
-                    new_value = df_historical[df_historical["quarter"] == quarter_date][
-                        "median"
-                    ].values
+                    new_value = df_historical[df_historical["quarter"] == quarter_date]["median"].values
 
                     # Assign the 'value' field based on whether new_value has any values
                     if len(new_value) > 0:
-                        new_row["value"] = new_value[
-                            0
-                        ]  # Set to the first value if present
+                        new_row["value"] = new_value[0]  # Set to the first value if present
                     else:
                         new_row["value"] = pd.NA  # Set to NA if no values are found
 
@@ -672,32 +559,23 @@ class StockMarketScraper:
             start_time = time.time()
             for i, (sector, df_statements) in enumerate(statements_data.items()):
                 # Merge financial statement data with company data
-                df_statements_companies = self.get_merged_df(
-                    df_statements, df_companies
-                )
+                df_statements_companies = self.get_merged_df(df_statements, df_companies)
                 # Fetch historical data for the companies
-                historical_data = self.get_historical_data(
-                    df_statements_companies, sector
-                )
+                historical_data = self.get_historical_data(df_statements_companies, sector)
 
                 # Create new rows for the historical data and append to the final DataFrame
-                new_rows = self.create_new_rows(
-                    df_statements_companies, historical_data, sector
-                )
+                new_rows = self.create_new_rows(df_statements_companies, historical_data, sector)
                 new_rows = pd.DataFrame(new_rows)
                 # Concatenate original and new rows, drop duplicates, and sort
-                df_final = pd.concat(
-                    [df_statements_companies, new_rows], ignore_index=True
-                ).drop_duplicates(keep="last")
+                df_final = pd.concat([df_statements_companies, new_rows], ignore_index=True).drop_duplicates(
+                    keep="last"
+                )
                 df_final = df_final.sort_values(
-                    by=settings.statements_order,
-                    ascending=[True] * len(settings.statements_order),
+                    by=settings.statements_order, ascending=[True] * len(settings.statements_order)
                 )
 
                 # Store the final processed DataFrame for each sector
-                df_final = self.save_to_db(
-                    sector, df_final[settings.statements_columns]
-                )
+                df_final = self.save_to_db(sector, df_final[settings.statements_columns])
                 dict_of_df_statements[sector] = df_final[settings.statements_columns]
 
                 extra_info = [sector]

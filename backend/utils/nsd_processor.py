@@ -1,12 +1,12 @@
 import datetime
-import inspect
+import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+
 from utils.base_processor import BaseProcessor
 
 
@@ -27,7 +27,7 @@ class NsdProcessor(BaseProcessor):
 
         try:
             print(
-                f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%'
+                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
             )
 
             batch_processor = NsdProcessor()
@@ -38,11 +38,7 @@ class NsdProcessor(BaseProcessor):
             )
 
             # Save result to database
-            self.save_to_db(
-                dataframe=result,
-                table_name=self.table_name,
-                db_filepath=self.db_filepath,
-            )
+            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -67,26 +63,16 @@ class NsdProcessor(BaseProcessor):
                 # Log progress
                 actual_item = progress["batch_start"] + i
                 total_items = progress["scrape_size"] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
                 extra_info = [
                     worker_info,
                     nsd,
-                    (
-                        nsd_data.get("sent_date").strftime("%Y-%m-%d %H:%M:%S")
-                        if nsd_data.get("sent_date")
-                        else ""
-                    ),
+                    (nsd_data.get("sent_date").strftime("%Y-%m-%d %H:%M:%S") if nsd_data.get("sent_date") else ""),
                     nsd_data.get("nsd_type", ""),
                     nsd_data.get("company_name", ""),
-                    (
-                        nsd_data.get("quarter").strftime("%Y-%m")
-                        if nsd_data.get("quarter")
-                        else ""
-                    ),
+                    (nsd_data.get("quarter").strftime("%Y-%m") if nsd_data.get("quarter") else ""),
                 ]
-                self.print_info(
-                    i, len(sub_batch), start_time, extra_info, indent_level=0
-                )
+                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             except Exception as e:
                 self.log_error(f"Error processing NSD {row['nsd']}: {e}")
@@ -105,49 +91,29 @@ class NsdProcessor(BaseProcessor):
                 last_nsd = 0
 
             existing_nsd = existing_nsd[
-                existing_nsd["company_name"].notnull()
-                & (existing_nsd["company_name"].str.strip() != "")
+                existing_nsd["company_name"].notnull() & (existing_nsd["company_name"].str.strip() != "")
             ]
 
             now = datetime.datetime.now()
-            max_date = (
-                existing_nsd["sent_date"].max()
-                if not existing_nsd["sent_date"].isna().all()
-                else now
-            )
+            max_date = existing_nsd["sent_date"].max() if not existing_nsd["sent_date"].isna().all() else now
             min_date = (
                 existing_nsd["sent_date"].min()
                 if not existing_nsd["sent_date"].isna().all()
                 else datetime.datetime(2010, 1, 1)
             )
-            total_nsds = (
-                existing_nsd["nsd"].count() if existing_nsd["nsd"].count() > 0 else 1
-            )
+            total_nsds = existing_nsd["nsd"].count() if existing_nsd["nsd"].count() > 0 else 1
 
             if max_date.normalize() != pd.Timestamp(now).normalize():
                 days_span = (max_date - min_date).days
-                days_elapsed = (
-                    (datetime.datetime.now() - max_date).days + 1 if max_date else 1
-                )
-                daily_submission_estimate = (
-                    total_nsds / days_span if days_span > 0 else 1
-                )
+                days_elapsed = (datetime.datetime.now() - max_date).days + 1 if max_date else 1
+                daily_submission_estimate = total_nsds / days_span if days_span > 0 else 1
                 estimated_new_nsds = (
-                    int(
-                        daily_submission_estimate
-                        * days_elapsed
-                        * self.config.domain["safety_factor"]
-                    )
-                    + 1
+                    int(daily_submission_estimate * days_elapsed * self.config.domain["safety_factor"]) + 1
                 )
                 nsd_range = list(range(last_nsd + 1, 1 + last_nsd + estimated_new_nsds))
 
             else:
-                nsd_range = list(
-                    range(
-                        last_nsd + 1, last_nsd + 1 + self.config.scraping["batch_size"]
-                    )
-                )
+                nsd_range = list(range(last_nsd + 1, last_nsd + 1 + self.config.scraping["batch_size"]))
         except Exception as e:
             self.log_error(e)
 
@@ -168,6 +134,22 @@ class NsdProcessor(BaseProcessor):
 
             # Parse the response HTML
             html = response.text
+
+            # Create a file with nsd as the name
+            file_path = os.path.join(self.config.paths["temp_folder"], f"nsd_{nsd}.html")
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write(html)
+
+            html = self.detect_dns_block(html)
+
+            # Parse the response HTML
+            html = response.text
+
+            # Create a file with nsd as the name
+            file_path = os.path.join(self.config.paths["temp_folder"], f"nsd_{nsd}_dns_block.html")
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write(html)
+
             result = self._parse_nsd_data(html, nsd)
 
         except Exception as e:
@@ -198,11 +180,7 @@ class NsdProcessor(BaseProcessor):
             for key, selector in selectors.items():
                 element = soup.select_one(selector)
                 if element:
-                    data[key] = (
-                        self.clean_text(element.text)
-                        if key not in ["sent_date", "quarter"]
-                        else element.text
-                    )
+                    data[key] = self.clean_text(element.text) if key not in ["sent_date", "quarter"] else element.text
 
             # Parse data information nsd_type, version, quarter and sent_date into datetime objects
             parts = data["nsd_type_version"].split()
@@ -214,24 +192,16 @@ class NsdProcessor(BaseProcessor):
 
             if len(data["quarter"]) == 4:  # Only a year is provided
                 # Assuming the last day of the year
-                data["quarter"] = datetime.datetime.strptime(
-                    f"31/12/{data['quarter']}", "%d/%m/%Y"
-                )
+                data["quarter"] = datetime.datetime.strptime(f"31/12/{data['quarter']}", "%d/%m/%Y")
             else:
-                data["quarter"] = datetime.datetime.strptime(
-                    data["quarter"], "%d/%m/%Y"
-                )
-            data["quarter"] = pd.to_datetime(
-                data.get("quarter", None), format="%d/%m/%Y", errors="coerce"
-            )
-            data["sent_date"] = pd.to_datetime(
-                data.get("sent_date", None), format="%d/%m/%Y %H:%M:%S", errors="coerce"
-            )
+                data["quarter"] = datetime.datetime.strptime(data["quarter"], "%d/%m/%Y")
+            data["quarter"] = pd.to_datetime(data.get("quarter", None), format="%d/%m/%Y", errors="coerce")
+            data["sent_date"] = pd.to_datetime(data.get("sent_date", None), format="%d/%m/%Y %H:%M:%S", errors="coerce")
 
             if data["sent_date"]:
                 result = data
 
-        except Exception as e:
+        except Exception:
             # self.log_error(f"Error parsing NSD {nsd}: {e}")
             pass
 
@@ -242,20 +212,14 @@ class NsdProcessor(BaseProcessor):
         database."""
         try:
             # Load existing NSD data
-            existing_nsd = self.load_data(
-                table_name=self.table_name, db_filepath=self.db_filepath
-            )
+            existing_nsd = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
             try:
                 # Filter by the last sent_date
                 existing_nsd["sent_date"] = pd.to_datetime(
-                    existing_nsd["sent_date"],
-                    format="%Y-%m-%dT%H:%M:%S",
-                    errors="coerce",
+                    existing_nsd["sent_date"], format="%Y-%m-%dT%H:%M:%S", errors="coerce"
                 )
-                last_valid_index = existing_nsd.sort_values(
-                    by="sent_date", ascending=False
-                ).index[0]
+                last_valid_index = existing_nsd.sort_values(by="sent_date", ascending=False).index[0]
                 existing_nsd = existing_nsd.loc[:last_valid_index]
             except Exception as e:
                 self.log_error(e)
@@ -269,20 +233,12 @@ class NsdProcessor(BaseProcessor):
 
             # Run processing (threaded or sequential)
             result = self.run(
-                targets,
-                thread=thread,
-                module_name=self.inspect.getmodule(
-                    self.inspect.currentframe()
-                ).__name__,
+                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(
-                    dataframe=result,
-                    table_name=self.table_name,
-                    db_filepath=self.db_filepath,
-                )
+                self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

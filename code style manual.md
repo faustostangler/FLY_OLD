@@ -7,9 +7,11 @@ This manual outlines coding style guidelines to ensure consistency, readability,
 ## 1. Code Structure and Organization
 
 ### 1.1 Import Statements
-- **Order**: Organize imports into three sections, separated by a blank line, and sort imports alphabetically within each section. You may use 'isort .'. Consider using black formatter 
-'isort --profile black .'
-'black .'
+- **Order**: Organize imports into three sections, separated by a blank line, and sort imports alphabetically within each section. Consider using Ruff (formatter + linter + import sorter):  
+```bash
+ruff format .       # formatar o código
+ruff check . --fix  # aplicar lint e autofix
+
   1. Standard library imports
   2. Third-party imports
   3. Local application/library-specific imports

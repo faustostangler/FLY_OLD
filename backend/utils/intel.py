@@ -9,26 +9,17 @@ import numpy as np
 section_0_criteria = [
     {
         "target_line": "00.01.01 - Ações ON Ordinárias",
-        "criteria": [
-            ["account", "equals", "00.01.01"],
-            ["description", "equals", "Ações ON Ordinárias"],
-        ],
+        "criteria": [["account", "equals", "00.01.01"], ["description", "equals", "Ações ON Ordinárias"]],
         "sub_criteria": [],  # No sub-criteria for this example
     },
     {
         "target_line": "00.01.02 - Ações PN Preferenciais",
-        "criteria": [
-            ["account", "equals", "00.01.02"],
-            ["description", "equals", "Ações PN Preferenciais"],
-        ],
+        "criteria": [["account", "equals", "00.01.02"], ["description", "equals", "Ações PN Preferenciais"]],
         "sub_criteria": [],  # No sub-criteria for this example
     },
     {
         "target_line": "00.02.01 - Em Tesouraria Ações ON Ordinárias",
-        "criteria": [
-            ["account", "equals", "00.02.01"],
-            ["description", "equals", "Em Tesouraria Ações ON Ordinárias"],
-        ],
+        "criteria": [["account", "equals", "00.02.01"], ["description", "equals", "Em Tesouraria Ações ON Ordinárias"]],
         "sub_criteria": [],  # No sub-criteria for this example
     },
     {
@@ -199,11 +190,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.01.03.01"],
-                                            [
-                                                "description",
-                                                "contains_none",
-                                                ["client", "duvid"],
-                                            ],
+                                            ["description", "contains_none", ["client", "duvid"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -251,11 +238,7 @@ section_1_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "1.01.04"],
-                                    [
-                                        "description",
-                                        "contains_none",
-                                        ["mater", "revend"],
-                                    ],
+                                    ["description", "contains_none", ["mater", "revend"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -429,11 +412,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.02.02.01"],
-                                            [
-                                                "description",
-                                                "contains_none",
-                                                ["colig", "control"],
-                                            ],
+                                            ["description", "contains_none", ["colig", "control"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -508,11 +487,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.02.04.01"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["softwar", "aplicativ", "sistem"],
-                                            ],
+                                            ["description", "contains_any", ["softwar", "aplicativ", "sistem"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -521,11 +496,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.02.04.01"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["marc", "patent"],
-                                            ],
+                                            ["description", "contains_any", ["marc", "patent"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -544,11 +515,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.02.04.02"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["ágio", "agio", "goodwill"],
-                                            ],
+                                            ["description", "contains_any", ["ágio", "agio", "goodwill"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -557,11 +524,7 @@ section_1_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "1.02.04.02"],
-                                            [
-                                                "description",
-                                                "contains_all",
-                                                "mais valia",
-                                            ],
+                                            ["description", "contains_all", "mais valia"],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -772,11 +735,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.03.01"],
-                                            [
-                                                "description",
-                                                "contains_all",
-                                                "parcelados",
-                                            ],
+                                            ["description", "contains_all", "parcelados"],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -807,11 +766,7 @@ section_2_criteria = [
                         "criteria": [
                             ["account", "level", 3],
                             ["account", "startswith", "2.01"],
-                            [
-                                "description",
-                                "contains_any",
-                                ["emprést", "emprest", "financ"],
-                            ],
+                            ["description", "contains_any", ["emprést", "emprest", "financ"]],
                         ],
                         "sub_criteria": [
                             {
@@ -819,11 +774,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.01.04"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["emprést", "emprest", "financ"],
-                                    ],
+                                    ["description", "contains_any", ["emprést", "emprest", "financ"]],
                                 ],
                                 "sub_criteria": [
                                     {
@@ -851,11 +802,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.01.04"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["debênt", "debent"],
-                                    ],
+                                    ["description", "contains_any", ["debênt", "debent"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -910,11 +857,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.05.01"],
-                                            [
-                                                "description",
-                                                "contains_none",
-                                                ["colig", "control"],
-                                            ],
+                                            ["description", "contains_none", ["colig", "control"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -934,11 +877,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.05.02"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["divid", " ações"],
-                                            ],
+                                            ["description", "contains_any", ["divid", " ações"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -948,11 +887,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.05.02"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["tribut", "autoriz", "concessão"],
-                                            ],
+                                            ["description", "contains_any", ["tribut", "autoriz", "concessão"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -965,11 +900,7 @@ section_2_criteria = [
                                             [
                                                 "description",
                                                 "contains_any",
-                                                [
-                                                    "telecomunicação",
-                                                    "interconex",
-                                                    "consign",
-                                                ],
+                                                ["telecomunicação", "interconex", "consign"],
                                             ],
                                         ],
                                         "sub_criteria": [],
@@ -980,11 +911,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.05.02"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["derivativ", "participações"],
-                                            ],
+                                            ["description", "contains_any", ["derivativ", "participações"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -1046,11 +973,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.01.06.01"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                ["previd", "trabalh"],
-                                            ],
+                                            ["description", "contains_any", ["previd", "trabalh"]],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -1128,11 +1051,7 @@ section_2_criteria = [
                         "criteria": [
                             ["account", "level", 3],
                             ["account", "startswith", "2.02"],
-                            [
-                                "description",
-                                "contains_any",
-                                ["emprést", "emprest", "financ"],
-                            ],
+                            ["description", "contains_any", ["emprést", "emprest", "financ"]],
                         ],
                         "sub_criteria": [
                             {
@@ -1140,11 +1059,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.02.01"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["emprést", "emprest", "financ"],
-                                    ],
+                                    ["description", "contains_any", ["emprést", "emprest", "financ"]],
                                 ],
                                 "sub_criteria": [
                                     {
@@ -1172,11 +1087,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.02.01"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["debênt", "debent"],
-                                    ],
+                                    ["description", "contains_any", ["debênt", "debent"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1283,14 +1194,7 @@ section_2_criteria = [
                             [
                                 "description",
                                 "contains_none",
-                                [
-                                    "emprest",
-                                    "emprést",
-                                    "debent",
-                                    "debênt",
-                                    "outr",
-                                    "renda",
-                                ],
+                                ["emprest", "emprést", "debent", "debênt", "outr", "renda"],
                             ],
                         ],
                         "sub_criteria": [
@@ -1299,11 +1203,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 5],
                                     ["account", "startswith", "2.02.04.01"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["fisc", "previd", "trabalh", "benef", "cív"],
-                                    ],
+                                    ["description", "contains_any", ["fisc", "previd", "trabalh", "benef", "cív"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1312,11 +1212,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.02.04"],
-                                    [
-                                        "description",
-                                        "contains_none",
-                                        ["fisc", "previd", "trabalh", "benef", "cív"],
-                                    ],
+                                    ["description", "contains_none", ["fisc", "previd", "trabalh", "benef", "cív"]],
                                 ],
                                 "sub_criteria": [
                                     {
@@ -1333,11 +1229,7 @@ section_2_criteria = [
                                         "criteria": [
                                             ["account", "level", 5],
                                             ["account", "startswith", "2.02.04"],
-                                            [
-                                                "description",
-                                                "contains_any",
-                                                "reestrutur",
-                                            ],
+                                            ["description", "contains_any", "reestrutur"],
                                         ],
                                         "sub_criteria": [],
                                     },
@@ -1367,12 +1259,7 @@ section_2_criteria = [
                                             [
                                                 "description",
                                                 "contains_none",
-                                                [
-                                                    "garant",
-                                                    "reestrutur",
-                                                    "ambient",
-                                                    "forneced",
-                                                ],
+                                                ["garant", "reestrutur", "ambient", "forneced"],
                                             ],
                                         ],
                                         "sub_criteria": [],
@@ -1432,11 +1319,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.02"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["ágio", "prêm", "prem", "reserv"],
-                                    ],
+                                    ["description", "contains_any", ["ágio", "prêm", "prem", "reserv"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1445,16 +1328,8 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.02"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        [" ações", " opções", "remunera", "tesour"],
-                                    ],
-                                    [
-                                        "description",
-                                        "contains_none",
-                                        ["ágio", "prêm", "prem", "reserv"],
-                                    ],
+                                    ["description", "contains_any", [" ações", " opções", "remunera", "tesour"]],
+                                    ["description", "contains_none", ["ágio", "prêm", "prem", "reserv"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1466,16 +1341,7 @@ section_2_criteria = [
                                     [
                                         "description",
                                         "contains_none",
-                                        [
-                                            "ágio",
-                                            "prêm",
-                                            "prem",
-                                            "reserv",
-                                            " ações",
-                                            " opções",
-                                            "remunera",
-                                            "tesour",
-                                        ],
+                                        ["ágio", "prêm", "prem", "reserv", " ações", " opções", "remunera", "tesour"],
                                     ],
                                 ],
                                 "sub_criteria": [],
@@ -1505,11 +1371,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.04"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["legal", "estatutár"],
-                                    ],
+                                    ["description", "contains_any", ["legal", "estatutár"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1522,12 +1384,7 @@ section_2_criteria = [
                                     [
                                         "description",
                                         "contains_any",
-                                        [
-                                            "retenção",
-                                            "incentivo",
-                                            "expansão",
-                                            "modernização",
-                                        ],
+                                        ["retenção", "incentivo", "expansão", "modernização"],
                                     ],
                                 ],
                                 "sub_criteria": [],
@@ -1538,11 +1395,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.04"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["dividendo", "ações em tesouraria"],
-                                    ],
+                                    ["description", "contains_any", ["dividendo", "ações em tesouraria"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1595,11 +1448,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.06"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["ajuste", "custo atribuído"],
-                                    ],
+                                    ["description", "contains_any", ["ajuste", "custo atribuído"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1608,11 +1457,7 @@ section_2_criteria = [
                                 "criteria": [
                                     ["account", "level", 4],
                                     ["account", "startswith", "2.03.06"],
-                                    [
-                                        "description",
-                                        "contains_any",
-                                        ["perda", "aquisição", "não controladores"],
-                                    ],
+                                    ["description", "contains_any", ["perda", "aquisição", "não controladores"]],
                                 ],
                                 "sub_criteria": [],
                             },
@@ -1624,13 +1469,7 @@ section_2_criteria = [
                                     [
                                         "description",
                                         "contains_none",
-                                        [
-                                            "ajuste",
-                                            "custo atribuído",
-                                            "perda",
-                                            "aquisição",
-                                            "não controladores",
-                                        ],
+                                        ["ajuste", "custo atribuído", "perda", "aquisição", "não controladores"],
                                     ],
                                 ],
                                 "sub_criteria": [],
@@ -1840,24 +1679,9 @@ section_3_criteria = [
 # 06.02 - Caixa de Investimento
 # 06.03 - Caixa de Financiamento
 section_6_criteria = [
-    {
-        "target_line": "06.01 - Caixa de Operações (Operacional)",
-        "criteria": [
-            ["account", "equals", "6.01"],
-        ],
-    },
-    {
-        "target_line": "06.02 - Caixa de Investimento",
-        "criteria": [
-            ["account", "equals", "6.02"],
-        ],
-    },
-    {
-        "target_line": "06.03 - Caixa de Financiamento",
-        "criteria": [
-            ["account", "equals", "6.03"],
-        ],
-    },
+    {"target_line": "06.01 - Caixa de Operações (Operacional)", "criteria": [["account", "equals", "6.01"]]},
+    {"target_line": "06.02 - Caixa de Investimento", "criteria": [["account", "equals", "6.02"]]},
+    {"target_line": "06.03 - Caixa de Financiamento", "criteria": [["account", "equals", "6.03"]]},
 ]
 
 # 07.01 - Receitas
@@ -1953,18 +1777,10 @@ section_7_criteria = [
                 "criteria": [["account", "equals", "7.02.03"]],
                 "sub_criteria": [],
             },
-            {
-                "target_line": "07.02.04 - Outros",
-                "criteria": [["account", "equals", "7.02.04"]],
-                "sub_criteria": [],
-            },
+            {"target_line": "07.02.04 - Outros", "criteria": [["account", "equals", "7.02.04"]], "sub_criteria": []},
         ],
     },
-    {
-        "target_line": "07.03 - Valor Adicionado Bruto",
-        "criteria": [["account", "equals", "7.03"]],
-        "sub_criteria": [],
-    },
+    {"target_line": "07.03 - Valor Adicionado Bruto", "criteria": [["account", "equals", "7.03"]], "sub_criteria": []},
     {
         "target_line": "07.04 - Retenções",
         "criteria": [["account", "equals", "7.04"]],
@@ -1974,11 +1790,7 @@ section_7_criteria = [
                 "criteria": [["account", "equals", "7.04.01"]],
                 "sub_criteria": [],
             },
-            {
-                "target_line": "07.04.02 - Outras",
-                "criteria": [["account", "equals", "7.04.02"]],
-                "sub_criteria": [],
-            },
+            {"target_line": "07.04.02 - Outras", "criteria": [["account", "equals", "7.04.02"]], "sub_criteria": []},
         ],
     },
     {
@@ -2014,10 +1826,7 @@ section_7_criteria = [
                     },
                     {
                         "target_line": "07.06.03.02 - Aluguéis",
-                        "criteria": [
-                            ["account", "startswith", "7.06.03"],
-                            ["description", "contains_all", ["alugue"]],
-                        ],
+                        "criteria": [["account", "startswith", "7.06.03"], ["description", "contains_all", ["alugue"]]],
                         "sub_criteria": [],
                     },
                 ],
@@ -2141,18 +1950,12 @@ section_7_criteria = [
                     },
                     {
                         "target_line": "07.08.05.02 - Investimento Social",
-                        "criteria": [
-                            ["account", "startswith", "7.08.05"],
-                            ["description", "contains_all", ["social"]],
-                        ],
+                        "criteria": [["account", "startswith", "7.08.05"], ["description", "contains_all", ["social"]]],
                         "sub_criteria": [],
                     },
                     {
                         "target_line": "07.08.05.03 - Lucros Retidos",
-                        "criteria": [
-                            ["account", "startswith", "7.08.05"],
-                            ["description", "contains_all", ["lucr"]],
-                        ],
+                        "criteria": [["account", "startswith", "7.08.05"], ["description", "contains_all", ["lucr"]]],
                         "sub_criteria": [],
                     },
                     {
@@ -2167,11 +1970,7 @@ section_7_criteria = [
                         "target_line": "07.08.05.09 - Outros",
                         "criteria": [
                             ["account", "startswith", "7.08.05"],
-                            [
-                                "description",
-                                "contains_none",
-                                ["trabalhist", "social", "lucr", "minorit"],
-                            ],
+                            ["description", "contains_none", ["trabalhist", "social", "lucr", "minorit"]],
                         ],
                         "sub_criteria": [],
                     },
@@ -2238,10 +2037,7 @@ class Addition(Formula):
     def __call__(self, df):
         try:
             # Sum all accounts or formulas
-            result = sum(
-                acc(df) if isinstance(acc, Formula) else df[acc]
-                for acc in self.accounts
-            )
+            result = sum(acc(df) if isinstance(acc, Formula) else df[acc] for acc in self.accounts)
             return result * self.multiplier
         except KeyError as e:
             raise KeyError(f"Missing account: {e}")
@@ -2264,11 +2060,7 @@ class Subtraction(Formula):
     def __call__(self, df):
         try:
             # Compute minuend value
-            result = (
-                self.minuend(df)
-                if isinstance(self.minuend, Formula)
-                else df[self.minuend]
-            )
+            result = self.minuend(df) if isinstance(self.minuend, Formula) else df[self.minuend]
             # Subtract each subtrahend
             for acc in self.subtrahends:
                 sub_val = acc(df) if isinstance(acc, Formula) else df[acc]
@@ -2319,22 +2111,10 @@ class Division(Formula):
     def __call__(self, df):
         try:
             # Compute numerator and denominator values
-            numerator_val = (
-                self.numerator(df)
-                if isinstance(self.numerator, Formula)
-                else df[self.numerator]
-            )
-            denominator_val = (
-                self.denominator(df)
-                if isinstance(self.denominator, Formula)
-                else df[self.denominator]
-            )
+            numerator_val = self.numerator(df) if isinstance(self.numerator, Formula) else df[self.numerator]
+            denominator_val = self.denominator(df) if isinstance(self.denominator, Formula) else df[self.denominator]
             # Handle division by zero
-            result = np.where(
-                denominator_val != 0,
-                (numerator_val / denominator_val) * self.multiplier,
-                np.nan,
-            )
+            result = np.where(denominator_val != 0, (numerator_val / denominator_val) * self.multiplier, np.nan)
             return result
         except KeyError as e:
             raise KeyError(f"Missing account: {e}")
@@ -2356,10 +2136,7 @@ class Average(Formula):
     def __call__(self, df):
         try:
             # Calculate the sum of all accounts or formulas
-            total = sum(
-                acc(df) if isinstance(acc, Formula) else df[acc]
-                for acc in self.accounts
-            )
+            total = sum(acc(df) if isinstance(acc, Formula) else df[acc] for acc in self.accounts)
             # Calculate the average
             result = total / len(self.accounts)
             return result * self.multiplier
@@ -2404,11 +2181,7 @@ indicators_11 = [
         "description": "Ativos Não Circulantes de Longo Prazo por Ativos",
         "formula": Division("01.02", "01"),
     },
-    {
-        "account": "11.02",
-        "description": "Passivos por Ativos",
-        "formula": Division(Subtraction("02", "02.03"), "01"),
-    },
+    {"account": "11.02", "description": "Passivos por Ativos", "formula": Division(Subtraction("02", "02.03"), "01")},
     {
         "account": "11.02.01",
         "description": "Passivos Circulantes de Curto Prazo por Ativos",
@@ -2429,11 +2202,7 @@ indicators_11 = [
         "description": "Passivos Não Circulantes de Longo Prazo por Passivos",
         "formula": Division("02.02", "02"),
     },
-    {
-        "account": "11.03",
-        "description": "Patrimônio Líquido por Ativos",
-        "formula": Division("02.03", "01"),
-    },
+    {"account": "11.03", "description": "Patrimônio Líquido por Ativos", "formula": Division("02.03", "01")},
     {
         "account": "11.03.01",
         "description": "Equity Multiplier (Ativos por Patrimônio Líquido)",
@@ -2462,9 +2231,7 @@ indicators_11b = [
     {
         "account": "11.04",
         "description": "Capital Social por Patrimônio Líquido",
-        "formula": Division(
-            "02.03.01", "02.03"
-        ),  # Capital Social divided by Patrimônio Líquido
+        "formula": Division("02.03.01", "02.03"),  # Capital Social divided by Patrimônio Líquido
     },
     {
         "account": "11.05",
@@ -2770,14 +2537,16 @@ indicators_13 = [
         "account": "13.03.01",
         "description": "Contas a Receber Não Circulantes de Curto Prazo por Faturamento",
         "formula": Division(
-            "01.01.03", "03.01"  # Contas a Receber de Curto Prazo  # Receita Bruta
+            "01.01.03",
+            "03.01",  # Contas a Receber de Curto Prazo  # Receita Bruta
         ),
     },
     {
         "account": "13.03.02",
         "description": "Contas a Receber Circulantes de Longo Prazo por Faturamento",
         "formula": Division(
-            "01.02.01.03", "03.01"  # Contas a Receber de Longo Prazo  # Receita Bruta
+            "01.02.01.03",
+            "03.01",  # Contas a Receber de Longo Prazo  # Receita Bruta
         ),
     },
     {
@@ -2795,14 +2564,16 @@ indicators_13 = [
         "account": "13.04.01",
         "description": "Estoques Não Circulantes de Curto Prazo por Faturamento",
         "formula": Division(
-            "01.01.04", "03.01"  # Estoques de Curto Prazo  # Receita Bruta
+            "01.01.04",
+            "03.01",  # Estoques de Curto Prazo  # Receita Bruta
         ),
     },
     {
         "account": "13.04.02",
         "description": "Estoques Circulantes de Longo Prazo por Faturamento",
         "formula": Division(
-            "01.02.01.04", "03.01"  # Estoques de Longo Prazo  # Receita Bruta
+            "01.02.01.04",
+            "03.01",  # Estoques de Longo Prazo  # Receita Bruta
         ),
     },
     {
@@ -2820,14 +2591,16 @@ indicators_13 = [
         "account": "13.05.01",
         "description": "Ativos Biológicos Não Circulantes de Curto Prazo por Faturamento",
         "formula": Division(
-            "01.01.05", "03.01"  # Ativos Biológicos de Curto Prazo  # Receita Bruta
+            "01.01.05",
+            "03.01",  # Ativos Biológicos de Curto Prazo  # Receita Bruta
         ),
     },
     {
         "account": "13.05.02",
         "description": "Ativos Biológicos Circulantes de Longo Prazo por Faturamento",
         "formula": Division(
-            "01.02.01.05", "03.01"  # Ativos Biológicos de Longo Prazo  # Receita Bruta
+            "01.02.01.05",
+            "03.01",  # Ativos Biológicos de Longo Prazo  # Receita Bruta
         ),
     },
     {
@@ -2845,7 +2618,8 @@ indicators_13 = [
         "account": "13.06.01",
         "description": "Tributos Não Circulantes de Curto Prazo por Faturamento",
         "formula": Division(
-            "01.01.06", "03.01"  # Tributos a Recuperar de Curto Prazo  # Receita Bruta
+            "01.01.06",
+            "03.01",  # Tributos a Recuperar de Curto Prazo  # Receita Bruta
         ),
     },
     {
@@ -2871,7 +2645,8 @@ indicators_13 = [
         "account": "13.07.01",
         "description": "Despesas Não Circulantes de Curto Prazo por Faturamento",
         "formula": Division(
-            "01.01.07", "03.01"  # Despesas Antecipadas de Curto Prazo  # Receita Bruta
+            "01.01.07",
+            "03.01",  # Despesas Antecipadas de Curto Prazo  # Receita Bruta
         ),
     },
     {
@@ -2905,7 +2680,8 @@ indicators_13 = [
         "account": "13.09.02",
         "description": "Outros Ativos Não Circulantes de Longo Prazo por Faturamento",
         "formula": Division(
-            "01.02.01.09", "03.01"  # Outros Ativos de Longo Prazo  # Receita Bruta
+            "01.02.01.09",
+            "03.01",  # Outros Ativos de Longo Prazo  # Receita Bruta
         ),
     },
 ]
@@ -2942,7 +2718,8 @@ indicators_14 = [
         "account": "14.03",
         "description": "Capital Investido",
         "formula": Addition(
-            "06.01", "06.02"  # Caixa das Operações  # Caixa de Investimentos (CAPEX)
+            "06.01",
+            "06.02",  # Caixa das Operações  # Caixa de Investimentos (CAPEX)
         ),
     },
     {
@@ -3005,7 +2782,8 @@ indicators_15 = [
         "account": "15.01.01.02",
         "description": "Aluguéis por Remuneração de Capital de Terceiros",
         "formula": Division(
-            "07.08.03.02", "07.08.03"  # Aluguéis  # Remuneração de Capital de Terceiros
+            "07.08.03.02",
+            "07.08.03",  # Aluguéis  # Remuneração de Capital de Terceiros
         ),
     },
     {
@@ -3031,7 +2809,8 @@ indicators_15 = [
         "account": "15.01.02.02",
         "description": "Dividendos por Remuneração de Capital Próprio",
         "formula": Division(
-            "07.08.04.02", "07.08.04"  # Dividendos  # Remuneração de Capital Próprio
+            "07.08.04.02",
+            "07.08.04",  # Dividendos  # Remuneração de Capital Próprio
         ),
     },
     {
@@ -3074,7 +2853,8 @@ indicators_16 = [
         "account": "16.01",
         "description": "Margem Bruta (Resultado Bruto (Receita Líquida) por Receita Bruta)",
         "formula": Division(
-            "03.03", "03.01"  # Resultado Bruto (Receita Líquida)  # Receita Bruta
+            "03.03",
+            "03.01",  # Resultado Bruto (Receita Líquida)  # Receita Bruta
         ),
     },
     {
@@ -3086,7 +2866,8 @@ indicators_16 = [
         "account": "16.02.01",
         "description": "Força de Vendas (Despesas com Vendas por Despesas Operacionais)",
         "formula": Division(
-            "03.04.01", "03.04"  # Despesas com Vendas  # Despesas Operacionais
+            "03.04.01",
+            "03.04",  # Despesas com Vendas  # Despesas Operacionais
         ),
     },
     {
@@ -3151,7 +2932,8 @@ indicators_17 = [
         "account": "17.01",
         "description": "Caixa Total",
         "formula": Addition(
-            "06.01", "06.02"  # Caixa das Operações  # Caixa de Investimentos (CAPEX)
+            "06.01",
+            "06.02",  # Caixa das Operações  # Caixa de Investimentos (CAPEX)
         ),
     },
     {
@@ -3167,7 +2949,8 @@ indicators_17 = [
         "account": "17.03.01",
         "description": "Caixa de Investimentos por Caixa das Operações",
         "formula": Division(
-            "06.02", "06.01"  # Caixa de Investimentos (CAPEX)  # Caixa das Operações
+            "06.02",
+            "06.01",  # Caixa de Investimentos (CAPEX)  # Caixa das Operações
         ),
     },
     {
@@ -3242,7 +3025,8 @@ indicators_18 = [
         "account": "18.01",
         "description": "Margem de Vendas por Valor Agregado",
         "formula": Division(
-            "07.01", "07.07"  # Vendas  # Valor Adicionado Total a Distribuir
+            "07.01",
+            "07.07",  # Vendas  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3265,7 +3049,8 @@ indicators_18 = [
         "account": "18.04",
         "description": "Retenções por Valor Agregado",
         "formula": Division(
-            "07.04", "07.07"  # Retenções  # Valor Adicionado Total a Distribuir
+            "07.04",
+            "07.07",  # Retenções  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3288,7 +3073,8 @@ indicators_18 = [
         "account": "18.07",
         "description": "Recursos Humanos por Valor Agregado",
         "formula": Division(
-            "07.08.01", "07.07"  # Pessoal  # Valor Adicionado Total a Distribuir
+            "07.08.01",
+            "07.07",  # Pessoal  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3303,14 +3089,16 @@ indicators_18 = [
         "account": "18.07.02",
         "description": "Benefícios (Recursos Humanos) por Valor Agregado",
         "formula": Division(
-            "07.08.01.02", "07.07"  # Benefícios  # Valor Adicionado Total a Distribuir
+            "07.08.01.02",
+            "07.07",  # Benefícios  # Valor Adicionado Total a Distribuir
         ),
     },
     {
         "account": "18.07.03",
         "description": "FGTS (Recursos Humanos) por Valor Agregado",
         "formula": Division(
-            "07.08.01.03", "07.07"  # FGTS  # Valor Adicionado Total a Distribuir
+            "07.08.01.03",
+            "07.07",  # FGTS  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3333,14 +3121,16 @@ indicators_18 = [
         "account": "18.09.01",
         "description": "Juros Pagos a Terceiros por Valor Agregado",
         "formula": Division(
-            "07.08.03.01", "07.07"  # Juros Pagos  # Valor Adicionado Total a Distribuir
+            "07.08.03.01",
+            "07.07",  # Juros Pagos  # Valor Adicionado Total a Distribuir
         ),
     },
     {
         "account": "18.09.02",
         "description": "Aluguéis Pagos a Terceiros por Valor Agregado",
         "formula": Division(
-            "07.08.03.02", "07.07"  # Aluguéis  # Valor Adicionado Total a Distribuir
+            "07.08.03.02",
+            "07.07",  # Aluguéis  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3363,7 +3153,8 @@ indicators_18 = [
         "account": "18.10.02",
         "description": "Dividendos por Valor Agregado",
         "formula": Division(
-            "07.08.04.02", "07.07"  # Dividendos  # Valor Adicionado Total a Distribuir
+            "07.08.04.02",
+            "07.07",  # Dividendos  # Valor Adicionado Total a Distribuir
         ),
     },
     {
@@ -3378,21 +3169,24 @@ indicators_18 = [
         "account": "18.11.01",
         "description": "Alíquota de Impostos (Impostos, Taxas e Contribuições por Receita Bruta)",
         "formula": Division(
-            "07.08.02", "03.01"  # Impostos, Taxas e Contribuições  # Receita Bruta
+            "07.08.02",
+            "03.01",  # Impostos, Taxas e Contribuições  # Receita Bruta
         ),
     },
     {
         "account": "18.11.02",
         "description": "Taxa de Juros Pagos (Remuneração de Capital de Terceiros por Receita Bruta)",
         "formula": Division(
-            "07.08.03", "03.01"  # Remuneração de Capital de Terceiros  # Receita Bruta
+            "07.08.03",
+            "03.01",  # Remuneração de Capital de Terceiros  # Receita Bruta
         ),
     },
     {
         "account": "18.11.03",
         "description": "Taxa de Proventos Gerados (Remuneração de Capital Próprio por Receita Bruta)",
         "formula": Division(
-            "07.08.04", "03.01"  # Remuneração de Capital Próprio  # Receita Bruta
+            "07.08.04",
+            "03.01",  # Remuneração de Capital Próprio  # Receita Bruta
         ),
     },
 ]
@@ -3455,16 +3249,8 @@ indicators_21 = [
         "formula": Addition("21.00.01", "21.00.02"),
     },
     # Cálculo das Proporções
-    {
-        "account": "21.00.04",
-        "description": "Proporção das Ações ON",
-        "formula": Division("21.00.01", "21.00.03"),
-    },
-    {
-        "account": "21.00.05",
-        "description": "Proporção das Ações PN",
-        "formula": Division("21.00.02", "21.00.03"),
-    },
+    {"account": "21.00.04", "description": "Proporção das Ações ON", "formula": Division("21.00.01", "21.00.03")},
+    {"account": "21.00.05", "description": "Proporção das Ações PN", "formula": Division("21.00.02", "21.00.03")},
     # Lucro Atribuído a cada Classe de Ação
     {
         "account": "21.00.06",
@@ -3477,23 +3263,11 @@ indicators_21 = [
         "formula": Multiplication("03.11", "21.00.05"),
     },
     # Lucro por Ação (LPA) Total
-    {
-        "account": "21.01",
-        "description": "Lucro por Ação (LPA) Total",
-        "formula": Division("03.11", "21.00.03"),
-    },
+    {"account": "21.01", "description": "Lucro por Ação (LPA) Total", "formula": Division("03.11", "21.00.03")},
     # Lucro por Ação (LPA) ON
-    {
-        "account": "21.02",
-        "description": "Lucro por Ação (LPA) ON",
-        "formula": Division("21.00.06", "21.00.01"),
-    },
+    {"account": "21.02", "description": "Lucro por Ação (LPA) ON", "formula": Division("21.00.06", "21.00.01")},
     # Lucro por Ação (LPA) PN
-    {
-        "account": "21.03",
-        "description": "Lucro por Ação (LPA) PN",
-        "formula": Division("21.00.07", "21.00.02"),
-    },
+    {"account": "21.03", "description": "Lucro por Ação (LPA) PN", "formula": Division("21.00.07", "21.00.02")},
     # Preço/Lucro (P/L) Total
     {
         "account": "21.04",
@@ -3538,7 +3312,8 @@ indicators_21 = [
         "account": "21.10",
         "description": "Preço/Valor Patrimonial (P/VP) Total",
         "formula": Division(
-            Average("99.3", "99.4"), "21.07"  # Média dos Preços das Ações  # VPA Total
+            Average("99.3", "99.4"),
+            "21.07",  # Média dos Preços das Ações  # VPA Total
         ),
     },
     # Preço/Valor Patrimonial (P/VP) ON
@@ -3563,24 +3338,21 @@ indicators_21 = [
     {
         "account": "21.14",
         "description": "Dividendos por Ação (DPA) ON",
-        "formula": Division(
-            "07.08.04.02", "21.00.01"
-        ),  # Assumindo distribuição igualitária
+        "formula": Division("07.08.04.02", "21.00.01"),  # Assumindo distribuição igualitária
     },
     # Dividendos por Ação (DPA) PN
     {
         "account": "21.15",
         "description": "Dividendos por Ação (DPA) PN",
-        "formula": Division(
-            "07.08.04.02", "21.00.02"
-        ),  # Assumindo distribuição igualitária
+        "formula": Division("07.08.04.02", "21.00.02"),  # Assumindo distribuição igualitária
     },
     # Dividend Yield Total
     {
         "account": "21.16",
         "description": "Dividend Yield Total",
         "formula": Division(
-            "21.13", Average("99.3", "99.4")  # DPA Total  # Média dos Preços das Ações
+            "21.13",
+            Average("99.3", "99.4"),  # DPA Total  # Média dos Preços das Ações
         ),
     },
     # Dividend Yield ON
@@ -3605,17 +3377,9 @@ indicators_21 = [
         ),
     },
     # Capitalização de Mercado ON
-    {
-        "account": "21.20",
-        "description": "Capitalização de Mercado ON",
-        "formula": Multiplication("99.3", "21.00.01"),
-    },
+    {"account": "21.20", "description": "Capitalização de Mercado ON", "formula": Multiplication("99.3", "21.00.01")},
     # Capitalização de Mercado PN
-    {
-        "account": "21.21",
-        "description": "Capitalização de Mercado PN",
-        "formula": Multiplication("99.4", "21.00.02"),
-    },
+    {"account": "21.21", "description": "Capitalização de Mercado PN", "formula": Multiplication("99.4", "21.00.02")},
     # Enterprise Value (EV) Total
     {
         "account": "21.22",
@@ -3623,19 +3387,13 @@ indicators_21 = [
         "formula": Addition(
             "21.19",  # Capitalização de Mercado Total
             Subtraction(
-                Addition(
-                    "12.01", "12.02.02"
-                ),  # Dívida Bruta Total (12.01 é Dívida Bruta)
+                Addition("12.01", "12.02.02"),  # Dívida Bruta Total (12.01 é Dívida Bruta)
                 "01.01.01",  # Caixa e Equivalentes de Caixa
             ),
         ),
     },
     # EBITDA Total
-    {
-        "account": "21.24",
-        "description": "EBITDA Total",
-        "formula": Addition("03.05", "07.04.01"),
-    },
+    {"account": "21.24", "description": "EBITDA Total", "formula": Addition("03.05", "07.04.01")},
     # EV/EBITDA Total
     {
         "account": "21.23",
@@ -3647,7 +3405,8 @@ indicators_21 = [
         "account": "21.25",
         "description": "Earnings Yield Total",
         "formula": Division(
-            "21.01", Average("99.3", "99.4")  # LPA Total  # Média dos Preços das Ações
+            "21.01",
+            Average("99.3", "99.4"),  # LPA Total  # Média dos Preços das Ações
         ),
     },
     # Earnings Yield ON
@@ -3766,7 +3525,8 @@ indicators_22 = [
         "account": "22.04",
         "description": "Índice PEG Total",
         "formula": Division(
-            "21.04", "22.01"  # P/L Total  # Taxa de Crescimento do LPA Total
+            "21.04",
+            "22.01",  # P/L Total  # Taxa de Crescimento do LPA Total
         ),
     },
     # Índice PEG ON
@@ -3774,7 +3534,8 @@ indicators_22 = [
         "account": "22.05",
         "description": "Índice PEG ON",
         "formula": Division(
-            "21.05", "22.02"  # P/L ON  # Taxa de Crescimento do LPA ON
+            "21.05",
+            "22.02",  # P/L ON  # Taxa de Crescimento do LPA ON
         ),
     },
     # Índice PEG PN
@@ -3782,7 +3543,8 @@ indicators_22 = [
         "account": "22.06",
         "description": "Índice PEG PN",
         "formula": Division(
-            "21.06", "22.03"  # P/L PN  # Taxa de Crescimento do LPA PN
+            "21.06",
+            "22.03",  # P/L PN  # Taxa de Crescimento do LPA PN
         ),
     },
     # Preço/EBITDA Total
@@ -3799,7 +3561,8 @@ indicators_22 = [
         "account": "22.08",
         "description": "Preço/EBITDA ON",
         "formula": Division(
-            "99.3", Division("21.24", "21.00.01")  # EBITDA por ação ON
+            "99.3",
+            Division("21.24", "21.00.01"),  # EBITDA por ação ON
         ),
     },
     # Preço/EBITDA PN
@@ -3807,7 +3570,8 @@ indicators_22 = [
         "account": "22.09",
         "description": "Preço/EBITDA PN",
         "formula": Division(
-            "99.4", Division("21.24", "21.00.02")  # EBITDA por ação PN
+            "99.4",
+            Division("21.24", "21.00.02"),  # EBITDA por ação PN
         ),
     },
     # Preço/EBIT Total
@@ -3845,7 +3609,8 @@ indicators_22 = [
         "account": "22.14",
         "description": "Preço/Fluxo de Caixa Operacional (P/OCF) ON",
         "formula": Division(
-            "99.3", Division("06.01", "21.00.01")  # Caixa de Operações por ação ON
+            "99.3",
+            Division("06.01", "21.00.01"),  # Caixa de Operações por ação ON
         ),
     },
     # Preço/Fluxo de Caixa Operacional (P/OCF) PN
@@ -3853,7 +3618,8 @@ indicators_22 = [
         "account": "22.15",
         "description": "Preço/Fluxo de Caixa Operacional (P/OCF) PN",
         "formula": Division(
-            "99.4", Division("06.01", "21.00.02")  # Caixa de Operações por ação PN
+            "99.4",
+            Division("06.01", "21.00.02"),  # Caixa de Operações por ação PN
         ),
     },
 ]
@@ -3872,7 +3638,8 @@ indicators_23 = [
         "account": "23.01",
         "description": "Índice de Payout de Dividendos Total",
         "formula": Division(
-            "21.13", "21.01"  # Dividendos por Ação Total  # Lucro por Ação Total
+            "21.13",
+            "21.01",  # Dividendos por Ação Total  # Lucro por Ação Total
         ),
     },
     # Índice de Payout de Dividendos ON
@@ -3880,7 +3647,8 @@ indicators_23 = [
         "account": "23.02",
         "description": "Índice de Payout de Dividendos ON",
         "formula": Division(
-            "21.14", "21.02"  # Dividendos por Ação ON  # Lucro por Ação ON
+            "21.14",
+            "21.02",  # Dividendos por Ação ON  # Lucro por Ação ON
         ),
     },
     # Índice de Payout de Dividendos PN
@@ -3888,7 +3656,8 @@ indicators_23 = [
         "account": "23.03",
         "description": "Índice de Payout de Dividendos PN",
         "formula": Division(
-            "21.15", "21.03"  # Dividendos por Ação PN  # Lucro por Ação PN
+            "21.15",
+            "21.03",  # Dividendos por Ação PN  # Lucro por Ação PN
         ),
     },
     # Cobertura de Dividendos Total
@@ -3896,7 +3665,8 @@ indicators_23 = [
         "account": "23.04",
         "description": "Cobertura de Dividendos Total",
         "formula": Division(
-            "21.01", "21.13"  # Lucro por Ação Total  # Dividendos por Ação Total
+            "21.01",
+            "21.13",  # Lucro por Ação Total  # Dividendos por Ação Total
         ),
     },
     # Cobertura de Dividendos ON
@@ -3904,7 +3674,8 @@ indicators_23 = [
         "account": "23.05",
         "description": "Cobertura de Dividendos ON",
         "formula": Division(
-            "21.02", "21.14"  # Lucro por Ação ON  # Dividendos por Ação ON
+            "21.02",
+            "21.14",  # Lucro por Ação ON  # Dividendos por Ação ON
         ),
     },
     # Cobertura de Dividendos PN
@@ -3912,7 +3683,8 @@ indicators_23 = [
         "account": "23.06",
         "description": "Cobertura de Dividendos PN",
         "formula": Division(
-            "21.03", "21.15"  # Lucro por Ação PN  # Dividendos por Ação PN
+            "21.03",
+            "21.15",  # Lucro por Ação PN  # Dividendos por Ação PN
         ),
     },
     # # Retorno Total para o Acionista (TSR) ON
@@ -3978,17 +3750,13 @@ indicators_24 = [
     {
         "account": "24.04",
         "description": "Preço/Valor Patrimonial Líquido Tangível (P/TBV) ON",
-        "formula": Division(
-            "99.3", Division(Subtraction("02.03", "01.02.04"), "21.00.01")
-        ),
+        "formula": Division("99.3", Division(Subtraction("02.03", "01.02.04"), "21.00.01")),
     },
     # Preço/Valor Patrimonial Líquido Tangível (P/TBV) PN
     {
         "account": "24.05",
         "description": "Preço/Valor Patrimonial Líquido Tangível (P/TBV) PN",
-        "formula": Division(
-            "99.4", Division(Subtraction("02.03", "01.02.04"), "21.00.02")
-        ),
+        "formula": Division("99.4", Division(Subtraction("02.03", "01.02.04"), "21.00.02")),
     },
 ]
 
@@ -4013,7 +3781,8 @@ indicators_25 = [
         "account": "25.02",
         "description": "Fluxo de Caixa Livre por Ação ON",
         "formula": Division(
-            Multiplication("17.05", "21.00.04"), "21.00.01"  # FCFF × Proporção ON
+            Multiplication("17.05", "21.00.04"),
+            "21.00.01",  # FCFF × Proporção ON
         ),
     },
     # Fluxo de Caixa Livre por Ação PN
@@ -4021,7 +3790,8 @@ indicators_25 = [
         "account": "25.03",
         "description": "Fluxo de Caixa Livre por Ação PN",
         "formula": Division(
-            Multiplication("17.05", "21.00.05"), "21.00.02"  # FCFF × Proporção PN
+            Multiplication("17.05", "21.00.05"),
+            "21.00.02",  # FCFF × Proporção PN
         ),
     },
     # Preço/Fluxo de Caixa por Ação (P/FC) Total
@@ -4029,7 +3799,8 @@ indicators_25 = [
         "account": "25.04",
         "description": "Preço/Fluxo de Caixa por Ação (P/FC) Total",
         "formula": Division(
-            Average("99.3", "99.4"), "25.01"  # Fluxo de Caixa Livre por Ação Total
+            Average("99.3", "99.4"),
+            "25.01",  # Fluxo de Caixa Livre por Ação Total
         ),
     },
     # Preço/Fluxo de Caixa por Ação (P/FC) ON
@@ -4063,7 +3834,8 @@ indicators_28 = [
         "account": "28.05",
         "description": "Capitalização de Mercado por Patrimônio Líquido",
         "formula": Division(
-            "21.19", "02.03"  # Capitalização de Mercado Total  # Patrimônio Líquido
+            "21.19",
+            "02.03",  # Capitalização de Mercado Total  # Patrimônio Líquido
         ),
     }
 ]
@@ -4110,15 +3882,11 @@ indicators_30 = [
         "description": "Valor Econômico Adicionado (EVA)",
         "formula": Subtraction(
             Multiplication(
-                Subtraction(
-                    "03.05", Multiplication("03.05", "21.05")
-                ),  # NOPAT = EBIT × (1 - Taxa de Imposto)
+                Subtraction("03.05", Multiplication("03.05", "21.05")),  # NOPAT = EBIT × (1 - Taxa de Imposto)
                 0,
             ),
             Multiplication(
-                Addition(
-                    "02.03", Addition("02.01.04", "02.02.01")
-                ),  # Capital Investido
+                Addition("02.03", Addition("02.01.04", "02.02.01")),  # Capital Investido
                 "20.01",  # WACC
             ),
         ),
@@ -4128,7 +3896,8 @@ indicators_30 = [
         "account": "30.02",
         "description": "Valor de Mercado Adicionado (MVA)",
         "formula": Subtraction(
-            "21.19", "02.03"  # Capitalização de Mercado Total  # Patrimônio Líquido
+            "21.19",
+            "02.03",  # Capitalização de Mercado Total  # Patrimônio Líquido
         ),
     },
 ]

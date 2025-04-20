@@ -1,6 +1,4 @@
-import glob
 import os
-import shutil
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,7 +8,7 @@ from threading import Lock
 import pandas as pd
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
+
 from utils_original import selenium_driver, settings, system
 
 
@@ -35,9 +33,7 @@ class StatementsDataScraper:
                 SELECT *
                 FROM nsd
                 WHERE nsd_type IN ({})
-            """.format(
-                ",".join("?" for _ in settings.statements_types)
-            )
+            """.format(",".join("?" for _ in settings.statements_types))
 
             with sqlite3.connect(settings.db_filepath) as conn:
                 df = pd.read_sql_query(query, conn, params=settings.statements_types)
@@ -57,7 +53,9 @@ class StatementsDataScraper:
         dict: A dictionary where keys are sectors and values are DataFrames containing the NSD data for that sector.
         """
         try:
-            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_name = (
+                f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            )
             specific_db_path = os.path.join(settings.data_folder, specific_name)
 
             # Connect to the SQLite database
@@ -65,17 +63,13 @@ class StatementsDataScraper:
             cursor = conn.cursor()
 
             # Query to get all table names, excluding internal SQLite tables like sqlite_stat1
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
             tables = cursor.fetchall()
 
             total_files = len(tables)
             start_time = time.time()
 
-            financial_statements = (
-                {}
-            )  # Initialize the dictionary to store sector DataFrames
+            financial_statements = {}  # Initialize the dictionary to store sector DataFrames
             total_lines = 0
             for i, table in enumerate(tables):
                 sector = table[0]
@@ -85,19 +79,13 @@ class StatementsDataScraper:
                     sector = sector.upper().replace("_", " ")
                 else:
                     pass
-                financial_statements[sector] = (
-                    df  # Store the DataFrame with the sector as the key
-                )
+                financial_statements[sector] = df  # Store the DataFrame with the sector as the key
 
                 # df.to_csv(f'{sector}.csv')
 
                 # Display progress
                 total_lines += len(df)
-                extra_info = [
-                    f"{len(df)} lines in",
-                    sector,
-                    f"{total_lines} total lines",
-                ]
+                extra_info = [f"{len(df)} lines in", sector, f"{total_lines} total lines"]
                 system.print_info(i, total_files, start_time, extra_info)
 
                 # print('break finantial statements loading')
@@ -136,9 +124,7 @@ class StatementsDataScraper:
 
             # Select the correct options for cmbGrupo and cmbQuadro
             grupo = system.select(xpath_grupo, cmbGrupo, self.driver, self.driver_wait)
-            quadro = system.select(
-                xpath_quadro, cmbQuadro, self.driver, self.driver_wait
-            )
+            quadro = system.select(xpath_quadro, cmbQuadro, self.driver, self.driver_wait)
 
             # selenium enter frame
             frame = system.wait_forever(self.driver_wait, xpath_frame)
@@ -150,16 +136,12 @@ class StatementsDataScraper:
             thousand = system.wait_forever(self.driver_wait, xpath)
 
             xpath = '//*[@id="TituloTabelaSemBorda"]'
-            thousand = self.driver_wait.until(
-                EC.presence_of_element_located((By.XPATH, xpath))
-            ).text
+            thousand = self.driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath))).text
             thousand = 1000 if "Mil" in thousand else 1
 
             html_content = self.driver.page_source
             df1 = pd.read_html(StringIO(html_content), header=0)[0]
-            df2 = pd.read_html(StringIO(html_content), header=0, thousands=".")[
-                0
-            ].fillna(0)
+            df2 = pd.read_html(StringIO(html_content), header=0, thousands=".")[0].fillna(0)
 
             df1 = df1.iloc[:, 0:3]
             df2 = df2.iloc[:, 0:3]
@@ -175,12 +157,8 @@ class StatementsDataScraper:
             df.iloc[:, 2] = col
 
             try:
-                df = df[
-                    ~df[settings.financial_statements_columns[0]].str.startswith(
-                        drop_items
-                    )
-                ]
-            except Exception as e:
+                df = df[~df[settings.financial_statements_columns[0]].str.startswith(drop_items)]
+            except Exception:
                 pass
 
             # selenium exit frame
@@ -188,7 +166,7 @@ class StatementsDataScraper:
 
             return df
 
-        except Exception as e:
+        except Exception:
             # system.log_error(e)
             return None
 
@@ -218,9 +196,7 @@ class StatementsDataScraper:
 
             # Select the correct options for cmbGrupo and cmbQuadro
             grupo = system.select(xpath_grupo, cmbGrupo, self.driver, self.driver_wait)
-            quadro = system.select(
-                xpath_quadro, cmbQuadro, self.driver, self.driver_wait
-            )
+            quadro = system.select(xpath_quadro, cmbQuadro, self.driver, self.driver_wait)
 
             # Selenium enter frame
             frame = system.wait_forever(self.driver_wait, xpath_frame)
@@ -239,16 +215,10 @@ class StatementsDataScraper:
 
             # Extract values using the XPaths
             acoes_on = (
-                self.driver.find_element(By.XPATH, acoes_on_xpath)
-                .text.strip()
-                .replace(".", "")
-                .replace(",", ".")
+                self.driver.find_element(By.XPATH, acoes_on_xpath).text.strip().replace(".", "").replace(",", ".")
             )
             acoes_pn = (
-                self.driver.find_element(By.XPATH, acoes_pn_xpath)
-                .text.strip()
-                .replace(".", "")
-                .replace(",", ".")
+                self.driver.find_element(By.XPATH, acoes_pn_xpath).text.strip().replace(".", "").replace(",", ".")
             )
             acoes_on_tesouraria = (
                 self.driver.find_element(By.XPATH, acoes_on_tesouraria_xpath)
@@ -290,7 +260,7 @@ class StatementsDataScraper:
 
             return df
 
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error processing statements data: {e}")
             return None
 
@@ -305,7 +275,9 @@ class StatementsDataScraper:
 
         try:
             # Construct the full path for the main database and its backup
-            specific_name = f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            specific_name = (
+                f"{settings.db_name.split('.')[0]} {settings.statements_file}.{settings.db_name.split('.')[-1]}"
+            )
             specific_db_path = os.path.join(settings.data_folder, specific_name)
 
             backup_name = f"{settings.db_name.split('.')[0]} {settings.statements_file} {settings.backup_name}.{settings.db_name.split('.')[-1]}"
@@ -389,14 +361,7 @@ class StatementsDataScraper:
             pd.DataFrame: A DataFrame containing the companies that need new financial data scraping.
         """
         last_order = "ZZZZZZZZZZ"
-        scrape_order = [
-            "sector",
-            "subsector",
-            "segment",
-            "company_name",
-            "quarter",
-            "version",
-        ]
+        scrape_order = ["sector", "subsector", "segment", "company_name", "quarter", "version"]
 
         try:
             # Load the necessary datasets
@@ -404,14 +369,11 @@ class StatementsDataScraper:
             company_info = self.load_company_info()
 
             # merge nsd and company info
-            nsd_company_info = pd.merge(
-                nsd_list, company_info, on="company_name", how="inner"
-            )
+            nsd_company_info = pd.merge(nsd_list, company_info, on="company_name", how="inner")
 
             # Group the merged DataFrame by sector and store in a dictionary
             nsd_list_by_sector = {
-                sector if sector.strip() else "_": df
-                for sector, df in nsd_company_info.groupby("sector")
+                sector if sector.strip() else "_": df for sector, df in nsd_company_info.groupby("sector")
             }
 
             financial_statements = self.load_financial_statements()
@@ -422,9 +384,7 @@ class StatementsDataScraper:
             for sector, df_nsd in nsd_list_by_sector.items():
                 if sector in financial_statements:
                     # Filter out NSD entries that are already in the financial statements for the sector
-                    filtered_df = df_nsd[
-                        ~df_nsd["nsd"].isin(financial_statements[sector]["nsd"])
-                    ]
+                    filtered_df = df_nsd[~df_nsd["nsd"].isin(financial_statements[sector]["nsd"])]
                 else:
                     # Include all NSD entries for sectors not in financial statements
                     filtered_df = df_nsd
@@ -434,13 +394,11 @@ class StatementsDataScraper:
 
             try:
                 targets = pd.concat(scrape_target)
-            except Exception as e:
+            except Exception:
                 targets = pd.DataFrame(columns=settings.statements_columns)
 
             # Custom sorting to place empty fields last
-            targets["sector"] = targets["sector"].replace(
-                "", last_order
-            )  # Replace empty strings with a placeholder
+            targets["sector"] = targets["sector"].replace("", last_order)  # Replace empty strings with a placeholder
             targets["subsector"] = targets["subsector"].replace("", last_order)
             targets["segment"] = targets["segment"].replace("", last_order)
 
@@ -448,9 +406,7 @@ class StatementsDataScraper:
             targets = targets.sort_values(by=scrape_order, ascending=True)
 
             # Restore empty fields
-            targets["sector"] = targets["sector"].replace(
-                last_order, ""
-            )  # Restore empty fields
+            targets["sector"] = targets["sector"].replace(last_order, "")  # Restore empty fields
             targets["subsector"] = targets["subsector"].replace(last_order, "")
             targets["segment"] = targets["segment"].replace(last_order, "")
 
@@ -472,16 +428,12 @@ class StatementsDataScraper:
             list: A list of DataFrames with the processed financial and statements data for the company.
         """
         try:
-            company_quarter_data = (
-                []
-            )  # List to store data for the company in the current quarter
+            company_quarter_data = []  # List to store data for the company in the current quarter
 
             # Extract data from the row
             nsd = row["nsd"]
             company_name = row["company_name"]
-            quarter = pd.to_datetime(
-                row["quarter"], dayfirst=False, errors="coerce"
-            ).strftime("%Y-%m-%d")
+            quarter = pd.to_datetime(row["quarter"], dayfirst=False, errors="coerce").strftime("%Y-%m-%d")
             sector = row["sector"]
             subsector = row["subsector"]
             segment = row["segment"]
@@ -493,9 +445,7 @@ class StatementsDataScraper:
             self.driver.get(url)
 
             # Define all statements to be scraped
-            statements = (
-                settings.financial_data_statements + settings.statements_data_statements
-            )
+            statements = settings.financial_data_statements + settings.statements_data_statements
 
             for cmbGrupo, cmbQuadro in statements:
                 # Determine which scraping method to use
@@ -549,19 +499,13 @@ class StatementsDataScraper:
                             batch_number,
                             row["nsd"],
                             row["company_name"],
-                            pd.to_datetime(
-                                row["quarter"], dayfirst=False, errors="coerce"
-                            ).strftime("%Y-%m-%d"),
+                            pd.to_datetime(row["quarter"], dayfirst=False, errors="coerce").strftime("%Y-%m-%d"),
                         ]
-                        system.print_info(
-                            processed_items, total_items, start_time, extra_info
-                        )
+                        system.print_info(processed_items, total_items, start_time, extra_info)
 
                         # Process each company-quarter data using the refactored function
                         company_quarter_data = self.process_company_quarter_data(row)
-                        all_data.extend(
-                            company_quarter_data
-                        )  # Add all processed DataFrames to all_data
+                        all_data.extend(company_quarter_data)  # Add all processed DataFrames to all_data
                         number_to_save = (
                             settings.batch_size
                         )  # number_to_save = int(settings.batch_size // settings.max_workers)
@@ -570,9 +514,9 @@ class StatementsDataScraper:
                             if all_data:
                                 batch_df = pd.concat(all_data, ignore_index=True)
                                 # Reorder columns and sort
-                                batch_df = batch_df[
-                                    settings.statements_columns
-                                ].sort_values(by=settings.statements_order)
+                                batch_df = batch_df[settings.statements_columns].sort_values(
+                                    by=settings.statements_order
+                                )
                                 db_filepath = self.save_to_db(batch_df, sector)
                                 all_data.clear()  # Clear the list after saving
                                 # Optimize the database after saving
@@ -580,20 +524,14 @@ class StatementsDataScraper:
 
                     except Exception as e:
                         # Log any errors encountered during processing of individual rows
-                        system.log_error(
-                            f"Error processing row {i} in sector {sector}: {e}"
-                        )
+                        system.log_error(f"Error processing row {i} in sector {sector}: {e}")
 
-                    processed_items += (
-                        1  # Increment the processed items counter after each row
-                    )
+                    processed_items += 1  # Increment the processed items counter after each row
 
                 # Optimize database after processing each sector
                 if all_data:  # Make sure there is data to save
                     batch_df = pd.concat(all_data, ignore_index=True)
-                    batch_df = batch_df[settings.statements_columns].sort_values(
-                        by=settings.statements_order
-                    )
+                    batch_df = batch_df[settings.statements_columns].sort_values(by=settings.statements_order)
                     db_filepath = self.save_to_db(batch_df, sector)
                     # system.db_optimize(db_filepath)
 
@@ -642,7 +580,6 @@ class StatementsDataScraper:
             self.close_scraper()
 
     def main(self, thread=True):
-
         self.close_scraper()
 
         # Identify the scrape targets
@@ -678,16 +615,14 @@ class StatementsDataScraper:
         """Close the WebDriver."""
         try:
             self.driver.quit()
-        except Exception as e:
+        except Exception:
             pass
 
 
 if __name__ == "__main__":
     try:
         scraper = StatementsDataScraper()
-        scraper.run_scraper(
-            group_value="Statements", quadro_value="Quadro Demonstrativo"
-        )
+        scraper.run_scraper(group_value="Statements", quadro_value="Quadro Demonstrativo")
     except Exception as e:
         system.log_error(e)
     finally:

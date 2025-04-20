@@ -2,11 +2,12 @@ import os
 import shutil
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
 from cachetools import TTLCache, cached
+
 from utils_original import settings, system
 
 
@@ -32,7 +33,7 @@ class NSDScraper:
                 cursor.execute("SELECT MAX(nsd) FROM nsd")
                 max_nsd = cursor.fetchone()[0]
                 return max_nsd if max_nsd is not None else 0
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error retrieving max NSD from database: {e}")
             return 0
 
@@ -55,7 +56,7 @@ class NSDScraper:
                 )
                 missing_nsds = [row[0] for row in cursor.fetchall()]
                 return missing_nsds
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error retrieving missing NSDs from database: {e}")
             return []
 
@@ -74,14 +75,10 @@ class NSDScraper:
             daily_submission_estimate = self.calculate_daily_submission_estimate()
 
             # Step 3: Calculate the date difference from today
-            days_elapsed = (
-                (datetime.now() - last_sent_date).days + 1 if last_sent_date else 1
-            )
+            days_elapsed = (datetime.now() - last_sent_date).days + 1 if last_sent_date else 1
 
             # Step 4: Calculate the number of new NSDs with a safety factor
-            estimated_new_nsds = int(
-                daily_submission_estimate * days_elapsed * settings.safety_factor
-            )
+            estimated_new_nsds = int(daily_submission_estimate * days_elapsed * settings.safety_factor)
 
             # Step 5: Generate the full range of NSDs to scrape
             new_nsds = list(range(max_nsd + 1, max_nsd + estimated_new_nsds + 1))
@@ -103,9 +100,7 @@ class NSDScraper:
         try:
             with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT MIN(sent_date), MAX(sent_date), COUNT(*) FROM nsd"
-                )
+                cursor.execute("SELECT MIN(sent_date), MAX(sent_date), COUNT(*) FROM nsd")
                 result = cursor.fetchone()
 
                 if result:
@@ -125,7 +120,7 @@ class NSDScraper:
                 return (
                     settings.default_daily_submission_estimate
                 )  # Fallback to a default estimate if data is insufficient
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error calculating daily submission estimate: {e}")
             return settings.default_daily_submission_estimate
 
@@ -139,23 +134,17 @@ class NSDScraper:
         try:
             with sqlite3.connect(settings.db_filepath) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT nsd, sent_date FROM nsd ORDER BY nsd DESC LIMIT 1"
-                )
+                cursor.execute("SELECT nsd, sent_date FROM nsd ORDER BY nsd DESC LIMIT 1")
                 result = cursor.fetchone()
                 if result:
                     last_nsd, last_sent_date = result
                     try:
-                        last_sent_date = datetime.strptime(
-                            last_sent_date, "%Y-%m-%dT%H:%M:%S"
-                        )
+                        last_sent_date = datetime.strptime(last_sent_date, "%Y-%m-%dT%H:%M:%S")
                     except:
-                        last_sent_date = datetime.strptime(
-                            last_sent_date, "%Y-%m-%d %H:%M:%S"
-                        )
+                        last_sent_date = datetime.strptime(last_sent_date, "%Y-%m-%d %H:%M:%S")
                     return last_nsd, last_sent_date
                 return 0, None  # If no NSD is found, return 0 and None
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error retrieving last NSD and date from database: {e}")
             return 0, None
 
@@ -171,9 +160,7 @@ class NSDScraper:
         """
         try:
             url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
-            headers = (
-                system.header_random()
-            )  # Use the random headers from the system module
+            headers = system.header_random()  # Use the random headers from the system module
             system.test_internet()
             response = requests.get(url, headers=headers)
             response.raise_for_status()
@@ -210,24 +197,14 @@ class NSDScraper:
             data = {"nsd": nsd}
 
             # Extracting data using the defined selectors
-            data["company_name"] = system.clean_text(
-                soup.select_one(company_name_selector).text
-            )
-            data["dri"] = system.clean_text(
-                soup.select_one(dri_selector).text.split("-")[0].strip()
-            )
+            data["company_name"] = system.clean_text(soup.select_one(company_name_selector).text)
+            data["dri"] = system.clean_text(soup.select_one(dri_selector).text.split("-")[0].strip())
             nsd_type_version = soup.select_one(nsd_type_version_selector).text
             data["nsd_type"] = system.clean_text(nsd_type_version.split("-")[0].strip())
             data["version"] = int(nsd_type_version.split("V")[-1])
-            data["auditor"] = system.clean_text(
-                soup.select_one(auditor_selector).text.split("-")[0].strip()
-            )
-            data["responsible_auditor"] = system.clean_text(
-                soup.select_one(responsible_auditor_selector).text
-            )
-            data["protocol"] = (
-                soup.select_one(protocolo_selector).text.replace("-", "").strip()
-            )
+            data["auditor"] = system.clean_text(soup.select_one(auditor_selector).text.split("-")[0].strip())
+            data["responsible_auditor"] = system.clean_text(soup.select_one(responsible_auditor_selector).text)
+            data["protocol"] = soup.select_one(protocolo_selector).text.replace("-", "").strip()
 
             # Handle quarter parsing
             raw_date = soup.select_one(quarter_selector).text
@@ -237,15 +214,13 @@ class NSDScraper:
                     data["quarter"] = datetime.strptime(f"31/12/{raw_date}", "%d/%m/%Y")
                 else:
                     data["quarter"] = datetime.strptime(raw_date, "%d/%m/%Y")
-            except ValueError as e:
+            except ValueError:
                 # system.log_error(f"Error parsing date for NSD {nsd}: {e}")
                 return None
 
             # Parse the sent date
             try:
-                data["sent_date"] = datetime.strptime(
-                    soup.select_one(sent_date_selector).text, "%d/%m/%Y %H:%M:%S"
-                )
+                data["sent_date"] = datetime.strptime(soup.select_one(sent_date_selector).text, "%d/%m/%Y %H:%M:%S")
             except ValueError as e:
                 system.log_error(f"Error parsing sent date for NSD {nsd}: {e}")
                 data["sent_date"] = None  # Set to None if parsing fails
@@ -254,7 +229,7 @@ class NSDScraper:
 
             return data if data["sent_date"] else None
 
-        except Exception as e:
+        except Exception:
             # system.log_error(f"Error parsing NSD {nsd}: {e}")
             return None
 
@@ -294,11 +269,7 @@ class NSDScraper:
                 # Iterate over the data list and insert or update records
                 for data in nsd_data:
                     # Handle None values and quarter formatting
-                    sent_date_str = (
-                        data["sent_date"].strftime("%Y-%m-%d %H:%M:%S")
-                        if data["sent_date"]
-                        else None
-                    )
+                    sent_date_str = data["sent_date"].strftime("%Y-%m-%d %H:%M:%S") if data["sent_date"] else None
 
                     # Perform the insert or update with the correct field order
                     cursor.execute(

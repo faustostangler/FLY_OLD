@@ -11,13 +11,13 @@ import string
 import subprocess
 import threading
 import time
+import traceback
 import warnings
 import zipfile
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from threading import Lock
-from tqdm import tqdm
 
 import pandas as pd
 import psutil
@@ -25,20 +25,15 @@ import pyautogui
 import requests
 import unidecode
 import urllib3
-from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    StaleElementReferenceException,
-    TimeoutException,
-)
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
-from selenium.webdriver.common.action_chains import ActionChains
+from tqdm import tqdm
+
 from utils.config import Config
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -59,21 +54,19 @@ class BaseProcessor:
         results = []
         try:
             if "utils.intel_processor" in module_name:
-                batches = self._split_batches_by_company(
-                    data, self.config.scraping["max_workers"]
-                )
+                batches = self._split_batches_by_company(data, self.config.scraping["max_workers"])
             else:
                 batches = self._split_batches(data, self.config.scraping["max_workers"])
                 items_per_batch = len(batches[0])
 
             if thread:
                 print(
-                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each'
+                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each"
                 )
                 results = self._process_with_threads(batches, payload=payload)
             else:
                 print(
-                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {items_per_batch} items each'
+                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {self.config.scraping['max_workers']} batches of up to {items_per_batch} items each"
                 )
                 results = self._process_sequentially(batches, payload=payload)
 
@@ -81,16 +74,14 @@ class BaseProcessor:
             self.log_error(e)
 
         try:
-            processed_batch = (
-                pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-            )
-        except Exception as e:
+            processed_batch = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+        except Exception:
             # self.log_error(e)
             try:
                 # try to flatten
                 flat_results = [df for sublist in results for df in sublist]
                 processed_batch = pd.concat(flat_results, ignore_index=True)
-            except Exception as e:
+            except Exception:
                 processed_batch = results
 
         return processed_batch
@@ -103,15 +94,9 @@ class BaseProcessor:
             # batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
             # split with limit as batch count
-            batch_size = min(
-                batch_size, len(data)
-            )  # Ensure batch_size doesn't exceed data length
-            chunk_size = (
-                len(data) + batch_size - 1
-            ) // batch_size  # Equivalent to ceil(len(data) / batch_size)
-            batches = [
-                data[i * chunk_size : (i + 1) * chunk_size] for i in range(batch_size)
-            ]
+            batch_size = min(batch_size, len(data))  # Ensure batch_size doesn't exceed data length
+            chunk_size = (len(data) + batch_size - 1) // batch_size  # Equivalent to ceil(len(data) / batch_size)
+            batches = [data[i * chunk_size : (i + 1) * chunk_size] for i in range(batch_size)]
 
         except Exception as e:
             self.log_error(e)
@@ -128,14 +113,10 @@ class BaseProcessor:
 
             # Handle case where there are fewer companies than workers
             if num_companies < num_workers:
-                num_workers = (
-                    num_companies  # Set number of workers to the number of companies
-                )
+                num_workers = num_companies  # Set number of workers to the number of companies
 
             # Calculate batch size and remainder
-            batch_size = int(
-                num_companies // num_workers
-            )  # Integer division for batch size
+            batch_size = int(num_companies // num_workers)  # Integer division for batch size
             remainder = num_companies % num_workers  # Calculate the remainder
 
             batches = []
@@ -143,9 +124,7 @@ class BaseProcessor:
 
             # Distribute companies across workers
             for i in range(num_workers):
-                end = (
-                    start + batch_size + (1 if i < remainder else 0)
-                )  # Add one extra if there's a remainder
+                end = start + batch_size + (1 if i < remainder else 0)  # Add one extra if there's a remainder
                 batch_companies = unique_companies[start:end]
                 # Filter the original DataFrame for each batch
                 batch_data = data[data["company_name"].isin(batch_companies)]
@@ -167,32 +146,24 @@ class BaseProcessor:
             cumulative = 0  # will keep track of the global start index for each batch
             items_per_batch = len(batches[0])
 
-            with ThreadPoolExecutor(
-                max_workers=self.config.scraping["max_workers"]
-            ) as executor:
+            with ThreadPoolExecutor(max_workers=self.config.scraping["max_workers"]) as executor:
                 futures = []
                 for batch_index, batch in enumerate(batches):
                     time.sleep(self.dynamic_sleep() * 5)
                     progress = {
-                        "items_per_batch": items_per_batch, 
+                        "items_per_batch": items_per_batch,
                         "batch_index": batch_index,
                         "total_batches": len(batches),
                         "batch_start": cumulative,  # actual starting index in the overall data,
                         "scrape_size": total_scrape_size,
                         "start_time": start_time,
                         "thread_id": batch_index
-                        % self.config.scraping[
-                            "max_workers"
-                        ],  # Map batch index to thread pool ID
+                        % self.config.scraping["max_workers"],  # Map batch index to thread pool ID
                     }
-                    cumulative += len(
-                        batch
-                    )  # add the length of this batch for the next iteration
+                    cumulative += len(batch)  # add the length of this batch for the next iteration
 
                     # Submit task with progress
-                    futures.append(
-                        executor.submit(self.process_instance, batch, payload, progress)
-                    )
+                    futures.append(executor.submit(self.process_instance, batch, payload, progress))
 
                 for future in as_completed(futures):
                     try:
@@ -216,16 +187,13 @@ class BaseProcessor:
         for batch_index, batch in enumerate(batches):
             # Prepare progress dictionary
             progress = {
-                "items_per_batch": items_per_batch, 
+                "items_per_batch": items_per_batch,
                 "batch_index": batch_index,
                 "total_batches": total_batches,
-                "batch_start": batch_index * items_per_batch, # self.config.scraping["batch_size"],
+                "batch_start": batch_index * items_per_batch,  # self.config.scraping["batch_size"],
                 "scrape_size": total_scrape_size,
                 "start_time": start_time,
-                "thread_id": batch_index
-                % self.config.scraping[
-                    "max_workers"
-                ],  # Map batch index to thread pool ID
+                "thread_id": batch_index % self.config.scraping["max_workers"],  # Map batch index to thread pool ID
             }
 
             try:
@@ -254,9 +222,7 @@ class BaseProcessor:
             for reg_query in self.config.selenium["registry_paths"]:
                 try:
                     output = subprocess.check_output(reg_query, shell=True)
-                    version = re.search(
-                        r"\d+\.\d+\.\d+\.\d+", output.decode("utf-8")
-                    ).group(0)
+                    version = re.search(r"\d+\.\d+\.\d+\.\d+", output.decode("utf-8")).group(0)
                     return version
                 except subprocess.CalledProcessError:
                     continue
@@ -268,9 +234,7 @@ class BaseProcessor:
                     else self.config.selenium["chrome_path_32"]
                 )
                 output = subprocess.check_output([chrome_path, "--version"], shell=True)
-                version = re.search(
-                    r"\d+\.\d+\.\d+\.\d+", output.decode("utf-8")
-                ).group(0)
+                version = re.search(r"\d+\.\d+\.\d+\.\d+", output.decode("utf-8")).group(0)
                 return version
 
             except Exception as e:
@@ -289,7 +253,9 @@ class BaseProcessor:
         Returns:
             str: The URL for downloading the corresponding ChromeDriver.
         """
-        chromedriver_url_template = f"https://storage.googleapis.com/chrome-for-testing-public/{version}/win64/chromedriver-win64.zip"
+        chromedriver_url_template = (
+            f"https://storage.googleapis.com/chrome-for-testing-public/{version}/win64/chromedriver-win64.zip"
+        )
         url_error_msg = f"Error obtaining ChromeDriver for version {version}"
 
         try:
@@ -333,9 +299,7 @@ class BaseProcessor:
                 zip_ref.extractall(dest_folder)
 
             os.remove(zip_path)
-            chromedriver_path = os.path.join(
-                dest_folder, chromedriver_folder, chromedriver_executable
-            )
+            chromedriver_path = os.path.join(dest_folder, chromedriver_folder, chromedriver_executable)
 
             return str(chromedriver_path)
 
@@ -363,9 +327,7 @@ class BaseProcessor:
             if not chromedriver_url:
                 raise Exception(chromedriver_url_error_msg)
 
-            chromedriver_path = self._download_and_extract_chromedriver(
-                chromedriver_url
-            )
+            chromedriver_path = self._download_and_extract_chromedriver(chromedriver_url)
             if not chromedriver_path:
                 raise Exception(path_error_msg)
 
@@ -387,9 +349,7 @@ class BaseProcessor:
         """
         load_driver_error_msg = "Failed to load driver: {e}"
 
-        chromedriver_path = (
-            chromedriver_path or self.config.selenium["chromedriver_path"]
-        )
+        chromedriver_path = chromedriver_path or self.config.selenium["chromedriver_path"]
 
         try:
             # Get random headers using the custom function
@@ -423,11 +383,7 @@ class BaseProcessor:
 
             driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
             exceptions_ignore = (NoSuchElementException, StaleElementReferenceException)
-            driver_wait = WebDriverWait(
-                driver,
-                self.config.selenium["wait_time"],
-                ignored_exceptions=exceptions_ignore,
-            )
+            driver_wait = WebDriverWait(driver, self.config.selenium["wait_time"], ignored_exceptions=exceptions_ignore)
 
             return driver, driver_wait
 
@@ -454,7 +410,7 @@ class BaseProcessor:
             else:
                 raise Exception(initialize_driver_error_msg)
 
-        except Exception as initial_error:
+        except Exception:
             try:
                 chromedriver_path = self._get_chromedriver_path()
                 if not chromedriver_path:
@@ -500,7 +456,7 @@ class BaseProcessor:
         try:
             if driver:
                 driver.quit()
-        except Exception as e:
+        except Exception:
             pass
 
     # TEXT & SELENIUM OBJECT METHODS
@@ -518,15 +474,11 @@ class BaseProcessor:
         try:
             # Remove punctuation, accents, and normalize case
             translation_table = str.maketrans("", "", string.punctuation)
-            text = (
-                unidecode.unidecode(text).translate(translation_table).upper().strip()
-            )
+            text = unidecode.unidecode(text).translate(translation_table).upper().strip()
             text = re.sub(r"\s+", " ", text)
 
             # Regular expression pattern to remove specific words from text
-            words_to_remove = "|".join(
-                map(re.escape, self.config.domain["words_to_remove"])
-            )
+            words_to_remove = "|".join(map(re.escape, self.config.domain["words_to_remove"]))
             pattern = r"\b(?:" + words_to_remove + r")\b"
             text = re.sub(pattern, "", text)
 
@@ -661,7 +613,7 @@ class BaseProcessor:
             select = Select(driver.find_element(By.XPATH, xpath))
             options = [int(option.text) for option in select.options]
             return options
-        except Exception as e:
+        except Exception:
             # self.log_error(e)
             return ""
 
@@ -675,7 +627,7 @@ class BaseProcessor:
             element = self.wait_forever(driver_wait, xpath, max_retries=1)
             select = Select(driver.find_element(By.XPATH, xpath))
             select.select_by_visible_text(text)
-        except Exception as e:
+        except Exception:
             pass
             # self.log_error(e)
         return select
@@ -716,16 +668,14 @@ class BaseProcessor:
         max_retries = max_retries or self.config.selenium.get("max_retries", 5)
         while True:
             try:
-                element = driver_wait.until(
-                    EC.presence_of_element_located((By.XPATH, xpath))
-                )
+                element = driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
                 return element
-            except Exception as e:
+            except Exception:
                 attempt += 1
                 self.driver.refresh()
                 if max_retries and attempt >= max_retries:
                     return False
-                time.sleep(self.config.selenium['wait_time'])
+                time.sleep(self.config.selenium["wait_time"])
                 # return False
 
     def subtract_lists(self, list1, list2):
@@ -813,7 +763,7 @@ class BaseProcessor:
             self.log_error(e)
 
         return result[0] if result else default
-    
+
     def dynamic_sleep(self):
         """
         Dynamically adjusts the sleep time based on the system's CPU usage.
@@ -831,7 +781,7 @@ class BaseProcessor:
 
         # Get the current CPU usage
         cpu_usage = psutil.cpu_percent(interval=0.1)  # Get CPU usage over 0.1 second
-        
+
         # Adjust sleep time based on CPU usage
         if cpu_usage > 80:
             return wait * random.uniform(0.3, 1.5)  # Increase delay if CPU usage is high
@@ -841,22 +791,21 @@ class BaseProcessor:
             return wait * random.uniform(0.1, 0.5)  # delay if CPU usage is medium low
 
     def detect_and_correct_outliers(self, df):
-        '''
+        """
         definitions
-        '''
+        """
         try:
-
             # Define primary key columns
             statements_sheet_columns = self.config.domain["statements_sheet_columns"]
 
             # Initiate variables
-            group_cols = ['company_name', 'account']
-            value_col = 'value'
-            date_col = 'quarter'
+            group_cols = ["company_name", "account"]
+            value_col = "value"
+            date_col = "quarter"
             neighbor_count = 5  # Quantidade de vizinhos a considerar para média
 
             df_sorted = df.sort_values(by=group_cols + [date_col]).reset_index(drop=True)
-            df_sorted['original_value'] = df_sorted[value_col]  # Preserva o valor original
+            df_sorted["original_value"] = df_sorted[value_col]  # Preserva o valor original
 
             def process_group(group):
                 group = group.copy()  # Evita modificar os dados originais
@@ -870,8 +819,8 @@ class BaseProcessor:
                         value = group.iloc[idx][value_col]
 
                         # Seleciona vizinhos
-                        prev_values = group.iloc[max(0, idx - neighbor_count):idx][value_col].tolist()
-                        next_values = group.iloc[idx + 1:idx + 1 + neighbor_count][value_col].tolist()
+                        prev_values = group.iloc[max(0, idx - neighbor_count) : idx][value_col].tolist()
+                        next_values = group.iloc[idx + 1 : idx + 1 + neighbor_count][value_col].tolist()
 
                         if not prev_values or not next_values:
                             continue  # Se não há vizinhos suficientes, pula a verificação
@@ -879,7 +828,7 @@ class BaseProcessor:
                         # Loop regressivo de neighbor_count até 1
                         for n in range(neighbor_count, 0, -1):
                             prev_values_n = prev_values[-n:]  # Considera últimos n valores anteriores
-                            next_values_n = next_values[:n]   # Considera primeiros n valores posteriores
+                            next_values_n = next_values[:n]  # Considera primeiros n valores posteriores
 
                             if prev_values_n and next_values_n:
                                 mean_prev = sum(prev_values_n) / len(prev_values_n)
@@ -899,11 +848,7 @@ class BaseProcessor:
 
                 return group
 
-            corrected_df = (
-                df_sorted.groupby(group_cols, group_keys=False)
-                .apply(process_group)
-                .reset_index(drop=True)
-            )
+            corrected_df = df_sorted.groupby(group_cols, group_keys=False).apply(process_group).reset_index(drop=True)
 
         except Exception as e:
             self.log_error(e)
@@ -911,9 +856,7 @@ class BaseProcessor:
         return corrected_df
 
     # BENCHMARK, LOG & DEBUG METHODS
-    def benchmark_function(
-        self, function, *args, benchmark_mode=False, workers_list=None, **kwargs
-    ):
+    def benchmark_function(self, function, *args, benchmark_mode=False, workers_list=None, **kwargs):
         """Generic benchmarking method to evaluate resource usage with
         different worker counts.
 
@@ -936,31 +879,20 @@ class BaseProcessor:
                 return result
 
             if workers_list is None:
-                workers_list = [
-                    1,
-                    max(2, os.cpu_count() // 2),
-                    os.cpu_count(),
-                    os.cpu_count() * 2,
-                ]
+                workers_list = [1, max(2, os.cpu_count() // 2), os.cpu_count(), os.cpu_count() * 2]
 
-            print(
-                f"\nRunning benchmark for {inspect.getmodule(function).__name__}.{function.__name__}"
-            )
+            print(f"\nRunning benchmark for {inspect.getmodule(function).__name__}.{function.__name__}")
 
             benchmark_results = []
             original_result = None  # Store the result of the first execution
 
             for i, workers in enumerate(workers_list):
-                print(
-                    f"{self.config.domain['indent']}starting benchmark {i+1} of {len(workers_list)}"
-                )
+                print(f"{self.config.domain['indent']}starting benchmark {i + 1} of {len(workers_list)}")
                 start_time = time.time()
                 process = psutil.Process()
                 initial_memory = process.memory_info().rss / (1024 * 1024)  # MB
 
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=workers
-                ) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
                     future = executor.submit(function, *args, **kwargs)
                     result = future.result()
 
@@ -971,9 +903,7 @@ class BaseProcessor:
                 cpu_usage = process.cpu_percent(interval=0.5)
 
                 # Store the benchmark data
-                benchmark_results.append(
-                    (workers, elapsed_time, memory_used, cpu_usage)
-                )
+                benchmark_results.append((workers, elapsed_time, memory_used, cpu_usage))
 
                 print(f"\n🔹 Workers: {workers}")
                 print(f"⏳ Time Taken: {elapsed_time:.2f} sec")
@@ -987,10 +917,7 @@ class BaseProcessor:
             self.log_error(e)
             original_result, benchmark_results = [], []
 
-        return (
-            original_result,
-            benchmark_results,
-        )  # Return both the function result and benchmark data
+        return (original_result, benchmark_results)  # Return both the function result and benchmark data
 
     def log_error(self, error):
         """Logs an error to a file with detailed context, including caller
@@ -1009,11 +936,12 @@ class BaseProcessor:
             system_info = platform.platform()
             caller_name = caller_frame.f_globals["__name__"]
 
+            # Get traceback as string
+            full_traceback = traceback.format_exc()
+
             # Configure logging settings
             logging.basicConfig(
-                filename="app_errors.log",
-                level=logging.ERROR,
-                format="%(asctime)s - %(levelname)s - %(message)s",
+                filename="app_errors.log", level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
             )
 
             # Detailed log message without stack trace
@@ -1023,6 +951,7 @@ class BaseProcessor:
                 f"Caller: {caller_name}\n"
                 f"Error: {error}\n"
                 f"System Info: {system_info}\n"
+                f"Traceback:\n{full_traceback}"
             )
 
             # Log the error message to the file
@@ -1036,9 +965,7 @@ class BaseProcessor:
 
         return error
 
-    def print_info(
-        self, index=0, size=1, start_time=time.time(), extra_info=[], indent_level=0
-    ):
+    def print_info(self, index=0, size=1, start_time=time.time(), extra_info=[], indent_level=0):
         """Prints the provided information along with the progress, elapsed
         time, estimated remaining time, and total estimated time."""
         try:
@@ -1059,14 +986,14 @@ class BaseProcessor:
             # Format remaining time
             remaining_hours, remaining_remainder = divmod(int(remaining_time), 3600)
             remaining_minutes, remaining_seconds = divmod(remaining_remainder, 60)
-            remaining_time_formatted = f"{int(remaining_hours)}h {int(remaining_minutes):02}m {int(remaining_seconds):02}s"
+            remaining_time_formatted = (
+                f"{int(remaining_hours)}h {int(remaining_minutes):02}m {int(remaining_seconds):02}s"
+            )
 
             # Format total estimated time
             total_hours, total_remainder = divmod(int(total_estimated_time), 3600)
             total_minutes, total_seconds = divmod(total_remainder, 60)
-            total_time_formatted = (
-                f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
-            )
+            total_time_formatted = f"{int(total_hours)}h {int(total_minutes):02}m {int(total_seconds):02}s"
 
             # Prepare progress string
             progress = (
@@ -1127,11 +1054,7 @@ class BaseProcessor:
                 if schema_table_name in table_name or schema_table_name == table_name:
                     with self._get_db_connection(db_filepath, read_only=False) as conn:
                         cursor = conn.cursor()
-                        [
-                            cursor.execute(statement.strip())
-                            for statement in schema_sql.split(";")
-                            if statement.strip()
-                        ]
+                        [cursor.execute(statement.strip()) for statement in schema_sql.split(";") if statement.strip()]
                         conn.commit()
                         # print(f"Table '{table_name}' initialized in '{database_name}'.")
                     return
@@ -1157,11 +1080,11 @@ class BaseProcessor:
 
     def _get_db_connection(self, db_filepath, read_only=True):
         """Return a new database connection with session-specific PRAGMA settings.
-        
+
         Parameters:
         - db_filepath (str): Path to the database file.
         - read_only (bool): Whether to open the database in read-only mode (default is False).
-        
+
         Returns:
         - conn (sqlite3.Connection): A SQLite connection object if successful, else None.
         """
@@ -1207,9 +1130,7 @@ class BaseProcessor:
 
         # Retrieve existing column names
         cursor.execute(f"PRAGMA table_info({table_name})")
-        existing_columns = {
-            row[1] for row in cursor.fetchall()
-        }  # Use a set for faster lookups
+        existing_columns = {row[1] for row in cursor.fetchall()}  # Use a set for faster lookups
 
         # Prepare ALTER TABLE statements only for missing columns
         alter_statements = [
@@ -1234,14 +1155,8 @@ class BaseProcessor:
                 try:
                     # primary_keys = self._get_primary_key(table_name, db_filepath)
                     if query:
-                        sql_query = (
-                            query if not params else f"SELECT COUNT(*) FROM ({query})"
-                        )
-                        (
-                            cursor.execute(sql_query, params)
-                            if params
-                            else cursor.execute(sql_query)
-                        )
+                        sql_query = query if not params else f"SELECT COUNT(*) FROM ({query})"
+                        (cursor.execute(sql_query, params) if params else cursor.execute(sql_query))
                     elif table_name:
                         if params:
                             sql_query = f"SELECT COUNT(*) FROM {table_name} WHERE ticker_code = ?"
@@ -1251,7 +1166,7 @@ class BaseProcessor:
                             cursor.execute(sql_query)
                     total_rows = cursor.fetchone()[0]
 
-                except Exception as e:
+                except Exception:
                     total_rows = 0
 
                 return total_rows
@@ -1259,16 +1174,7 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    def _load_data_batches(
-        self,
-        db_filepath,
-        table_name,
-        query,
-        params,
-        total_rows,
-        normalize_columns,
-        alert,
-    ):
+    def _load_data_batches(self, db_filepath, table_name, query, params, total_rows, normalize_columns, alert):
         """Loads data in batches using multi-threading."""
         try:
             batch_size = self.config.scraping["chunk_size"]
@@ -1296,11 +1202,7 @@ class BaseProcessor:
                 ]
                 dataframes = [task.result() for task in tasks]
 
-            final_df = (
-                pd.concat(dataframes, ignore_index=True)
-                if dataframes
-                else pd.DataFrame()
-            )
+            final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
 
             if normalize_columns:
                 final_df = self._normalize_columns(final_df, normalize_columns)
@@ -1312,37 +1214,21 @@ class BaseProcessor:
         return final_df
 
     def _read_batch(
-        self,
-        db_filepath,
-        table_name,
-        query,
-        params,
-        offset,
-        batch_size,
-        batch_num,
-        total_rows,
-        start_time,
-        alert,
+        self, db_filepath, table_name, query, params, offset, batch_size, batch_num, total_rows, start_time, alert
     ):
         """Reads a single batch of data."""
         try:
             if alert:
                 extra_info = [f"Batch {batch_num + 1}/{(total_rows // batch_size) + 1}"]
-                self.print_info(
-                    batch_num, (total_rows // batch_size) + 1, start_time, extra_info
-                )
+                self.print_info(batch_num, (total_rows // batch_size) + 1, start_time, extra_info)
 
             attempts = 0
             max_retries = self.config.selenium["max_retries"]
             while attempts < max_retries:
                 try:
-                    with sqlite3.connect(
-                        f"file:{db_filepath}?mode=ro", uri=True
-                    ) as conn:
+                    with sqlite3.connect(f"file:{db_filepath}?mode=ro", uri=True) as conn:
                         try:
-                            sql_query = self._construct_query(
-                                table_name, query, params, batch_size, offset
-                            )
+                            sql_query = self._construct_query(table_name, query, params, batch_size, offset)
                             df = pd.read_sql_query(sql_query, conn, params=params)
                         except Exception as e:
                             self.log_error(e)
@@ -1358,15 +1244,7 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-    def load_data(
-        self,
-        table_name=None,
-        query=None,
-        params=None,
-        db_filepath=None,
-        max_retries=None,
-        alert=True,
-    ):
+    def load_data(self, table_name=None, query=None, params=None, db_filepath=None, max_retries=None, alert=True):
         """Load data from the SQLite database into a pandas DataFrame using
         multithreading for faster reads.
 
@@ -1387,18 +1265,14 @@ class BaseProcessor:
                     # Database Code
                     with self.db_lock:
                         # Ensure the database and table exist
-                        self._initialize_database(
-                            db_filepath, database_name, table_name
-                        )
+                        self._initialize_database(db_filepath, database_name, table_name)
                         self._configure_db(db_filepath)
 
                         with self._get_db_connection(db_filepath, read_only=True) as conn:
                             cursor = conn.cursor()
                             try:
                                 if table_name:
-                                    primary_keys = self._get_primary_key(
-                                        table_name, database_name
-                                    )
+                                    primary_keys = self._get_primary_key(table_name, database_name)
                                     sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
                                     params = ()
                                 elif query:
@@ -1408,10 +1282,8 @@ class BaseProcessor:
                                 cursor.execute(sql_query, params)
                                 total_rows = cursor.fetchone()[0]
 
-                            except Exception as e:
-                                self._initialize_table(
-                                    db_filepath, database_name, table_name
-                                )
+                            except Exception:
+                                self._initialize_table(db_filepath, database_name, table_name)
                                 total_rows = 0
                     break
             except Exception as e:
@@ -1421,36 +1293,24 @@ class BaseProcessor:
             try:
                 # basic parameters
                 batch_size = self.config.scraping["chunk_size"]
-                
+
                 # Total number of batches
-                size = batch_number = 1# (total_rows // batch_size) + (
-                #     1 if total_rows % batch_size > 0 else 0
-                # )  
-                batch_threads = min(
-                    self.config.scraping["max_workers"], batch_number
-                )
+                batch_size = self.config.scraping["chunk_size"]
+                batch_number = (total_rows // batch_size) + (1 if total_rows % batch_size > 0 else 0)
+                size = batch_number
+
+                batch_threads = min(self.config.scraping["max_workers"], batch_number)
                 offsets = range(0, total_rows, batch_size)
 
                 start_time = time.time()
 
                 # Internal method for batch sql reading
                 def read_batch(
-                    offset,
-                    batch_number,
-                    table_name,
-                    query,
-                    params,
-                    size,
-                    start_time=start_time, 
-                    alert=True,
+                    offset, batch_number, table_name, query, params, size, start_time=start_time, alert=True
                 ):
                     if alert:
-                        extra_info = [
-                            f"Parte {batch_number + 1}/{size}",
-                        ]
-                        self.print_info(
-                            batch_number, size, start_time, extra_info
-                        )
+                        extra_info = [f"Parte {batch_number + 1}/{size}"]
+                        self.print_info(batch_number, size, start_time, extra_info)
 
                     # Retry logic for database connection
                     attempt = 0
@@ -1462,9 +1322,7 @@ class BaseProcessor:
                                     query_batch = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
                                 elif query:
                                     query_batch = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                                query_df = pd.read_sql_query(
-                                    query_batch, conn, params=params
-                                )
+                                query_df = pd.read_sql_query(query_batch, conn, params=params)
 
                                 return query_df
 
@@ -1474,16 +1332,16 @@ class BaseProcessor:
                                 time.sleep(self.dynamic_sleep())
                             else:
                                 raise
-                    raise Exception(
-                        f"Failed to read batch after {max_retries} attempts."
-                    )
+                    raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
                 # **TQDM Progress Bar Inside Multithreading**
                 with ThreadPoolExecutor(max_workers=batch_threads) as executor:
                     tasks = []
-                    with tqdm(total=total_rows, unit=" rows", desc="") as pbar:
+                    with tqdm(total=total_rows, unit=" rows", desc=f"{table_name}", leave=False) as pbar:
                         for batch_number, offset in enumerate(offsets):
-                            task = executor.submit(read_batch, offset, batch_number, table_name, query, params, size, alert=False)
+                            task = executor.submit(
+                                read_batch, offset, batch_number, table_name, query, params, size, alert=False
+                            )
                             tasks.append(task)
                             time.sleep(1)
 
@@ -1492,19 +1350,15 @@ class BaseProcessor:
                             dataframes.append(task.result())
                             pbar.update(batch_size)  # Update progress bar
 
-                final_df = (
-                    pd.concat(dataframes, ignore_index=True)
-                    if dataframes
-                    else pd.DataFrame()
-                )
+                final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
 
-                    # if normalize_columns:
-                    #     for col in normalize_columns:
-                    #         if col in final_df.columns:
-                    #             if 'date' in col.lower() or 'time' in col.lower():
-                    #                 final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
-                    #             else:
-                    #                 final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+                # if normalize_columns:
+                #     for col in normalize_columns:
+                #         if col in final_df.columns:
+                #             if 'date' in col.lower() or 'time' in col.lower():
+                #                 final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
+                #             else:
+                #                 final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
 
                 return final_df
 
@@ -1520,15 +1374,15 @@ class BaseProcessor:
             return pd.DataFrame()  # Return an empty DataFrame in case of failure
 
     def save_to_db(
-        self, 
-        dataframe, 
-        table_name=None, 
-        db_filepath=None, 
-        alert=True, 
-        max_retries=None, 
-        update=True, 
+        self,
+        dataframe,
+        table_name=None,
+        db_filepath=None,
+        alert=True,
+        max_retries=None,
+        update=True,
         sql_update=None,  # New parameter for optional SQL update
-        sql_update_params=None  # Parameters for the update query
+        sql_update_params=None,  # Parameters for the update query
     ):
         """
         Save or update a DataFrame in a SQLite database table.
@@ -1567,9 +1421,7 @@ class BaseProcessor:
                 cursor.execute(f"PRAGMA table_info({table_name})")
                 existing_columns = {row[1] for row in cursor.fetchall()}
 
-                missing_columns = [
-                    col for col in dataframe.columns if col not in existing_columns
-                ]
+                missing_columns = [col for col in dataframe.columns if col not in existing_columns]
 
                 for _, col in enumerate(missing_columns):
                     safe_col = f'"{col}"'  # Ensure proper escaping of column names
@@ -1598,7 +1450,9 @@ class BaseProcessor:
                             row_updated = cursor.fetchone()[0]
                             if row_count != row_updated:
                                 print(f"DEBUG executed: {row_count}, updated: {row_updated}")
-                                print(f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';")
+                                print(
+                                    f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';"
+                                )
 
                         else:
                             # Otherwise, proceed with batch insertion
@@ -1622,6 +1476,7 @@ class BaseProcessor:
             print(sql)
             dataframe.to_csv("dataframe.csv", index=False)
             self.log_error(f"Error saving to database: {e}")
+
     def _get_primary_key(self, table_name, db_filepath):
         """"""
         primary_key = ""
@@ -1638,25 +1493,17 @@ class BaseProcessor:
             for line in lines:
                 if "PRIMARY KEY" in line.upper():
                     primary_key_index = line.upper().find("PRIMARY KEY")
-                    key_part_before = line[
-                        :primary_key_index
-                    ].strip()  # Part before PRIMARY KEY
-                    key_part_after = line[
-                        primary_key_index + len("PRIMARY KEY") :
-                    ].strip()  # Part after PRIMARY KEY
+                    key_part_before = line[:primary_key_index].strip()  # Part before PRIMARY KEY
+                    key_part_after = line[primary_key_index + len("PRIMARY KEY") :].strip()  # Part after PRIMARY KEY
 
                     # Handle keys before PRIMARY KEY
                     if key_part_before:
-                        key = key_part_before.split()[
-                            0
-                        ]  # Extract the first part as the key
+                        key = key_part_before.split()[0]  # Extract the first part as the key
                         primary_keys.append(key)
 
                     # Handle keys inside parentheses after PRIMARY KEY
                     if key_part_after.startswith("(") and key_part_after.endswith(")"):
-                        keys_in_parentheses = key_part_after[1:-1].split(
-                            ","
-                        )  # Remove parentheses and split keys
+                        keys_in_parentheses = key_part_after[1:-1].split(",")  # Remove parentheses and split keys
                         primary_keys.extend(key.strip() for key in keys_in_parentheses)
 
             # primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
@@ -1688,9 +1535,7 @@ class BaseProcessor:
 
             # Quote column names and primary keys
             quoted_columns = [quote_column(col) for col in dataframe.columns]
-            quoted_primary_keys = (
-                [quote_column(col) for col in primary_keys] if primary_keys else []
-            )
+            quoted_primary_keys = [quote_column(col) for col in primary_keys] if primary_keys else []
 
             # Build the basic fields and values parts of the query
             f_fields = "(" + ", ".join(quoted_columns) + ")"
@@ -1705,13 +1550,9 @@ class BaseProcessor:
                 sql += f" ON CONFLICT {f_primary_keys}"
 
                 # Create the UPDATE set clause (update all columns except primary keys)
-                f_update_set = ", ".join(
-                    [
-                        f"{col} = excluded.{col}"
-                        for col in quoted_columns
-                        if col not in quoted_primary_keys
-                    ]
-                )
+                f_update_set = ", ".join([
+                    f"{col} = excluded.{col}" for col in quoted_columns if col not in quoted_primary_keys
+                ])
 
                 if f_update_set:
                     sql += f" DO UPDATE SET {f_update_set}"
@@ -1741,10 +1582,8 @@ class BaseProcessor:
             try:
                 for col in text_columns:
                     if col in dataframe.columns:
-                        dataframe[col] = (
-                            dataframe[col].replace([None, ""], "").astype(str)
-                        )
-            except Exception as e:
+                        dataframe[col] = dataframe[col].replace([None, ""], "").astype(str)
+            except Exception:
                 pass
 
             # Convert datetime columns to string in ISO format or None
@@ -1754,41 +1593,29 @@ class BaseProcessor:
                         # Convert column to datetime safely
                         try:
                             # Attempt to convert the datetime with a stricter format
-                            dataframe[col] = pd.to_datetime(
-                                dataframe[col], format="%Y-%m-%d", errors="raise"
-                            )
+                            dataframe[col] = pd.to_datetime(dataframe[col], format="%Y-%m-%d", errors="raise")
                         except Exception as e_outer:
                             try:
                                 # Handle ISO 8601 format like '2010-12-31T00:00:00'
-                                dataframe[col] = pd.to_datetime(
-                                    dataframe[col], format="ISO8601", errors="raise"
-                                )
+                                dataframe[col] = pd.to_datetime(dataframe[col], format="ISO8601", errors="raise")
                             except Exception as e_inner:
                                 # Fallback to automatic inference of format
-                                dataframe[col] = pd.to_datetime(
-                                    dataframe[col], errors="coerce"
-                                )
+                                dataframe[col] = pd.to_datetime(dataframe[col], errors="coerce")
                                 print(e_outer, e_inner)
 
                         # Apply the conversion to ISO format
                         dataframe[col] = dataframe[col].apply(
-                            lambda x: (
-                                x.isoformat()
-                                if isinstance(x, pd.Timestamp) and pd.notna(x)
-                                else None
-                            )
+                            lambda x: (x.isoformat() if isinstance(x, pd.Timestamp) and pd.notna(x) else None)
                         )
-            except Exception as e:
+            except Exception:
                 pass
 
             # Ensure numeric columns have valid values or are set to None
             try:
                 for col in numeric_columns:
                     if col in dataframe.columns:
-                        dataframe[col] = dataframe[col].apply(
-                            lambda x: float(x) if pd.notna(x) else None
-                        )
-            except Exception as e:
+                        dataframe[col] = dataframe[col].apply(lambda x: float(x) if pd.notna(x) else None)
+            except Exception:
                 pass
 
         except Exception as e:
@@ -1836,11 +1663,7 @@ class BaseProcessor:
             referer = random.choice(self.config.requests["referers"])
             language = random.choice(self.config.requests["languages"])
 
-            headers = {
-                "User-Agent": user_agent,
-                "Referer": referer,
-                "Accept-Language": language,
-            }
+            headers = {"User-Agent": user_agent, "Referer": referer, "Accept-Language": language}
 
             # headers = {
             #     "User-Agent": user_agent,
@@ -1882,26 +1705,42 @@ class BaseProcessor:
                 response = session.get(url, timeout=wait_time)
                 if response.status_code == 200:
                     return True  # Connection is successful
-            except Exception as e:
+            except Exception:
                 # Log the error or suppress if preferred
                 # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
                 pass
             time.sleep(wait_time)  # Wait before retrying
 
+    def detect_dns_block(self, content):
+        """
+        Detecta se uma resposta HTML foi bloqueada pela Cloudflare.
+        Funciona com Selenium (driver.page_source) e requests (response.text).
+        """
+        content = content.lower().strip()
+
+        block_indicators = [
+            "error 1015",  # Limite de requisições
+            "rate limited",  # Cloudflare ou servidor com throttle
+            "access denied",  # Acesso negado via firewall
+            "cloudflare",  # Marcas explícitas
+        ]
+
+        if any(term in content for term in block_indicators):
+            return False
+
+        # Alguns sites retornam um app vazio quando bloqueado
+        if "<app-root></app-root>" in content and len(content) < 10000:
+            return False
+
+        return content
+
     # OTHER NOT CLASSIFIED YET
     def explode_company(self, company_info):
-
         def process_ticker_isin(row):
-            ticker_codes = (
-                json.loads(row["ticker_codes"]) if row["ticker_codes"] else []
-            )
+            ticker_codes = json.loads(row["ticker_codes"]) if row["ticker_codes"] else []
             isin_codes = json.loads(row["isin_codes"]) if row["isin_codes"] else []
             ticker_isin = [
-                pair
-                for pair in sorted(
-                    list(zip(ticker_codes, isin_codes)), key=lambda x: x[0]
-                )
-                if "ACN" in pair[1]
+                pair for pair in sorted(list(zip(ticker_codes, isin_codes)), key=lambda x: x[0]) if "ACN" in pair[1]
             ]
             return ticker_isin
 
@@ -1911,8 +1750,7 @@ class BaseProcessor:
 
         company_info_exploded = company_info.explode("ticker_isin")
         company_info_exploded[["ticker_code", "isin_code"]] = pd.DataFrame(
-            company_info_exploded["ticker_isin"].tolist(),
-            index=company_info_exploded.index,
+            company_info_exploded["ticker_isin"].tolist(), index=company_info_exploded.index
         )
         company_info_exploded = company_info_exploded.drop(columns=["ticker_isin"])
 
@@ -1941,16 +1779,11 @@ class TemplateProcessor(BaseProcessor):
         """
         try:
             extra_info = [f"Worker {progress['thread_id']}", " ".join(sub_batch)]
-            self.print_info(
-                progress["batch_index"],
-                progress["total_batches"],
-                progress["start_time"],
-                extra_info,
-            )
+            self.print_info(progress["batch_index"], progress["total_batches"], progress["start_time"], extra_info)
             # Delegate to process_batch for the actual batch processing
             result = self.process_batch(sub_batch, progress)
 
-        except Exception as e:
+        except Exception:
             pass
 
         return result
@@ -1986,11 +1819,7 @@ class TemplateProcessor(BaseProcessor):
 
             # Process targets using threading or sequential logic
             processed_batch = self.run(
-                targets,
-                thread=thread,
-                module_name=self.inspect.getmodule(
-                    self.inspect.currentframe()
-                ).__name__,
+                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
 
             # save/update db

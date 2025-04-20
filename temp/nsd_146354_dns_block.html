@@ -1,0 +1,527 @@
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head id="Head1"><link href="App_Themes/CVM/Calendar/Skins/CVM/Calendar.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Calendar/Skins/CVM/RadTimePicker.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Calendario.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/ComboBox/CVM/Styles.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/ComboBox/Skins/CVM/Styles.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/EditarConteudo.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Entrada.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Erro.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Estrutura.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Ferramentas.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Formulario.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/FormularioReferencia.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Grid.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Input/Skins/CVM/styles.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Login.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Logout.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Menu.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Pesquisa.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/PopUp.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/TabStrip.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Tabstrip/Scripts/3_6_2/tabstrip.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Tabstrip/Scripts/3_6_2/vtabstrip.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Tabstrip/Skins/CBLC/styles.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Tabstrip/Skins/CVM/styles.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Topo.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/TrocaSenha.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Upload/Skins/CVM/RadUpload.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Upload/Skins/CVM/RadUploadProgressArea.css" type="text/css" rel="stylesheet" /><link href="App_Themes/CVM/Window/Skins/CVM/Window.css" type="text/css" rel="stylesheet" /><title>
+	Consulta de documentos
+</title><meta http-equiv="X-UA-Compatible" content="IE=EmulateIE11" />
+    <!--Jquery-->
+    <script type="text/javascript" src="/ENET/ruxitagentjs_ICANQVfgqrux_10309250310100759.js" data-dtconfig="rid=RID_1295689334|rpid=-236346553|domain=cvm.gov.br|reportUrl=/ENET/rb_3e3688fc-2b0e-4bc4-bbfb-2999b956e3bd|app=ca883f3beebf9526|featureHash=ICANQVfgqrux|msl=153600|srsr=20000|rdnt=1|uxrgce=1|cuc=wj11fgxl|srms=2,2,1,|mel=100000|expw=1|dpvc=1|lastModification=1744893386699|tp=500,50,0|agentUri=/ENET/ruxitagentjs_ICANQVfgqrux_10309250310100759.js"></script><script src="jquery/jquery-1.12.4.js" type="text/javascript"></script>
+    <script src="jquery/ui/jquery-ui.js" type="text/javascript"></script>
+
+    <link rel="Stylesheet" href="jquery/ui/jquery-ui.css" /><link rel="Stylesheet" href="css/slidemenu.css" />
+
+    <!--Foundation-->
+    <link rel="Stylesheet" href="css/foundation.css" /><link rel="Stylesheet" href="css/foundation-icons/foundation-icons.css" />
+
+    <script src="jquery/jquery.slidemenu.js" type="text/javascript"></script>
+    <script src="js/mensagemModal.js" type="text/javascript"></script>
+
+    <script type="text/javascript">
+        window.onload = CarregarDadosArquivoFRE;
+
+        
+
+        $(document).ready(function () {
+
+            if (document.getElementById('hdnHabilitaCaptcha').value == 'S') {
+
+                var htmlCaptchaV2 = '<div class="g-recaptcha" id="ConsExternaV2" data-sitekey="' + document.getElementById('hdnChaveSiteV2').value + '"></div>';
+
+                $('#divCaptchaV2').html(htmlCaptchaV2);
+
+                if (document.getElementById('hdnAcaoToken').value == 'V3') {
+                    $('#divCaptchaV2').css('display', 'none');
+
+                    try {
+
+                        grecaptcha.ready(function () {
+
+                            try {
+
+                                grecaptcha.execute(document.getElementById('hdnChaveSiteV3').value, { action: 'submit' }).then(function (token) {
+                                    document.getElementById('hdnToken').value = token;
+                                    $('#Form1').submit();
+                                });
+
+                            }
+                            catch (ex) {
+                                MensagemModal('Exibição de Documentos', ex.message, 'E');
+                            }
+                        });
+
+                    }
+                    catch (ab1) {
+                        MensagemModal('Exibição de Documentos', ab1.message, 'E');
+                    }
+                }
+                else if (document.getElementById('hdnAcaoToken').value == 'V2') {
+
+                    $('#btnGeraRelatorioPDF').addClass('disabled');
+                    $('#btnGeraRelatorioPDF').attr('title', 'Resolva o captcha para ter acesso a esta funcionalide');
+
+                    $('#divCaptchaV2').css('display', 'block');
+                    var validaCaptchaV2 = function (response) {
+                        $('#divCaptchaV2').css('display', 'none');
+                        grecaptcha.reset();
+                        document.getElementById('hdnToken').value = response;
+                        $('#Form1').submit();
+                    };
+
+                    try {
+
+                        grecaptcha.render('ConsExternaV2', {
+                            'sitekey': document.getElementById('hdnChaveSiteV2').value,
+                            'callback': validaCaptchaV2,
+                            'theme': 'dark'
+                        });
+                    } catch (ex) { alert(ex.message); }
+                    
+                }
+                else if (document.getElementById('hdnAcaoToken').value == 'OK') {
+                    $('#btnGeraRelatorioPDF').removeClass('disabled');
+                    $('#btnGeraRelatorioPDF').attr('title', '');
+                    $('#divCaptchaV2').css('display', 'none');
+                }
+            }
+            else {
+                $('#btnGeraRelatorioPDF').removeClass('disabled');
+                $('#btnGeraRelatorioPDF').attr('title', '');
+            }
+
+
+
+        });
+
+        function CarregarDadosArquivoFRE() {
+
+            var mensagem = $('#hdnMensagem').val();
+
+            if (mensagem != '') {
+                MensagemModal('Exibição de Documentos',mensagem, 'E');
+                return;
+            }
+
+            MontarDadosCabecalhoTela();
+
+            if (document.getElementById('hdnCodigoTipoDocumento').value == 6) {
+                $('#btnGeraRelatorioPDF').addClass('disabled');
+            }
+            else {
+                $('#btnGeraRelatorioPDF').removeClass('disabled');
+            }
+
+            $("#btnGeraRelatorioPDF").click(function (event) {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                $("#dialog").dialog({
+                    autoOpen: false,
+                    modal: true,
+                    height: 630,
+                    width: 650,
+                    title: "Documento em PDF",
+                    show: {
+                        effect: "blind"
+                    },
+                    hide: {
+                        effect: "explode"
+                    }
+                });
+
+                var dlg = document.getElementById("dialog");
+                dlg.title = "Documento em PDF";
+                $("#dialog").dialog("open");
+                var modal = document.getElementById("iFrameModal");
+                modal.height = "100%";
+                modal.width = "100%";
+                modal.src = "frmRelatorioPDF.aspx?CodigoTipoInstituicao=1&NumeroSequencialDocumento=" + $('#hdnNumeroSequencialDocumento').val() +
+                    "&CodigoCVM=" + $('#hdnCodigoCvm').val() +
+                    "&CodigoTipoDocumento=" + $('#hdnCodigoTipoDocumento').val() +
+                    "&DescricaoTipoDocumento=" + $('#hdnDescricaoDocumento').val() + "&PadraoCor=A&Hash=" + $('#hdnHash').val();
+
+                
+            });
+        }
+
+        function MostraAjax() {
+            $("#divSplash").show();
+            $("#divSplash").css({
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                left: 0,
+                top: 0,
+                zIndex: 1000000,
+                background: "#666666 url(jquery/ui/images/ui-bg_diagonals-thick_20_666666_40x40.png) repeat ",
+                opacity: .5
+            }).appendTo($(".container").css("position", "relative"));
+        }
+
+        function getParameterByName(name, url) {
+            if (!url) url = window.location.href;
+            name = name.replace(/[\[\]]/g, "\\$&");
+            var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+            results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, " "));
+        }
+
+        function MontarDadosCabecalhoTela() {
+           
+
+            var motivos = $('#hdnReapresentacaoCancelamento').val();
+
+
+            
+            if (motivos == "R") {
+                document.getElementById("lblMotivo").innerText = "Motivo de Reapresentação: ";
+                document.getElementById("divMotivoCancelamento").style.display = "block";
+            }
+            else if (motivos == "C") {
+                document.getElementById("lblMotivo").innerText = "Motivo de Cancelamento: ";
+                document.getElementById("divMotivoCancelamento").style.display = "block";
+            }
+            else {
+                document.getElementById("divMotivoCancelamento").style.display = "none";            
+            }
+        }
+    </script>
+
+    <style>
+
+        #btnGeraRelatorioPDF.ocultaBotao {
+            display: none;
+        }
+
+        .ui-widget-header {
+            background: #0F2D5C !important;
+        }
+
+        .ui-state-default {
+            border: 0px !important;
+             background: #0F2D5C !important;
+            background-color: #0F2D5C !important;
+        }
+            .ui-state-default .ui-icon {
+            background-color: #0F2D5C !important;
+            }
+        .ui-button .ui-button-text {
+        background-color: #0F2D5C !important;
+        }
+
+
+        /*.ui-button {
+            background: #0F2D5C !important;
+            background-color: #0F2D5C !important;
+        }*/
+        .ui-state-active {
+            background-image:unset !important;
+        }
+        .ui-state-hover {
+            background-image:unset !important;
+        }
+
+        a.botaoSalvarPDF{
+            background-color: #0F2D5C;
+            padding: 7px;
+            color: #fff;
+            border-radius: 5px;
+        }
+
+        .header-content-protocolo {
+            background-color: #FFF;
+            border-radius: 5px;
+            line-height: 22px;
+            padding: 10px 15px;
+            width: 60%;
+
+            
+
+            display: -ms-flexbox;
+            display: -webkit-flex;
+            display: flex;
+            -webkit-flex-direction: row;
+            -ms-flex-direction: row;
+            flex-direction: row;
+            -webkit-flex-wrap: nowrap;
+            -ms-flex-wrap: nowrap;
+            flex-wrap: nowrap;
+            -webkit-justify-content: space-between;
+            -ms-flex-pack: justify;
+            justify-content: space-between;
+            -webkit-align-content: center;
+            -ms-flex-line-pack: center;
+            align-content: center;
+            -webkit-align-items: center;
+            -ms-flex-align: center;
+            align-items: center;
+        }
+
+        @media screen and (max-width: 1160px) {
+            .header-content-protocolo {
+                width: 53%;
+            }
+         }
+            
+
+        .header-content {
+            width: 80%;
+            margin:0 auto;
+
+            display: -ms-flexbox;
+            display: -webkit-flex;
+            display: flex;
+            -webkit-flex-direction: row;
+            -ms-flex-direction: row;
+            flex-direction: row;
+            -webkit-flex-wrap: nowrap;
+            -ms-flex-wrap: nowrap;
+            flex-wrap: nowrap;
+            -webkit-justify-content: space-between;
+            -ms-flex-pack: justify;
+            justify-content: space-between;
+            -webkit-align-content: center;
+            -ms-flex-line-pack: center;
+            align-content: center;
+            -webkit-align-items: center;
+            -ms-flex-align: center;
+            align-items: center;
+        }
+        .labelNomeCompanhia {
+            font-size: 14px !important;
+            color: #00b0eb !important;
+        }
+
+        @media screen and (max-width: 979px) {
+            .header-content {
+                width: 90%;
+                -webkit-flex-wrap: wrap;
+                -ms-flex-wrap: wrap;
+                flex-wrap: wrap;
+            }
+
+            .header-content-protocolo {
+                -webkit-flex-wrap: wrap;
+                -ms-flex-wrap: wrap;
+                flex-wrap: wrap;
+            }
+        }
+
+        .dri{
+            color: #FFF; 
+            padding-left: 2px;
+        }
+
+        .descricaoCategoria {
+            color: #FFF;
+            padding-left: 2px;
+            text-align: left;
+        }
+
+        .protocolo {
+            padding-left: 2px;
+            color: #004685;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .dataDocumento {
+            color: #004685;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        a.disabled {
+            pointer-events: none;
+            cursor: default;
+            background-color: #dcdcdc;
+        }
+
+        .dataEnvio{
+            color: #004685; 
+            font-size: 13px; 
+            font-weight: bold;
+        }
+
+        .motivoCancelamento {
+            color: #FFF;
+        }
+
+        .escondeAuditor {
+            display: none !important;
+        }
+
+
+         
+    </style>
+</head>
+
+<body>
+    
+    <form method="post" action="./frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento=146354&amp;CodigoTipoInstituicao=1" id="Form1">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__LASTFOCUS" id="__LASTFOCUS" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKMTE2MDA0MDkyNA9kFgICAw9kFhwCDQ8PFgIeBFRleHQFHVNvbHZpIEVzc2VuY2lzIEFtYmllbnRhbCBTLkEuZGQCDg8PFgIfAAUpRnJlZGVyaWNvIEd1aW1hcsOjZXMgZGEgU2lsdmEgLSAoRkNBIFYxKSBkZAIPDw8WAh8ABTpEZW1vbnN0cmHDp8O1ZXMgRmluYW5jZWlyYXMgUGFkcm9uaXphZGFzIC0gMzEvMTIvMjAyNCAtIFYxZGQCEA8PFgIfAAU/RVJOU1QgJiBZT1VORyBBVURJVE9SRVMgSU5ERVBFTkRFTlRFUyBTL1MgTHRkYSAtIChGQ0EgMjAyNCBWMSkgZGQCEQ8PFgIfAAUdQW5kZXJzb24gUGFzY2hvYWwgQ29uc3RhbnRpbm9kZAISDw8WAh8ABR4wMjcwNzNERlAzMTEyMjAyNDAxMDAxNDYzNTQtNjlkZAITDw8WAh8ABQozMS8xMi8yMDI0ZGQCFA8PFgIfAAUTMTMvMDQvMjAyNSAxODoyOTowNWRkAhUPDxYCHwBlZGQCFg8WAh4JaW5uZXJodG1sBR1Tb2x2aSBFc3NlbmNpcyBBbWJpZW50YWwgUy5BLmQCFw8WAh8BBUJEZW1vbnN0cmEmIzIzMTsmIzI0NTtlcyBGaW5hbmNlaXJhcyBQYWRyb25pemFkYXMgLSAzMS8xMi8yMDI0IC0gVjFkAhgPEGQPFglmAgECAgIDAgQCBQIGAgcCCBYJEAUQRGFkb3MgZGEgRW1wcmVzYQUDMjAxZxAFD0RGcyBJbmRpdmlkdWFpcwUDMjc4ZxAFEERGcyBDb25zb2xpZGFkYXMFAzM0NWcQBTdSZWxhdMOzcmlvIGRhIEFkbWluaXN0cmHDp8Ojby9Db21lbnTDoXJpbyBkbyBEZXNlbXBlbmhvBQhQREZ8MTY1M2cQBRJOb3RhcyBFeHBsaWNhdGl2YXMFB1BERnw0MTJnEAU+Q29tZW50w6FyaW8gU29icmUgbyBDb21wb3J0YW1lbnRvIGRhcyBQcm9qZcOnw7VlcyBFbXByZXNhcmlhaXMFB1BERnw0MTNnEAUhUHJvcG9zdGEgZGUgT3LDp2FtZW50byBkZSBDYXBpdGFsBQdQREZ8NDE2ZxAFN091dHJhcyBJbmZvcm1hw6fDtWVzIHF1ZSBhIENvbXBhbmhpYSBFbnRlbmRhIFJlbGV2YW50ZXMFB1BERnw0MTlnEAUZUGFyZWNlcmVzIGUgRGVjbGFyYcOnw7VlcwUEMTY1NGcWAQICZAIZDxBkEBUHGkJhbGFuw6dvIFBhdHJpbW9uaWFsIEF0aXZvHEJhbGFuw6dvIFBhdHJpbW9uaWFsIFBhc3Npdm8bRGVtb25zdHJhw6fDo28gZG8gUmVzdWx0YWRvJkRlbW9uc3RyYcOnw6NvIGRvIFJlc3VsdGFkbyBBYnJhbmdlbnRlIERlbW9uc3RyYcOnw6NvIGRvIEZsdXhvIGRlIENhaXhhNURlbW9uc3RyYcOnw6NvIGRhcyBNdXRhw6fDtWVzIGRvIFBhdHJpbcO0bmlvIEzDrXF1aWRvIkRlbW9uc3RyYcOnw6NvIGRlIFZhbG9yIEFkaWNpb25hZG8VB+MBZnJtRGVtb25zdHJhY2FvRmluYW5jZWlyYUlUUi5hc3B4P0luZm9ybWFjYW89MiZEZW1vbnN0cmFjYW89MiZQZXJpb2RvPTAmR3J1cG89REZzK0NvbnNvbGlkYWRhcyZRdWFkcm89QmFsYW4lYzMlYTdvK1BhdHJpbW9uaWFsK0F0aXZvJk5vbWVUaXBvRG9jdW1lbnRvPURGUCZFbXByZXNhPVNvbHZpIEVzc2VuY2lzIEFtYmllbnRhbCBTLkEuJkRhdGFSZWZlcmVuY2lhPTIwMjQtMTItMzEmVmVyc2FvPTHlAWZybURlbW9uc3RyYWNhb0ZpbmFuY2VpcmFJVFIuYXNweD9JbmZvcm1hY2FvPTImRGVtb25zdHJhY2FvPTMmUGVyaW9kbz0wJkdydXBvPURGcytDb25zb2xpZGFkYXMmUXVhZHJvPUJhbGFuJWMzJWE3bytQYXRyaW1vbmlhbCtQYXNzaXZvJk5vbWVUaXBvRG9jdW1lbnRvPURGUCZFbXByZXNhPVNvbHZpIEVzc2VuY2lzIEFtYmllbnRhbCBTLkEuJkRhdGFSZWZlcmVuY2lhPTIwMjQtMTItMzEmVmVyc2FvPTHoAWZybURlbW9uc3RyYWNhb0ZpbmFuY2VpcmFJVFIuYXNweD9JbmZvcm1hY2FvPTImRGVtb25zdHJhY2FvPTQmUGVyaW9kbz0wJkdydXBvPURGcytDb25zb2xpZGFkYXMmUXVhZHJvPURlbW9uc3RyYSVjMyVhNyVjMyVhM28rZG8rUmVzdWx0YWRvJk5vbWVUaXBvRG9jdW1lbnRvPURGUCZFbXByZXNhPVNvbHZpIEVzc2VuY2lzIEFtYmllbnRhbCBTLkEuJkRhdGFSZWZlcmVuY2lhPTIwMjQtMTItMzEmVmVyc2FvPTHzAWZybURlbW9uc3RyYWNhb0ZpbmFuY2VpcmFJVFIuYXNweD9JbmZvcm1hY2FvPTImRGVtb25zdHJhY2FvPTUmUGVyaW9kbz0wJkdydXBvPURGcytDb25zb2xpZGFkYXMmUXVhZHJvPURlbW9uc3RyYSVjMyVhNyVjMyVhM28rZG8rUmVzdWx0YWRvK0FicmFuZ2VudGUmTm9tZVRpcG9Eb2N1bWVudG89REZQJkVtcHJlc2E9U29sdmkgRXNzZW5jaXMgQW1iaWVudGFsIFMuQS4mRGF0YVJlZmVyZW5jaWE9MjAyNC0xMi0zMSZWZXJzYW89Me4BZnJtRGVtb25zdHJhY2FvRmluYW5jZWlyYUlUUi5hc3B4P0luZm9ybWFjYW89MiZEZW1vbnN0cmFjYW89OTkmUGVyaW9kbz0wJkdydXBvPURGcytDb25zb2xpZGFkYXMmUXVhZHJvPURlbW9uc3RyYSVjMyVhNyVjMyVhM28rZG8rRmx1eG8rZGUrQ2FpeGEmTm9tZVRpcG9Eb2N1bWVudG89REZQJkVtcHJlc2E9U29sdmkgRXNzZW5jaXMgQW1iaWVudGFsIFMuQS4mRGF0YVJlZmVyZW5jaWE9MjAyNC0xMi0zMSZWZXJzYW89MZgCZnJtRGVtb25zdHJhY2FvRmluYW5jZWlyYUlUUi5hc3B4P0luZm9ybWFjYW89MjAwJkRlbW9uc3RyYWNhbz04JlBlcmlvZG89MXwyfDMmR3J1cG89REZzK0NvbnNvbGlkYWRhcyZRdWFkcm89RGVtb25zdHJhJWMzJWE3JWMzJWEzbytkYXMrTXV0YSVjMyVhNyVjMyViNWVzK2RvK1BhdHJpbSVjMyViNG5pbytMJWMzJWFkcXVpZG8mTm9tZVRpcG9Eb2N1bWVudG89REZQJkVtcHJlc2E9U29sdmkgRXNzZW5jaXMgQW1iaWVudGFsIFMuQS4mRGF0YVJlZmVyZW5jaWE9MjAyNC0xMi0zMSZWZXJzYW89Me8BZnJtRGVtb25zdHJhY2FvRmluYW5jZWlyYUlUUi5hc3B4P0luZm9ybWFjYW89MiZEZW1vbnN0cmFjYW89OSZQZXJpb2RvPTAmR3J1cG89REZzK0NvbnNvbGlkYWRhcyZRdWFkcm89RGVtb25zdHJhJWMzJWE3JWMzJWEzbytkZStWYWxvcitBZGljaW9uYWRvJk5vbWVUaXBvRG9jdW1lbnRvPURGUCZFbXByZXNhPVNvbHZpIEVzc2VuY2lzIEFtYmllbnRhbCBTLkEuJkRhdGFSZWZlcmVuY2lhPTIwMjQtMTItMzEmVmVyc2FvPTEUKwMHZ2dnZ2dnZxYBAgJkAhoPFgIeBmhlaWdodAUDODAlZGRzPe5nNBZMJ38v8ojvHT7ABzaN1QeTwEpKHk8ct/QN4Q==" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['Form1'];
+if (!theForm) {
+    theForm = document.Form1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="E88DA87F" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="/wEdACCq94QvL1zEYY1c00HXzl6ZTV8q3pCslffnLsEsCuygq1HrR0RcH5EYaYONC+lyI8nRgKasxnKapKZzHt0mVBUkcQ5nrkwJlC3yeC8zV7dEAbYswLf8am5okKnc40uRMGdn3ImV9VXceqfsHiBYUxF4tvRmaZCyIdY3t/2lIQWB1iLN2D+PtYjixuURgjRvn31mgj+tGHf50/gMmkavd6ua7aBd2Qb1vJTKMCm/APWiSSCE0xxfUcLf9dyvfbd/uiNItmjCo7rqfC2ZnLnWzPYKD6rYV8zMeliy3HGcaK2KbHCffntVPUVkCuuu00bLt02113eLuyN8SdqJbocF62ygX7D6IXrkl/CEq9rzOA5lopph7xeU0Sc+XDjsBcrNvqP75d0qWKxEkzlSIddM6pDL7czIOgEuWLLOz1fvorU5fhpq2RNBVVZBgAsPyHL16Le3ct2dco3ptI8lZxSVgNQllFXxgrCFVoRXX4cwNGFsvPFoksEdLMvyPcusis76Hea1Y4W9X40KlNOe2OunWlJ1N6GfHTJBqkc4Puq40qFLB6dysumyohk912vW4gQy7DAnpe3aaww7JfMv6U6R8Arx8eTIuwl7FR5ciO52ZVBh2heOYXfmvj47Ha03ZMjvUcwkKOcU00qyK9cSHGMXhXs7JIqpfx4if34KCa5StBtVGCe6rPNsc+DmrAz/ZMRpDReETI5vuq0nRqM4MbhdIPn3" />
+</div>
+        <input type="hidden" name="hdnNumeroSequencialDocumento" id="hdnNumeroSequencialDocumento" value="146354" />
+        <input type="hidden" name="hdnCodigoTipoDocumento" id="hdnCodigoTipoDocumento" value="4" />
+        <input type="hidden" name="hdnCodigoCvm" id="hdnCodigoCvm" value="027073" />
+        <input type="hidden" name="hdnDescricaoDocumento" id="hdnDescricaoDocumento" value="DFP" />
+        <input type="hidden" name="hdnCodigoInstituicao" id="hdnCodigoInstituicao" value="1" />
+        <input type="hidden" name="hdnReapresentacaoCancelamento" id="hdnReapresentacaoCancelamento" />
+        <input type="hidden" name="hdnMensagem" id="hdnMensagem" />
+        <input type="hidden" name="hdnHash" id="hdnHash" value="HiLrwhj6gQdNtvUOGiPds6YoTM3H0M5kox2m0OJb1I" />
+        <input name="hdnChaveSiteV3" type="hidden" id="hdnChaveSiteV3" value="6LdVyiwaAAAAABobBnLknCD5VGGkmH9snlJBxCyr" />    
+        <input name="hdnChaveSiteV2" type="hidden" id="hdnChaveSiteV2" value="6LeSyywaAAAAAGzZjvIaDntL8_Ht6aO7Gqt317x8" />    
+        <input name="hdnHabilitaCaptcha" type="hidden" id="hdnHabilitaCaptcha" value="N" />    
+        <input name="hdnToken" type="hidden" id="hdnToken" />    
+        <input name="hdnAcaoToken" type="hidden" id="hdnAcaoToken" />    
+        
+
+
+        <div style="width:100%; background-color: #004685; float: left; padding: 10px 0;">            
+            <div class="header-content" style="width: 97% !important">
+                 <div class="large-12 columns" style="line-height: 28px; width: 55%;">
+                    <span id="lblNomeCompanhia" class="labelNomeCompanhia">Solvi Essencis Ambiental S.A.</span>
+                    <br />
+
+                    <div class="large-6 columns" style="line-height: 28px; width: 45%;">
+
+                        <i class='fi-play' id='iconeDri' style='font-size: 10px; cursor: pointer; color: #FFF; font-weight: bold;'></i>
+                        <span style="color: #FFF; padding-left: 2px;">DRI:</span> <span id="lblNomeDRI" class="dri">Frederico Guimarães da Silva - (FCA V1) </span>
+                        <br />
+                        <i class='fi-play' id='iconeTipo' style='font-size: 10px; cursor: pointer; color: #FFF;'></i>
+                             <span id="lblDescricaoCategoria" class="descricaoCategoria">Demonstrações Financeiras Padronizadas - 31/12/2024 - V1</span>
+
+                    </div>
+
+                     <div class="large-6 columns " style="line-height: 28px; width: 55%;">
+                        <i class='fi-play' id='iconeAuditor' style='font-size: 10px; cursor: pointer; color: #FFF; font-weight: bold;'></i>
+                        <span style="color: #FFF; padding-left: 2px;">Auditor:</span> <span id="lblAuditor" class="dri">ERNST & YOUNG AUDITORES INDEPENDENTES S/S Ltda - (FCA 2024 V1) </span>
+                        <br />
+                         <i class='fi-play' id='iconeResponsavelTecnicoAuditor' style='font-size: 10px; cursor: pointer; color: #FFF; font-weight: bold;'></i>
+                        <span style="color: #FFF; padding-left: 2px;">Responsável Técnico Auditor:</span> <span id="lblResponsavelTecnico" class="dri">Anderson Paschoal Constantino</span>
+                     </div>
+
+                
+                </div>
+
+                <div id="divCaptchaV2" style="padding-right: 20px;"></div>
+
+            <div class="header-content-protocolo" style="width: 45% !important">
+                <div style="width: 75%; float: left;">
+                    <div style="width: 100%; float: left;">
+                        <span style="color: #747474;">Protocolo nº</span><span id="lblProtocolo" class="protocolo">027073DFP311220240100146354-69</span>
+                    </div>
+                    <div style="width: 50%; float: left;">
+                        <span style="color: #747474;">Data do Documento</span>
+                        <br />
+                        <span id="lblDataDocumento" class="dataDocumento">31/12/2024</span>                        
+                     <br />
+                    </div>
+                <div style="width: 40%; float: left;">
+                    <span style="color: #747474;">Data do Envio</span>
+                    <br />
+                    <span id="lblDataEnvio" class="dataEnvio">13/04/2025 18:29:05</span>                                            
+                </div>
+
+                </div>-
+
+                
+                 <div>
+                     <a id="btnGeraRelatorioPDF" class="botaoSalvarPDF disabled" title="Resolva o captcha para ter acesso a esta funcionalide"> Salvar em PDF</a>
+                </div>
+                
+                
+               
+            </div>
+
+
+            </div>
+            
+        </div>
+
+        <div class="large-12 columns" style="background-color: #0F2D5C; line-height: 20px; padding: 3px;">
+            <div class="large-2 columns">
+                &nbsp;
+            </div>
+            <div class="large-10 columns" style="display: none; padding-top: 2px;" id="divMotivoCancelamento">
+                <i class='fi-alert' id='iconeMotivo' style='font-size: 18px; cursor: pointer; color: #FFF;'></i>
+                <span style="color: #FFF;" id="lblMotivo"></span>&nbsp;<span id="lblMotivoCancelamentoReapresentacao" class="motivoCancelamento"></span>
+            </div>
+        </div>
+        <br />
+
+        <div>
+            <div>
+                
+                
+                <br />
+                <select name="cmbGrupo" onchange="javascript:setTimeout(&#39;__doPostBack(\&#39;cmbGrupo\&#39;,\&#39;\&#39;)&#39;, 0)" id="cmbGrupo" Label="Você esta vendo:" ShowLabel="true" style="width:49%;">
+	<option value="201">Dados da Empresa</option>
+	<option value="278">DFs Individuais</option>
+	<option selected="selected" value="345">DFs Consolidadas</option>
+	<option value="PDF|1653">Relat&#243;rio da Administra&#231;&#227;o/Coment&#225;rio do Desempenho</option>
+	<option value="PDF|412">Notas Explicativas</option>
+	<option value="PDF|413">Coment&#225;rio Sobre o Comportamento das Proje&#231;&#245;es Empresariais</option>
+	<option value="PDF|416">Proposta de Or&#231;amento de Capital</option>
+	<option value="PDF|419">Outras Informa&#231;&#245;es que a Companhia Entenda Relevantes</option>
+	<option value="1654">Pareceres e Declara&#231;&#245;es</option>
+
+</select>
+                <select name="cmbQuadro" onchange="javascript:setTimeout(&#39;__doPostBack(\&#39;cmbQuadro\&#39;,\&#39;\&#39;)&#39;, 0)" id="cmbQuadro" ShowLabel="true" style="width:50%;">
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=2&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Balan%c3%a7o+Patrimonial+Ativo&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Balan&#231;o Patrimonial Ativo</option>
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=3&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Balan%c3%a7o+Patrimonial+Passivo&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Balan&#231;o Patrimonial Passivo</option>
+	<option selected="selected" value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=4&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Demonstra%c3%a7%c3%a3o+do+Resultado&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Demonstra&#231;&#227;o do Resultado</option>
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=5&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Demonstra%c3%a7%c3%a3o+do+Resultado+Abrangente&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Demonstra&#231;&#227;o do Resultado Abrangente</option>
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=99&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Demonstra%c3%a7%c3%a3o+do+Fluxo+de+Caixa&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Demonstra&#231;&#227;o do Fluxo de Caixa</option>
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=200&amp;Demonstracao=8&amp;Periodo=1|2|3&amp;Grupo=DFs+Consolidadas&amp;Quadro=Demonstra%c3%a7%c3%a3o+das+Muta%c3%a7%c3%b5es+do+Patrim%c3%b4nio+L%c3%adquido&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Demonstra&#231;&#227;o das Muta&#231;&#245;es do Patrim&#244;nio L&#237;quido</option>
+	<option value="frmDemonstracaoFinanceiraITR.aspx?Informacao=2&amp;Demonstracao=9&amp;Periodo=0&amp;Grupo=DFs+Consolidadas&amp;Quadro=Demonstra%c3%a7%c3%a3o+de+Valor+Adicionado&amp;NomeTipoDocumento=DFP&amp;Empresa=Solvi Essencis Ambiental S.A.&amp;DataReferencia=2024-12-31&amp;Versao=1">Demonstra&#231;&#227;o de Valor Adicionado</option>
+
+</select>
+            </div>
+            <iframe id="iFrameFormulariosFilho" style="height: 95%; width: 100%; overflow: scroll;" frameborder="0" title="Empresas - Formulário de Referência" height="80%"></iframe>
+        </div>
+        <div id="divSplash" style="display: none;">
+            <div id="divLoading" style="height: 60px; width: 60px; left: 50%; position: absolute; transform: translateX(-50%); top: 400px; background: #FFFFFF url(img/loading.gif) no-repeat; -webkit-border-radius: 7px; -moz-border-radius: 7px; -ms-border-radius: 7px; border-radius: 7px;">
+            </div>
+        </div>        
+    
+
+<script type="text/javascript">
+//<![CDATA[
+window.frames[0].location='frmDemonstracaoFinanceiraITR.aspx?Informacao=2&Demonstracao=4&Periodo=0&Grupo=DFs+Consolidadas&Quadro=Demonstra%c3%a7%c3%a3o+do+Resultado&NomeTipoDocumento=DFP&Empresa=Solvi Essencis Ambiental S.A.&DataReferencia=2024-12-31&Versao=1&CodTipoDocumento=4&NumeroSequencialDocumento=146354&NumeroSequencialRegistroCvm=8215&CodigoTipoInstituicao=1&Hash=HiLrwhj6gQdNtvUOGiPds6YoTM3H0M5kox2m0OJb1I';//]]>
+</script>
+</form>
+    <div id="dialog">
+            <iframe id="iFrameModal" frameborder="0"></iframe>
+             
+        </div>
+</body>
+</html>

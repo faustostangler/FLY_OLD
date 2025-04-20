@@ -1,7 +1,6 @@
 from utils.base_processor import BaseProcessor
 from utils.company_processor import CompanyProcessor
 from utils.corporate_events_processor import EventsStatementsProcessor
-from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
 from utils.intel_processor import IntelProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
@@ -9,11 +8,11 @@ from utils.statements_processor import StatementsProcessor
 if __name__ == "__main__":
     try:
         base = BaseProcessor()
-        
+
         # Ask the user if they want to get company information
         run_company_processor = "N"
         prompt = "Want to update company information? (YES/NO): "
-        run_company_processor = base.timed_input(prompt)
+        # run_company_processor = base.timed_input(prompt)
         if run_company_processor.strip().upper().startswith("Y"):
             company_processor = CompanyProcessor()
             company_processor.close_driver()
@@ -23,10 +22,10 @@ if __name__ == "__main__":
         # Ask the user if they want to get nsd information
         run_nsd_processor = "N"
         prompt = "Want to update nsd information? (YES/NO): "
-        run_nsd_processor = base.timed_input(prompt)
+        # run_nsd_processor = base.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith("Y"):
             nsd_processor = NsdProcessor()
-            nsd_processor.main(thread=False)
+            nsd_processor.main(thread=True)
 
         # Ask the user if they want to get finantial statements
         run_statements_processor = "N"
@@ -67,6 +66,7 @@ if __name__ == "__main__":
         # stock_processor.close_driver()
 
     except Exception as e:
+        base.log_error(e)
         pass
 
     print("done")

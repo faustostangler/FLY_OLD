@@ -27,6 +27,7 @@ class Config:
         data_folder = os.path.join(backend_folder, "data")
         bin_folder = os.path.join(backend_folder, "bin")
         utils_folder = os.path.join(backend_folder, "utils")
+        temp_folder = os.path.join(base_dir, "temp")
 
         return {
             "base_dir": base_dir,
@@ -34,6 +35,7 @@ class Config:
             "data_folder": data_folder,
             "bin_folder": bin_folder,
             "utils_folder": utils_folder,
+            "temp_folder": temp_folder,
         }
 
     def _ensure_directories(self):
@@ -42,6 +44,7 @@ class Config:
         os.makedirs(self.paths["data_folder"], exist_ok=True)
         os.makedirs(self.paths["bin_folder"], exist_ok=True)
         os.makedirs(self.paths["utils_folder"], exist_ok=True)
+        os.makedirs(self.paths["temp_folder"], exist_ok=True)
 
         return True
 
@@ -57,22 +60,22 @@ class Config:
         data_folder = self.paths["data_folder"]
 
         # Table Names
-        tbl_company_info = f"tbl_company_info"
-        tbl_nsd = f"tbl_nsd"
-        tbl_stock_data = f"tbl_stock_data"
-        tbl_statements_raw = f"tbl_statements_raw"
-        tbl_statements_normalized = f"tbl_statements_normalized"
-        tbl_statements_corp_events = f"tbl_statements_corp_events"
+        tbl_company_info = "tbl_company_info"
+        tbl_nsd = "tbl_nsd"
+        tbl_stock_data = "tbl_stock_data"
+        tbl_statements_raw = "tbl_statements_raw"
+        tbl_statements_normalized = "tbl_statements_normalized"
+        tbl_statements_corp_events = "tbl_statements_corp_events"
 
         tbl_statements_ready = "tbl_statements_ready"
 
         # Index Names
-        idx_company_info = f"idx_company_info"
-        idx_nsd = f"idx_nsd"
-        idx_stock_data = f"idx_stock_data"
-        idx_statements_raw = f"idx_statements_raw"
-        idx_statements_normalized = f"idx_statements_normalized"
-        idx_statements_corp_events = f"idx_statements_corp_events"
+        idx_company_info = "idx_company_info"
+        idx_nsd = "idx_nsd"
+        idx_stock_data = "idx_stock_data"
+        idx_statements_raw = "idx_statements_raw"
+        idx_statements_normalized = "idx_statements_normalized"
+        idx_statements_corp_events = "idx_statements_corp_events"
 
         idx_statements_ready = "idx_statements_ready"
 
@@ -82,9 +85,7 @@ class Config:
 
         # Monta nomes de backup
         backup_raw = f"{db_raw.split('.')[0]}_{backup_name}.{db_raw.split('.')[-1]}"
-        backup_ready = (
-            f"{db_ready.split('.')[0]}_{backup_name}.{db_ready.split('.')[-1]}"
-        )
+        backup_ready = f"{db_ready.split('.')[0]}_{backup_name}.{db_ready.split('.')[-1]}"
 
         # Dicionário final de configurações de BD
         return {
@@ -141,9 +142,7 @@ class Config:
         tbl_statements_normalized = db_config["raw"]["table"]["statements_normalized"]
         tbl_statements_corp_events = db_config["raw"]["table"]["statements_corp_events"]
 
-        tbl_statements_ready = db_config["ready"]["table"][
-            "statements_ready"
-        ]  # "statements_ready"
+        tbl_statements_ready = db_config["ready"]["table"]["statements_ready"]  # "statements_ready"
 
         return {
             # Banco raw
@@ -309,11 +308,7 @@ class Config:
             with db_lock:  # Ensure thread-safe database access
                 try:
                     with sqlite3.connect(raw_path) as conn:
-                        df_sample = pd.read_sql_query(
-                            f"SELECT * FROM {tbl_nsd} LIMIT ?",
-                            conn,
-                            params=(sample_size,),
-                        )
+                        df_sample = pd.read_sql_query(f"SELECT * FROM {tbl_nsd} LIMIT ?", conn, params=(sample_size,))
                         if len(df_sample) > 0:
                             memory_per_row = df_sample.memory_usage(deep=True).sum() / len(df_sample)
                         else:
@@ -325,7 +320,7 @@ class Config:
 
                         chunk_size = int(memory_budget / memory_per_row)
 
-                except Exception as e:
+                except Exception:
                     chunk_size = sample_size
             break
 
@@ -351,11 +346,9 @@ class Config:
         chrome_path_32 = r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 
         computer_name = os.environ["COMPUTERNAME"]
-        chromedriver_path = os.path.join(
-            self.paths["bin_folder"], "chromedriver-win64", "chromedriver.exe"
-        )
+        chromedriver_path = os.path.join(self.paths["bin_folder"], "chromedriver-win64", "chromedriver.exe")
 
-        proxy_socks5 = "" # "127.0.0.1:9050"  # deixe "" ou None para desativar
+        proxy_socks5 = ""  # "127.0.0.1:9050"  # deixe "" ou None para desativar
 
         return {
             "wait_time": wait_time,
@@ -367,7 +360,7 @@ class Config:
             "chrome_path_32": chrome_path_32,
             "computer_name": computer_name,
             "chromedriver_path": chromedriver_path,
-            "proxy_socks5": proxy_socks5, 
+            "proxy_socks5": proxy_socks5,
         }
 
     def _define_requests_config(self):
@@ -476,11 +469,7 @@ class Config:
             "id-ID;q=0.8",  # Indonesian
         ]
 
-        return {
-            "user_agents": user_agents,
-            "referers": referers,
-            "languages": languages,
-        }
+        return {"user_agents": user_agents, "referers": referers, "languages": languages}
 
     def _define_domain_config(self):
         """Aqui adicionamos tudo que for específico da sua lógica de negócios:
@@ -546,23 +535,13 @@ class Config:
             "type",
             # "version",
             "frame",
-            "account", 
-            "description", 
+            "account",
+            "description",
         ]
 
+        statements_sheet_columns = ["company_name", "quarter", "version", "type", "frame"]
 
-        statements_sheet_columns = [
-            "company_name",
-            "quarter",
-            "version",
-            "type",
-            "frame",
-        ]
-
-        statements_types = [
-            "DEMONSTRACOES FINANCEIRAS PADRONIZADAS",
-            "INFORMACOES TRIMESTRAIS",
-        ]
+        statements_types = ["DEMONSTRACOES FINANCEIRAS PADRONIZADAS", "INFORMACOES TRIMESTRAIS"]
         statements_columns_empty_df = [
             "date",
             "nsd",
@@ -603,47 +582,15 @@ class Config:
         accounts_cumulative_quarter = ["6", "7"]
 
         # Dados de mercado (historical/stock)
-        historical_stock_data_columns = [
-            "date",
-            "close",
-            "high",
-            "low",
-            "open",
-            "volume",
-            "stock_splits",
-            "dividends",
-        ]
-        historical_stock_data_all_columns = [
-            "company_name",
-            "ticker",
-            "ticker_code",
-        ] + historical_stock_data_columns
+        historical_stock_data_columns = ["date", "close", "high", "low", "open", "volume", "stock_splits", "dividends"]
+        historical_stock_data_all_columns = ["company_name", "ticker", "ticker_code"] + historical_stock_data_columns
 
         # Dados “standard”
-        statements_index_columns = [
-            "nsd",
-            "sector",
-            "subsector",
-            "segment",
-            "company_name",
-            "quarter",
-            "version",
-        ]
-        statements_pivot_columns = [
-            "account", 
-            "description", 
-            "frame", 
-            "type", 
-        ]
+        statements_index_columns = ["nsd", "sector", "subsector", "segment", "company_name", "quarter", "version"]
+        statements_pivot_columns = ["account", "description", "frame", "type"]
 
         # splits
-        split_columns = [
-            "company_name",
-            "ticker",
-            "ticker_code",
-            "date",
-            "stock_splits",
-        ]
+        split_columns = ["company_name", "ticker", "ticker_code", "date", "stock_splits"]
 
         # Descrições & contas
         descriptions = {
@@ -672,9 +619,7 @@ class Config:
             ["DFs Individuais", "Demonstração do Fluxo de Caixa"],
             ["DFs Individuais", "Demonstração de Valor Adicionado"],
         ]
-        statements_capital_config = [
-            ["Dados da Empresa", "Composição do Capital"],
-        ]
+        statements_capital_config = [["Dados da Empresa", "Composição do Capital"]]
 
         # Judicial terms to remove
         words_to_remove = [
@@ -783,7 +728,7 @@ class Config:
             "sort_order_nsd": sort_order_nsd,
             "default_daily_submission_estimate": default_daily_submission_estimate,
             "safety_factor": safety_factor,
-            "statements_version_delimiter": statements_version_delimiter, 
+            "statements_version_delimiter": statements_version_delimiter,
             "statements_sheet_columns": statements_sheet_columns,
             "statements_types": statements_types,
             "statements_columns_empty_df": statements_columns_empty_df,

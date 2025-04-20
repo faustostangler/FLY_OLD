@@ -1,7 +1,6 @@
 from utils.base_processor import BaseProcessor
 from utils.company_processor import CompanyProcessor
 from utils.corporate_events_processor import EventsStatementsProcessor
-from utils.historical_stock_url_processor import HistoricalStockUrlProcessor
 from utils.intel_processor import IntelProcessor
 from utils.nsd_processor import NsdProcessor
 from utils.statements_processor import StatementsProcessor
@@ -9,7 +8,7 @@ from utils.statements_processor import StatementsProcessor
 if __name__ == "__main__":
     try:
         base = BaseProcessor()
-        
+
         # Ask the user if they want to get company information
         run_company_processor = "N"
         prompt = "Want to update company information? (YES/NO): "
@@ -66,7 +65,7 @@ if __name__ == "__main__":
         #     stock_processor.main(thread=True)
         # stock_processor.close_driver()
 
-    except Exception as e:
+    except Exception:
         pass
 
     print("done")

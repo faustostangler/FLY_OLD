@@ -125,7 +125,9 @@ LANGUAGES = [
 
 # Company Info from B3
 companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"  # URL for the B3 companies search page
-company_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"  # URL for the B3 company detail page
+company_url = (
+    "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"  # URL for the B3 company detail page
+)
 company_table = "company_info"
 company_columns = [
     "cvm_code",
@@ -182,16 +184,7 @@ statements_columns = [
     "type",
     "frame",
 ] + financial_statements_columns
-statements_order = [
-    "sector",
-    "subsector",
-    "segment",
-    "company_name",
-    "quarter",
-    "account",
-    "description",
-    "type",
-]
+statements_order = ["sector", "subsector", "segment", "company_name", "quarter", "account", "description", "type"]
 year_end_accounts = ["3", "4"]
 cumulative_quarter_accounts = ["6", "7"]
 
@@ -239,9 +232,7 @@ financial_data_statements = [
 ]
 
 # Capital data configurations
-statements_data_statements = [
-    ["Dados da Empresa", "Composição do Capital"],
-]
+statements_data_statements = [["Dados da Empresa", "Composição do Capital"]]
 
 # List of judicial terms to be removed from company names
 words_to_remove = [

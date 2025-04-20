@@ -2,18 +2,14 @@ import os
 import re
 import subprocess
 import zipfile
-from pathlib import Path
 
 import requests
 from selenium import webdriver
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    StaleElementReferenceException,
-)
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
 from utils_original import settings, system
 
 
@@ -36,9 +32,7 @@ def get_chrome_version():
             continue
 
     try:
-        chrome_path = (
-            chrome_path_64 if os.path.exists(chrome_path_64) else chrome_path_32
-        )
+        chrome_path = chrome_path_64 if os.path.exists(chrome_path_64) else chrome_path_32
         output = subprocess.check_output([chrome_path, "--version"], shell=True)
         version = re.search(r"\d+\.\d+\.\d+\.\d+", output.decode("utf-8")).group(0)
         return version
@@ -57,7 +51,9 @@ def get_chromedriver_url(version):
     Returns:
         str: The URL for downloading the corresponding ChromeDriver.
     """
-    chromedriver_url_template = f"https://storage.googleapis.com/chrome-for-testing-public/{version}/win64/chromedriver-win64.zip"
+    chromedriver_url_template = (
+        f"https://storage.googleapis.com/chrome-for-testing-public/{version}/win64/chromedriver-win64.zip"
+    )
     url_error_msg = f"Error obtaining ChromeDriver for version {version}"
 
     try:
@@ -102,9 +98,7 @@ def download_and_extract_chromedriver(url):
             zip_ref.extractall(dest_folder)
 
         os.remove(zip_path)
-        chromedriver_path = os.path.join(
-            dest_folder, chromedriver_folder, chromedriver_executable
-        )
+        chromedriver_path = os.path.join(dest_folder, chromedriver_folder, chromedriver_executable)
 
         return str(chromedriver_path)
 
@@ -172,9 +166,7 @@ def load_driver(chromedriver_path):
 
         driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
         exceptions_ignore = (NoSuchElementException, StaleElementReferenceException)
-        driver_wait = WebDriverWait(
-            driver, settings.wait_time, ignored_exceptions=exceptions_ignore
-        )
+        driver_wait = WebDriverWait(driver, settings.wait_time, ignored_exceptions=exceptions_ignore)
 
         return driver, driver_wait
 
@@ -194,11 +186,17 @@ def initialize_driver():
     # https://googlechromelabs.github.io/chrome-for-testing/#stable
     computer_name = os.environ["COMPUTERNAME"]
     if computer_name == "DESKTOP-NNVKLJK":
-        hardcoded_chromedriver_path = r"D:\Fausto Stangler\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        hardcoded_chromedriver_path = (
+            r"D:\Fausto Stangler\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        )
     elif computer_name == "AZEVEDO-GAMER":
-        hardcoded_chromedriver_path = r"D:\Fausto Stangler\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        hardcoded_chromedriver_path = (
+            r"D:\Fausto Stangler\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        )
     else:
-        hardcoded_chromedriver_path = r"c:\Users\Fausto\OneDrive\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        hardcoded_chromedriver_path = (
+            r"c:\Users\Fausto\OneDrive\Documentos\Python\FLY\backend\bin\chromedriver-win64\chromedriver.exe"
+        )
     initialize_driver_error_msg = "Failed to load driver from hardcoded path."
     dynamic_driver_error_msg = "Failed to obtain ChromeDriver path dynamically."
 
@@ -209,7 +207,7 @@ def initialize_driver():
         else:
             raise Exception(initialize_driver_error_msg)
 
-    except Exception as initial_error:
+    except Exception:
         try:
             chromedriver_path = get_chromedriver_path()
             if not chromedriver_path:

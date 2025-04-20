@@ -1,13 +1,12 @@
 import datetime
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from threading import Lock
 
 import pandas as pd
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
+
 from utils.base_processor import BaseProcessor
 
 
@@ -19,9 +18,7 @@ class StatementsProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
-        self.tbl_statements_raw = self.config.databases["raw"]["table"][
-            "statements_raw"
-        ]
+        self.tbl_statements_raw = self.config.databases["raw"]["table"]["statements_raw"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
         # Initialize driver and other resources
@@ -33,27 +30,21 @@ class StatementsProcessor(BaseProcessor):
 
         try:
             print(
-                f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%'
+                f"Starting batch {progress['batch_index']}/{progress['total_batches']} "
+                f"{100 * progress['batch_index'] / progress['total_batches']:.02f}%"
             )
             batch_processor = StatementsProcessor()
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch,
-                sub_batch,
-                progress,
-                benchmark_mode=FalseFalseTrue,
+                batch_processor.process_batch, sub_batch, progress, benchmark_mode=False
             )
 
             # Clean up driver after processing
             batch_processor.close_driver()
 
             # Save result to database
-            self.save_to_db(
-                dataframe=result,
-                table_name=self.tbl_statements_raw,
-                db_filepath=self.db_filepath,
-            )
+            self.save_to_db(dataframe=result, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -76,24 +67,15 @@ class StatementsProcessor(BaseProcessor):
                 # Log progress
                 actual_item = progress["batch_start"] + i
                 total_items = progress["scrape_size"] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
                 nsd = row["nsd"]
                 version = f"v{row['version']}"
                 company = row["company_name"]
-                quarter = datetime.datetime.strptime(
-                    row["quarter"], "%Y-%m-%dT%H:%M:%S"
-                ).strftime("%Y-%m")
-                sent_date = datetime.datetime.strptime(
-                    row["sent_date"], "%Y-%m-%dT%H:%M:%S"
-                ).strftime("%Y-%m-%d %H:%M:%S")
-                extra_info = [
-                    worker_info,
-                    nsd,
-                    company,
-                    quarter,
-                    version,
-                    sent_date,
-                ]
+                quarter = datetime.datetime.strptime(row["quarter"], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m")
+                sent_date = datetime.datetime.strptime(row["sent_date"], "%Y-%m-%dT%H:%M:%S").strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                extra_info = [worker_info, nsd, company, quarter, version, sent_date]
                 self.print_info(i, len(sub_batch), start_time, extra_info)
 
             except Exception as e:
@@ -122,16 +104,12 @@ class StatementsProcessor(BaseProcessor):
             list: A list of DataFrames with the processed financial and statements data for the company.
         """
         try:
-            company_quarter_data = (
-                []
-            )  # List to store data for the company in the current quarter
+            company_quarter_data = []  # List to store data for the company in the current quarter
 
             # Extract data from the row
             nsd = row["nsd"]
             company_name = row["company_name"]
-            quarter = pd.to_datetime(
-                row["quarter"], dayfirst=False, errors="coerce"
-            ).strftime("%Y-%m-%d")
+            quarter = pd.to_datetime(row["quarter"], dayfirst=False, errors="coerce").strftime("%Y-%m-%d")
             sector = row["sector"]
             subsector = row["subsector"]
             segment = row["segment"]
@@ -144,15 +122,12 @@ class StatementsProcessor(BaseProcessor):
 
             # Define all statements to be scraped
             statements = (
-                self.config.domain["statements_financial_data"]
-                + self.config.domain["statements_capital_config"]
+                self.config.domain["statements_financial_data"] + self.config.domain["statements_capital_config"]
             )
 
             for cmbGrupo, cmbQuadro in statements:
                 # Determine which scraping method to use
-                if [cmbGrupo, cmbQuadro] in self.config.domain[
-                    "statements_financial_data"
-                ]:
+                if [cmbGrupo, cmbQuadro] in self.config.domain["statements_financial_data"]:
                     df = self._scrape_financial_data(cmbGrupo, cmbQuadro)
                 else:
                     df = self._scrape_statements_data(cmbGrupo, cmbQuadro)
@@ -171,9 +146,7 @@ class StatementsProcessor(BaseProcessor):
                         frame=cmbQuadro,
                     )
                     # Append the processed DataFrame to the list
-                    company_quarter_data.append(
-                        df[self.config.domain["statements_columns"]]
-                    )
+                    company_quarter_data.append(df[self.config.domain["statements_columns"]])
 
             return company_quarter_data
 
@@ -185,31 +158,19 @@ class StatementsProcessor(BaseProcessor):
     def get_targets(self, company_info, existing_nsd, financial_statements):
         """"""
         last_order = "ZZZZZZZZZZ"
-        scrape_order = [
-            "sector",
-            "subsector",
-            "segment",
-            "company_name",
-            "quarter",
-            "version",
-        ]
+        scrape_order = ["sector", "subsector", "segment", "company_name", "quarter", "version"]
 
         try:
             # Assuming `existing_nsd` is your DataFrame and `statements_types` is the list of desired nsd_types
-            nsd_df = existing_nsd[
-                existing_nsd["nsd_type"].isin(self.config.domain["statements_types"])
-            ]
+            nsd_df = existing_nsd[existing_nsd["nsd_type"].isin(self.config.domain["statements_types"])]
 
             # merge nsd and company info
-            nsd_company_df = pd.merge(
-                nsd_df, company_info, on="company_name", how="inner"
-            )
+            nsd_company_df = pd.merge(nsd_df, company_info, on="company_name", how="inner")
             try:
-                targets = nsd_company_df[
-                    ~nsd_company_df["nsd"].isin(financial_statements["nsd"].unique())
-                ]
-            except:
+                targets = nsd_company_df[~nsd_company_df["nsd"].isin(financial_statements["nsd"].unique())]
+            except Exception as e:
                 targets = nsd_company_df
+                self.log_error(e)
 
             # Custom sorting to place empty fields last
             targets.loc[targets["sector"] == "", "sector"] = last_order
@@ -263,16 +224,12 @@ class StatementsProcessor(BaseProcessor):
             thousand = self.wait_forever(self.driver_wait, xpath)
 
             xpath = '//*[@id="TituloTabelaSemBorda"]'
-            thousand = self.driver_wait.until(
-                EC.presence_of_element_located((By.XPATH, xpath))
-            ).text
+            thousand = self.driver_wait.until(EC.presence_of_element_located((By.XPATH, xpath))).text
             thousand = 1000 if "Mil" in thousand else 1
 
             html_content = self.driver.page_source
             df1 = pd.read_html(StringIO(html_content), header=0)[0]
-            df2 = pd.read_html(StringIO(html_content), header=0, thousands=".")[
-                0
-            ].fillna(0)
+            df2 = pd.read_html(StringIO(html_content), header=0, thousands=".")[0].fillna(0)
 
             split_col = 2
             total_col = 3
@@ -280,9 +237,7 @@ class StatementsProcessor(BaseProcessor):
             df2 = df2.iloc[:, 0:total_col]
             df1.columns = self.config.domain["financial_statements_columns"]
             df2.columns = self.config.domain["financial_statements_columns"]
-            df = pd.concat(
-                [df1.iloc[:, :split_col], df2.iloc[:, split_col:total_col]], axis=1
-            )
+            df = pd.concat([df1.iloc[:, :split_col], df2.iloc[:, split_col:total_col]], axis=1)
 
             col = df.iloc[:, split_col].astype(str)
             col = col.str.replace(".", "", regex=False)
@@ -292,12 +247,8 @@ class StatementsProcessor(BaseProcessor):
             df.iloc[:, split_col] = col
 
             try:
-                df = df[
-                    ~df[
-                        self.config.domain["financial_statements_columns"][0]
-                    ].str.startswith(drop_items)
-                ]
-            except Exception as e:
+                df = df[~df[self.config.domain["financial_statements_columns"][0]].str.startswith(drop_items)]
+            except Exception:
                 pass
 
             # selenium exit frame
@@ -305,7 +256,7 @@ class StatementsProcessor(BaseProcessor):
 
             return df
 
-        except Exception as e:
+        except Exception:
             # self.log_error(e)
             return None
 
@@ -349,24 +300,16 @@ class StatementsProcessor(BaseProcessor):
             # Extract the required values
             data = {
                 self.config.domain["financial_statements_columns"][0]: [],  # 'account'
-                self.config.domain["financial_statements_columns"][
-                    1
-                ]: [],  # 'description'
+                self.config.domain["financial_statements_columns"][1]: [],  # 'description'
                 self.config.domain["financial_statements_columns"][2]: [],  # 'value'
             }
 
             # Extract values using the XPaths
             acoes_on = (
-                self.driver.find_element(By.XPATH, acoes_on_xpath)
-                .text.strip()
-                .replace(".", "")
-                .replace(",", ".")
+                self.driver.find_element(By.XPATH, acoes_on_xpath).text.strip().replace(".", "").replace(",", ".")
             )
             acoes_pn = (
-                self.driver.find_element(By.XPATH, acoes_pn_xpath)
-                .text.strip()
-                .replace(".", "")
-                .replace(",", ".")
+                self.driver.find_element(By.XPATH, acoes_pn_xpath).text.strip().replace(".", "").replace(",", ".")
             )
             acoes_on_tesouraria = (
                 self.driver.find_element(By.XPATH, acoes_on_tesouraria_xpath)
@@ -408,7 +351,7 @@ class StatementsProcessor(BaseProcessor):
 
             return df
 
-        except Exception as e:
+        except Exception:
             # self.log_error(f"Error processing statements data: {e}")
             return None
 
@@ -419,15 +362,9 @@ class StatementsProcessor(BaseProcessor):
             self.tbl_nsd = self.config.databases["raw"]["table"]["nsd"]
 
             # Load necessary data
-            company_info = self.load_data(
-                table_name=self.tbl_company, db_filepath=self.db_filepath
-            )
-            existing_nsd = self.load_data(
-                table_name=self.tbl_nsd, db_filepath=self.db_filepath
-            )
-            financial_statements = self.load_data(
-                table_name=self.tbl_statements_raw, db_filepath=self.db_filepath
-            )
+            company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
+            existing_nsd = self.load_data(table_name=self.tbl_nsd, db_filepath=self.db_filepath)
+            financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
 
             # Identify scrape targets
             targets = self.get_targets(company_info, existing_nsd, financial_statements)
@@ -439,20 +376,12 @@ class StatementsProcessor(BaseProcessor):
 
             # Process targets using threading or sequential logic
             result = self.run(
-                targets,
-                thread=thread,
-                module_name=self.inspect.getmodule(
-                    self.inspect.currentframe()
-                ).__name__,
+                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(
-                    dataframe=result,
-                    table_name=self.tbl_statements_raw,
-                    db_filepath=self.db_filepath,
-                )
+                self.save_to_db(dataframe=result, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

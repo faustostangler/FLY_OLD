@@ -5,15 +5,12 @@ from threading import Lock
 
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
+
 from utils.base_processor import BaseProcessor
 
-import requests
 
 class CompanyProcessor(BaseProcessor):
     """Processar dados de empresas."""
@@ -35,18 +32,14 @@ class CompanyProcessor(BaseProcessor):
 
         try:
             print(
-                f'Starting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%'
+                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
             )
 
             batch_processor = CompanyProcessor()
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch,
-                sub_batch,
-                payload, 
-                progress,
-                benchmark_mode=False,
+                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
             # close instance
@@ -54,10 +47,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Save result to database
             self.save_to_db(
-                dataframe=result,
-                table_name=self.tbl_company_name,
-                db_filepath=self.db_filepath,
-                alert=False, 
+                dataframe=result, table_name=self.tbl_company_name, db_filepath=self.db_filepath, alert=False
             )
 
         except Exception as e:
@@ -74,7 +64,7 @@ class CompanyProcessor(BaseProcessor):
         for i, (_, row) in enumerate(sub_batch.iterrows()):
             try:
                 company_name = row["company_name"]
-                company_info = (row.to_dict())  # Convert the row to a dictionary for processing
+                company_info = row.to_dict()  # Convert the row to a dictionary for processing
 
                 # Fetch and process company datails per driver
                 driver, driver_wait = self.driver, self.driver_wait
@@ -87,13 +77,8 @@ class CompanyProcessor(BaseProcessor):
                 # Log proYESgress
                 actual_item = progress["batch_start"] + i
                 total_items = progress["scrape_size"]
-                worker_info = f"Worker {progress['thread_id']} Item {100*(1+actual_item)/total_items:.02f}% ({1+actual_item}/{total_items})"
-                extra_info = [
-                    worker_info,
-                    company_info["ticker"],
-                    company_data.get("cvm_code", ""),
-                    company_name,
-                ]
+                worker_info = f"Worker {progress['thread_id']} Item {100 * (1 + actual_item) / total_items:.02f}% ({1 + actual_item}/{total_items})"
+                extra_info = [worker_info, company_info["ticker"], company_data.get("cvm_code", ""), company_name]
                 self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             except Exception as e:
@@ -112,30 +97,20 @@ class CompanyProcessor(BaseProcessor):
 
             driver.get(self.config.domain["company_url"])
 
-            # Verifica se foi bloqueado pela Cloudflare
-            if (
-                "Error 1015" in driver.page_source or
-                "rate limited" in driver.page_source or
-                "Access Denied" in driver.page_source or
-                "cloudflare" in driver.page_source.lower() or
-                "<app-root></app-root>" in driver.page_source and len(driver.page_source.strip()) < 10000  # conteúdo muito leve
-            ):
-                raise Exception("Bloqueado pela Cloudflare - pulando empresa")
+            content = driver.page_source
+            content = self.detect_dns_block(content)
 
-            # human = self._simulate_human_interaction(driver)
+            if not content:
+                return False
 
             search_field_xpath = '//*[@id="keyword"]'
             search_button_xpath = '//*[@id="divContainerIframeB3"]/form/button'
 
-            max_retries = self.config.selenium.get(
-                "max_retries", 5
-            )  # Default to 5 retries if not set
+            max_retries = self.config.selenium.get("max_retries", 5)  # Default to 5 retries if not set
             retry_count = 0
 
             while retry_count < max_retries:
-                self._search_company(
-                    company_name, search_field_xpath, driver, driver_wait
-                )  # Try searching again
+                self._search_company(company_name, search_field_xpath, driver, driver_wait)  # Try searching again
 
                 # Wait for the button to appear after searching
                 if self.wait_forever(self.driver_wait, search_button_xpath):
@@ -143,12 +118,10 @@ class CompanyProcessor(BaseProcessor):
 
                 self.test_internet()  # Check connection before retrying
                 retry_count += 1
-                
+
             # If the search was never successful, handle the failure
             if retry_count == max_retries:
-                raise TimeoutException(
-                    f"Company search failed after {max_retries} retries."
-                )
+                raise TimeoutException(f"Company search failed after {max_retries} retries.")
 
             # Extract details
             card_xpath = '//div[contains(@class, "card-body")]'
@@ -171,13 +144,13 @@ class CompanyProcessor(BaseProcessor):
                         self.test_internet()
                         driver.refresh()
 
-                    human = self._simulate_human_interaction(driver)
+                    self._simulate_human_interaction(driver)
 
                     # Aguarda botão "Voltar" da tela de detalhes
                     max_retries = self.config.selenium.get("max_retries", 5)
                     retry_count = 0
 
-                    xpath = '/html/body'
+                    xpath = "/html/body"
                     while not self.wait_forever(driver_wait, xpath, max_retries=1) and retry_count < max_retries:
                         self.test_internet()
                         driver.refresh()
@@ -186,7 +159,7 @@ class CompanyProcessor(BaseProcessor):
                     # Agora sim, extrai os dados com BeautifulSoup (após o click e carregamento)
                     xpath_company_card = '//*[@id="divContainerIframeB3"]/app-companies-overview'
                     xpath_company_button = '//*[@id="divContainerIframeB3"]//button[text()="Voltar"]'
-                    xpath_company_body = '/html/body'
+                    xpath_company_body = "/html/body"
 
                     retry_count = 0
 
@@ -203,7 +176,7 @@ class CompanyProcessor(BaseProcessor):
                         retry_count += 1
 
                     company_soup = BeautifulSoup(driver.page_source, "html.parser")
-                    
+
                     company_details = self._extract_company_details(company_soup, driver.current_url)
                     company_info.update(company_details)
                     break
@@ -216,7 +189,7 @@ class CompanyProcessor(BaseProcessor):
             dataframe=pd.DataFrame([company_info]),
             table_name=self.tbl_company_name,
             db_filepath=self.db_filepath,
-            alert=False, 
+            alert=False,
         )
 
         return company_info
@@ -263,27 +236,15 @@ class CompanyProcessor(BaseProcessor):
 
             # Extract relevant data fields
             cnpj_element = company_info.find(text="CNPJ")
-            cnpj = (
-                re.sub(r"\D", "", cnpj_element.find_next("p", class_="card-linha").text)
-                if cnpj_element
-                else ""
-            )
+            cnpj = re.sub(r"\D", "", cnpj_element.find_next("p", class_="card-linha").text) if cnpj_element else ""
 
             # Additional fields like activity, website, etc.
             activity_element = company_info.find(text="Atividade Principal")
-            activity = (
-                activity_element.find_next("p", class_="card-linha").text
-                if activity_element
-                else ""
-            )
+            activity = activity_element.find_next("p", class_="card-linha").text if activity_element else ""
 
             # Additional processing for sector and listing
             sector_element = company_info.find(text="Classificação Setorial")
-            sector_classification = (
-                sector_element.find_next("p", class_="card-linha").text
-                if sector_element
-                else ""
-            )
+            sector_classification = sector_element.find_next("p", class_="card-linha").text if sector_element else ""
 
             # Extract sector, subsector, segment information
             sectors = sector_classification.split("/")
@@ -297,11 +258,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Extract registrar
             registrar_element = company_soup.find(text="Escriturador")
-            registrar = (
-                registrar_element.find_next("span").text.strip()
-                if registrar_element
-                else ""
-            )
+            registrar = registrar_element.find_next("span").text.strip() if registrar_element else ""
 
             company_details = {
                 "cvm_code": cvm_code,
@@ -333,9 +290,9 @@ class CompanyProcessor(BaseProcessor):
             # get raw code
             try:
                 select_page_xpath = '//*[@id="selectPage"]'
-                pagination_xpath = ('//*[@id="listing_pagination"]/pagination-template/ul')
+                pagination_xpath = '//*[@id="listing_pagination"]/pagination-template/ul'
                 nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
-                next_page_xpath = ('//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a')
+                next_page_xpath = '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
 
                 self.driver, self.driver_wait = self._initialize_driver()
 
@@ -370,7 +327,6 @@ class CompanyProcessor(BaseProcessor):
 
                         self.click(next_page_xpath, self.driver_wait)
                         while retry_count < max_retries:
-
                             try:
                                 page_new = self.driver.find_element(By.XPATH, xpath_page).text
                                 if page_new != page_actual:
@@ -398,16 +354,15 @@ class CompanyProcessor(BaseProcessor):
 
                 for card in cards:
                     try:
-                        extracted_info = {key: self.clean_text(card.find(details["tag"], class_=details["class"]).text) for key, details in field_mapping.items()}
+                        extracted_info = {
+                            key: self.clean_text(card.find(details["tag"], class_=details["class"]).text)
+                            for key, details in field_mapping.items()
+                        }
 
                         listing = extracted_info["listing"]
                         if listing:
-                            for abbr, full_name in self.config.domain[
-                                "governance_levels"
-                            ].items():
-                                new_listing = self.clean_text(
-                                    listing.replace(abbr, full_name)
-                                )
+                            for abbr, full_name in self.config.domain["governance_levels"].items():
+                                new_listing = self.clean_text(listing.replace(abbr, full_name))
                                 if new_listing != listing:
                                     extracted_info["listing"] = new_listing
                                     break
@@ -428,9 +383,7 @@ class CompanyProcessor(BaseProcessor):
             )
 
         except Exception as e:
-            df = pd.DataFrame(
-                columns=["company_name", "ticker", "trading_name", "listing"]
-            )
+            df = pd.DataFrame(columns=["company_name", "ticker", "trading_name", "listing"])
             self.log_error(e)
 
         return df
@@ -439,10 +392,8 @@ class CompanyProcessor(BaseProcessor):
         """"""
         result = []
         try:
-            result = web_companies[
-                ~web_companies["company_name"].isin(local_companies["company_name"])
-            ]
-        except Exception as e:
+            result = web_companies[~web_companies["company_name"].isin(local_companies["company_name"])]
+        except Exception:
             # self.log_error(e)
             result = web_companies
 
@@ -464,15 +415,13 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
-            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__,)
+            result = self.run(
+                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
+            )
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(
-                    result,
-                    table_name=self.tbl_company_name,
-                    db_filepath=self.db_filepath,
-                )
+                self.save_to_db(result, table_name=self.tbl_company_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")
