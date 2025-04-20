@@ -64,15 +64,16 @@ class BaseProcessor:
                 )
             else:
                 batches = self._split_batches(data, self.config.scraping["max_workers"])
+                items_per_batch = len(batches[0])
 
             if thread:
                 print(
-                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each'
+                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each'
                 )
                 results = self._process_with_threads(batches, payload=payload)
             else:
                 print(
-                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {1+int(data.shape[0]/self.config.scraping["max_workers"])} items each'
+                    f'From {module_name.split(".")[-1]}: processing {data.shape[0]} items in {self.config.scraping["max_workers"]} batches of up to {items_per_batch} items each'
                 )
                 results = self._process_sequentially(batches, payload=payload)
 
@@ -164,6 +165,7 @@ class BaseProcessor:
             start_time = time.time()
             total_scrape_size = sum(len(b) for b in batches)
             cumulative = 0  # will keep track of the global start index for each batch
+            items_per_batch = len(batches[0])
 
             with ThreadPoolExecutor(
                 max_workers=self.config.scraping["max_workers"]
@@ -172,6 +174,7 @@ class BaseProcessor:
                 for batch_index, batch in enumerate(batches):
                     time.sleep(self.dynamic_sleep() * 5)
                     progress = {
+                        "items_per_batch": items_per_batch, 
                         "batch_index": batch_index,
                         "total_batches": len(batches),
                         "batch_start": cumulative,  # actual starting index in the overall data,
@@ -208,13 +211,15 @@ class BaseProcessor:
         start_time = time.time()
         total_batches = len(batches)
         total_scrape_size = sum(len(b) for b in batches)
+        items_per_batch = len(batches[0])
 
         for batch_index, batch in enumerate(batches):
             # Prepare progress dictionary
             progress = {
+                "items_per_batch": items_per_batch, 
                 "batch_index": batch_index,
                 "total_batches": total_batches,
-                "batch_start": batch_index * self.config.scraping["batch_size"],
+                "batch_start": batch_index * items_per_batch, # self.config.scraping["batch_size"],
                 "scrape_size": total_scrape_size,
                 "start_time": start_time,
                 "thread_id": batch_index
@@ -777,47 +782,38 @@ class BaseProcessor:
             self.log_error(e)
 
     def timed_input(self, prompt, timeout=None, default="YES"):
-        """Display a prompt and return the user's input, with a timeout and
-        pre-filled value.
+        """
+        Exibe um prompt e aguarda input do usuário por um tempo limitado.
 
-        Parameters:
-        - prompt (str): The input prompt to display.
-        - timeout (int): The number of seconds to wait for input.
-        - default (str): The default value to return if timeout is reached.
+        Args:
+            prompt (str): A mensagem que será exibida ao usuário.
+            timeout (int): Tempo máximo em segundos para aguardar a resposta.
+            default (str): Valor padrão caso o tempo se esgote.
 
         Returns:
-        - str: The user's input or the default value if timeout is reached.
+            str: Resposta do usuário ou valor padrão.
         """
         try:
-            if timeout == None:
-                timeout = self.config.selenium["wait_time"]
+            timeout = timeout or self.config.selenium["wait_time"]
 
-            prefill_thread = threading.Thread(
-                target=self.prefill_input, args=(default,)
-            )
-            prefill_thread.start()
+            result = []
 
-            print(
-                f"{prompt} (default: {default}) [You have {timeout} seconds to answer]: ",
-                end="",
-                flush=True,
-            )
+            def ask_input():
+                try:
+                    result.append(input(prompt))
+                except Exception:
+                    result.append(default)
 
-            # Start a thread to run the input() call, which will block until the user provides input
-            input_thread = threading.Thread(target=lambda: input())
-            input_thread.start()
+            thread = threading.Thread(target=ask_input)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout)
 
-            # Wait for the input or timeout
-            input_thread.join(timeout=timeout)
-
-            if input_thread.is_alive():
-                # print(f'\nNo input provided within {timeout} seconds. Using default: {default}')
-                return default
-            else:
-                return input()
         except Exception as e:
             self.log_error(e)
 
+        return result[0] if result else default
+    
     def dynamic_sleep(self):
         """
         Dynamically adjusts the sleep time based on the system's CPU usage.

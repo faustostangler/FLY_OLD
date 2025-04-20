@@ -57,6 +57,7 @@ class CompanyProcessor(BaseProcessor):
                 dataframe=result,
                 table_name=self.tbl_company_name,
                 db_filepath=self.db_filepath,
+                alert=False, 
             )
 
         except Exception as e:
@@ -85,17 +86,15 @@ class CompanyProcessor(BaseProcessor):
 
                 # Log proYESgress
                 actual_item = progress["batch_start"] + i
-                total_items = progress["scrape_size"] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100*actual_item/total_items:.02f}% ({actual_item}/{total_items})"
+                total_items = progress["scrape_size"]
+                worker_info = f"Worker {progress['thread_id']} Item {100*(1+actual_item)/total_items:.02f}% ({1+actual_item}/{total_items})"
                 extra_info = [
                     worker_info,
                     company_info["ticker"],
                     company_data.get("cvm_code", ""),
                     company_name,
                 ]
-                self.print_info(
-                    i, len(sub_batch), start_time, extra_info, indent_level=0
-                )
+                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             except Exception as e:
                 self.log_error(f"Error processing row {i}: {e}")
@@ -334,13 +333,9 @@ class CompanyProcessor(BaseProcessor):
             # get raw code
             try:
                 select_page_xpath = '//*[@id="selectPage"]'
-                pagination_xpath = (
-                    '//*[@id="listing_pagination"]/pagination-template/ul'
-                )
+                pagination_xpath = ('//*[@id="listing_pagination"]/pagination-template/ul')
                 nav_bloc_xpath = '//*[@id="nav-bloco"]/div'
-                next_page_xpath = (
-                    '//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a'
-                )
+                next_page_xpath = ('//*[@id="listing_pagination"]/pagination-template/ul/li[10]/a')
 
                 self.driver, self.driver_wait = self._initialize_driver()
 
@@ -356,6 +351,8 @@ class CompanyProcessor(BaseProcessor):
                 raw_code = []
                 start_time = time.time()
                 for i, page in enumerate(range(0, pages_total + 1)):
+                    time.sleep(self.dynamic_sleep())
+
                     self.wait_forever(self.driver_wait, nav_bloc_xpath)
 
                     # Captura a página atual
@@ -401,12 +398,7 @@ class CompanyProcessor(BaseProcessor):
 
                 for card in cards:
                     try:
-                        extracted_info = {
-                            key: self.clean_text(
-                                card.find(details["tag"], class_=details["class"]).text
-                            )
-                            for key, details in field_mapping.items()
-                        }
+                        extracted_info = {key: self.clean_text(card.find(details["tag"], class_=details["class"]).text) for key, details in field_mapping.items()}
 
                         listing = extracted_info["listing"]
                         if listing:
@@ -460,9 +452,7 @@ class CompanyProcessor(BaseProcessor):
         """Main method to process data."""
         try:
             # Load existing and new companies
-            local_companies = self.load_data(
-                table_name=self.tbl_company_name, db_filepath=self.db_filepath
-            )
+            local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
             web_companies = self.get_web_companies()
 
             # Identify scrape targets
@@ -474,13 +464,7 @@ class CompanyProcessor(BaseProcessor):
                 return True
 
             # Run batch processing
-            result = self.run(
-                targets,
-                thread=thread,
-                module_name=self.inspect.getmodule(
-                    self.inspect.currentframe()
-                ).__name__,
-            )
+            result = self.run(targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__,)
 
             # Save processed data
             if not result.empty:

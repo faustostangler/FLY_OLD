@@ -168,7 +168,7 @@ class NsdProcessor(BaseProcessor):
 
             # Parse the response HTML
             html = response.text
-            result = self._parse_nsd_data(response.text, nsd)
+            result = self._parse_nsd_data(html, nsd)
 
         except Exception as e:
             self.log_error(f"Error fetching NSD {nsd}: {e}")

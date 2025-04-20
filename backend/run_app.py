@@ -23,7 +23,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get nsd information
         run_nsd_processor = "N"
         prompt = "Want to update nsd information? (YES/NO): "
-        # run_nsd_processor = base.timed_input(prompt)
+        run_nsd_processor = base.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith("Y"):
             nsd_processor = NsdProcessor()
             nsd_processor.main(thread=False)
