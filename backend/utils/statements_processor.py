@@ -18,8 +18,11 @@ class StatementsProcessor(BaseProcessor):
         self.db_lock = Lock()  # Initialize a threading Lock
 
         # Initialize database and table names
+        self.tbl_company = self.config.databases["raw"]["table"]["company_info"]
+        self.tbl_nsd = self.config.databases["raw"]["table"]["nsd"]
         self.tbl_statements_raw = self.config.databases["raw"]["table"]["statements_raw"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
+
 
         # Initialize driver and other resources
         self.driver, self.driver_wait = self._initialize_driver()
@@ -161,12 +164,13 @@ class StatementsProcessor(BaseProcessor):
         scrape_order = ["sector", "subsector", "segment", "company_name", "quarter", "version"]
 
         try:
-            # Assuming `existing_nsd` is your DataFrame and `statements_types` is the list of desired nsd_types
+            # nsd_df keep only valid types
             nsd_df = existing_nsd[existing_nsd["nsd_type"].isin(self.config.domain["statements_types"])]
 
             # merge nsd and company info
             nsd_company_df = pd.merge(nsd_df, company_info, on="company_name", how="inner")
             try:
+                # remove already processed nsd (existing in financial_statements df)
                 targets = nsd_company_df[~nsd_company_df["nsd"].isin(financial_statements["nsd"].unique())]
             except Exception as e:
                 targets = nsd_company_df
@@ -358,9 +362,6 @@ class StatementsProcessor(BaseProcessor):
     def main(self, thread=True):
         """Main method to process data."""
         try:
-            self.tbl_company = self.config.databases["raw"]["table"]["company_info"]
-            self.tbl_nsd = self.config.databases["raw"]["table"]["nsd"]
-
             # Load necessary data
             company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
             existing_nsd = self.load_data(table_name=self.tbl_nsd, db_filepath=self.db_filepath)
