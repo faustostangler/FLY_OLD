@@ -1773,41 +1773,44 @@ class BaseProcessor:
         Returns:
             str or bool: Conteúdo da página ou False se bloqueado.
         """
-        self._simulate_human_interaction(driver)
-        if not content:
-            content = driver.page_source.lower().strip()
+        try:
+            self._simulate_human_interaction(driver)
+            if not content:
+                content = driver.page_source.lower().strip()
 
-            # Verifica bloqueio tentando encontrar elemento exclusivo do erro 1015
-            cloudflare_xpath = "//div[@id='cf-error-details']"
-            is_blocked = self.wait_forever(driver_wait, cloudflare_xpath, max_retries=1) is not False
-        else:
-            block_indicators = [
-                "error 1015",
-                "rate limited",
-                "access denied",
-                "cloudflare",
-                "ray id", 
-            ]
+                # Verifica bloqueio tentando encontrar elemento exclusivo do erro 1015
+                cloudflare_xpath = "//div[@id='cf-error-details']"
+                is_blocked = self.wait_forever(driver_wait, cloudflare_xpath, max_retries=1) is not False
+            else:
+                block_indicators = [
+                    "error 1015",
+                    "rate limited",
+                    "access denied",
+                    "cloudflare",
+                    "ray id", 
+                ]
 
-            is_blocked = any(term in content for term in block_indicators) or (
-                "<app-root></app-root>" in content and len(content) < 10000
-            )
+                is_blocked = any(term in content for term in block_indicators) or (
+                    "<app-root></app-root>" in content and len(content) < 10000
+                )
 
-        is_blocked = block if block else is_blocked
+            is_blocked = block if block else is_blocked
 
-        filename = f"{'dns_block_' if is_blocked else ''}{title}.html"
+            filename = f"{'dns_block_' if is_blocked else ''}{title}.html"
 
-        if debug:
-            temp_path = os.path.join(self.config.paths["temp_folder"], filename)
-            try:
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-            except Exception as e:
-                self.log_error(f"Failed to save blocked HTML content: {e}")
+            if debug:
+                temp_path = os.path.join(self.config.paths["temp_folder"], filename)
+                try:
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                except Exception as e:
+                    self.log_error(f"Failed to save blocked HTML content: {e}")
 
-        if is_blocked:
-            time.sleep(self.config.selenium['wait_time']) * self.dynamic_sleep()
-            content = False
+            if is_blocked:
+                time.sleep(self.config.selenium['wait_time'] * self.dynamic_sleep())
+                content = False
+        except Exception as e:
+            self.log_error(e)
 
         return content
 
