@@ -82,8 +82,9 @@ MANIFEST
 *.csv
 *.db-journal
 
-# Binary directories
+# Binary and Temp directories
 bin/
+temp/
 
 # Document files
 *.doc
