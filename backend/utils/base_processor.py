@@ -153,7 +153,7 @@ class BaseProcessor:
                     progress = {
                         "items_per_batch": items_per_batch,
                         "batch_index": batch_index,
-                        "total_batches": len(batches),
+                        "total_batches": total_batches,
                         "batch_start": cumulative,  # actual starting index in the overall data,
                         "scrape_size": total_scrape_size,
                         "start_time": start_time,
@@ -672,9 +672,9 @@ class BaseProcessor:
                 return element
             except Exception:
                 attempt += 1
-                self.driver.refresh()
                 if max_retries and attempt >= max_retries:
                     return False
+                self.driver.refresh()
                 time.sleep(self.config.selenium["wait_time"])
                 # return False
 
@@ -1291,26 +1291,28 @@ class BaseProcessor:
 
             # 2. Load database
             try:
-                # basic parameters
-                batch_size = self.config.scraping["chunk_size"]
-
                 # Total number of batches
                 batch_size = self.config.scraping["chunk_size"]
                 batch_number = (total_rows // batch_size) + (1 if total_rows % batch_size > 0 else 0)
-                size = batch_number
 
                 batch_threads = min(self.config.scraping["max_workers"], batch_number)
                 offsets = range(0, total_rows, batch_size)
+
+                if batch_number == 0 or batch_threads == 0:
+                    schema_str = self.config.schemas[database_name][table_name]
+                    columns_types = self.get_columns(schema_str)
+                    df = pd.DataFrame(columns=columns_types.keys()).astype(columns_types)
+                    return df  # Nothing to process
 
                 start_time = time.time()
 
                 # Internal method for batch sql reading
                 def read_batch(
-                    offset, batch_number, table_name, query, params, size, start_time=start_time, alert=True
+                    offset, batch_number, table_name, query, params, start_time=start_time, alert=True
                 ):
                     if alert:
-                        extra_info = [f"Parte {batch_number + 1}/{size}"]
-                        self.print_info(batch_number, size, start_time, extra_info)
+                        extra_info = [f"Parte {batch_number + 1}/{batch_number}"]
+                        self.print_info(batch_number, start_time, extra_info)
 
                     # Retry logic for database connection
                     attempt = 0
@@ -1340,7 +1342,7 @@ class BaseProcessor:
                     with tqdm(total=total_rows, unit=" rows", desc=f"{table_name}", leave=False) as pbar:
                         for batch_number, offset in enumerate(offsets):
                             task = executor.submit(
-                                read_batch, offset, batch_number, table_name, query, params, size, alert=False
+                                read_batch, offset, batch_number, table_name, query, params, alert=False
                             )
                             tasks.append(task)
                             time.sleep(1)
@@ -1476,6 +1478,53 @@ class BaseProcessor:
             print(sql)
             dataframe.to_csv("dataframe.csv", index=False)
             self.log_error(f"Error saving to database: {e}")
+
+    def get_columns(self, schema_str):
+        """
+        Extract column names and corresponding pandas dtypes from a SQL CREATE TABLE string.
+
+        Returns:
+            dict: {column_name: pandas_dtype}
+        """
+        try:
+            match = re.search(r"\((.*?)\)\s*(;|\n)", schema_str, re.DOTALL)
+            if not match:
+                return {}
+
+            column_block = match.group(1)
+            column_lines = column_block.splitlines()
+
+            col_type_dict = {}
+
+            for line in column_lines:
+                line = line.strip().strip(",")
+                if not line or line.upper().startswith("PRIMARY KEY") or line.upper().startswith("FOREIGN KEY"):
+                    continue
+
+                parts = line.split()
+                if len(parts) < 2:
+                    continue  # Skip invalid lines
+
+                col_name = parts[0]
+                sql_type = parts[1].upper()
+
+                # SQL to pandas dtype mapping
+                if "INT" in sql_type:
+                    pandas_type = "Int64"
+                elif "REAL" in sql_type or "FLOAT" in sql_type or "DECIMAL" in sql_type:
+                    pandas_type = "float"
+                elif "TEXT" in sql_type or "CHAR" in sql_type:
+                    pandas_type = "string"
+                else:
+                    pandas_type = "object"  # Default fallback
+
+                col_type_dict[col_name] = pandas_type
+
+            return col_type_dict
+
+        except Exception as e:
+            self.log_error(e)
+            return {}
 
     def _get_primary_key(self, table_name, db_filepath):
         """"""
@@ -1711,26 +1760,54 @@ class BaseProcessor:
                 pass
             time.sleep(wait_time)  # Wait before retrying
 
-    def detect_dns_block(self, content):
+    def detect_dns_block(self, title, driver=False, driver_wait=False, content=False, debug=False, block=False):
         """
         Detecta se uma resposta HTML foi bloqueada pela Cloudflare.
         Funciona com Selenium (driver.page_source) e requests (response.text).
+        
+        Args:
+            title (str): Título para o arquivo de debug.
+            driver (WebDriver): Instância do Selenium WebDriver.
+            debug (bool): Indica se deve salvar o HTML para debug.
+
+        Returns:
+            str or bool: Conteúdo da página ou False se bloqueado.
         """
-        content = content.lower().strip()
+        self._simulate_human_interaction(driver)
+        if not content:
+            content = driver.page_source.lower().strip()
 
-        block_indicators = [
-            "error 1015",  # Limite de requisições
-            "rate limited",  # Cloudflare ou servidor com throttle
-            "access denied",  # Acesso negado via firewall
-            "cloudflare",  # Marcas explícitas
-        ]
+            # Verifica bloqueio tentando encontrar elemento exclusivo do erro 1015
+            cloudflare_xpath = "//div[@id='cf-error-details']"
+            is_blocked = self.wait_forever(driver_wait, cloudflare_xpath, max_retries=1) is not False
+        else:
+            block_indicators = [
+                "error 1015",
+                "rate limited",
+                "access denied",
+                "cloudflare",
+                "ray id", 
+            ]
 
-        if any(term in content for term in block_indicators):
-            return False
+            is_blocked = any(term in content for term in block_indicators) or (
+                "<app-root></app-root>" in content and len(content) < 10000
+            )
 
-        # Alguns sites retornam um app vazio quando bloqueado
-        if "<app-root></app-root>" in content and len(content) < 10000:
-            return False
+        is_blocked = block if block else is_blocked
+
+        filename = f"{'dns_block_' if is_blocked else ''}{title}.html"
+
+        if debug:
+            temp_path = os.path.join(self.config.paths["temp_folder"], filename)
+            try:
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except Exception as e:
+                self.log_error(f"Failed to save blocked HTML content: {e}")
+
+        if is_blocked:
+            time.sleep(self.config.selenium['wait_time']) * self.dynamic_sleep()
+            content = False
 
         return content
 

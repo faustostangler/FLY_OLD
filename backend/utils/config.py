@@ -101,6 +101,7 @@ class Config:
                     "statements_raw": tbl_statements_raw,
                     "statements_normalized": tbl_statements_normalized,
                     "statements_corp_events": tbl_statements_corp_events,
+                    "idx_statements_ready": idx_statements_ready,
                     # Caso surjam outras tabelas intermediárias, adicionar aqui
                 },
                 "index": {
