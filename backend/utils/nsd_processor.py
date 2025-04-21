@@ -140,7 +140,7 @@ class NsdProcessor(BaseProcessor):
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(html)
 
-            html = self.detect_dns_block(html)
+            html = self.detect_dns_block(nsd, content=html, debug=True)
 
             # Parse the response HTML
             html = response.text

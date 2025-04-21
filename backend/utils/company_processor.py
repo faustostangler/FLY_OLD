@@ -72,13 +72,16 @@ class CompanyProcessor(BaseProcessor):
                 company_data = self._fetch_and_process_company(company_name, company_info, driver, driver_wait)
                 # self.close_driver(driver)
 
-                result.append(company_data)
-
-                # Log proYESgress
                 actual_item = progress["batch_start"] + i
                 total_items = progress["scrape_size"]
                 worker_info = f"Worker {progress['thread_id']} Item {100 * (1 + actual_item) / total_items:.02f}% ({1 + actual_item}/{total_items})"
-                extra_info = [worker_info, company_info["ticker"], company_data.get("cvm_code", ""), company_name]
+                extra_info = [worker_info, company_info["ticker"], 'skipped' , company_name, 'ACCESS DENIED by RATE LIMIT']
+
+                if company_data:
+                    extra_info = [worker_info, company_info["ticker"], company_data.get("cvm_code", ""), company_name]
+                    result.append(company_data)
+
+                # Log progress
                 self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             except Exception as e:
@@ -97,10 +100,8 @@ class CompanyProcessor(BaseProcessor):
 
             driver.get(self.config.domain["company_url"])
 
-            content = driver.page_source
-            content = self.detect_dns_block(content)
-
-            if not content:
+            passed_dns_content = self.detect_dns_block(company_name, driver, driver_wait)
+            if not passed_dns_content:
                 return False
 
             search_field_xpath = '//*[@id="keyword"]'
@@ -144,8 +145,6 @@ class CompanyProcessor(BaseProcessor):
                         self.test_internet()
                         driver.refresh()
 
-                    self._simulate_human_interaction(driver)
-
                     # Aguarda botão "Voltar" da tela de detalhes
                     max_retries = self.config.selenium.get("max_retries", 5)
                     retry_count = 0
@@ -174,6 +173,10 @@ class CompanyProcessor(BaseProcessor):
 
                         self.click(card_xpath, driver_wait)
                         retry_count += 1
+
+                    passed_dns_content = self.detect_dns_block(company_name, driver, driver_wait, debug=True)
+                    if not passed_dns_content:
+                        return False
 
                     company_soup = BeautifulSoup(driver.page_source, "html.parser")
 
@@ -314,10 +317,9 @@ class CompanyProcessor(BaseProcessor):
 
                     # Captura a página atual
                     xpath_page = '//*[@id="listing_pagination"]/pagination-template/ul/li[@class="current"]/span[2]'
-                    try:
-                        page_actual = self.wait_forever(self.driver_wait, xpath_page).text
-                    except:
-                        page_actual = None
+                    
+                    page_actual = self.wait_forever(self.driver_wait, xpath_page)
+                    page_actual = page_actual.text if page_actual else None
 
                     inner_html = self.raw_text(nav_bloc_xpath, self.driver_wait)
                     raw_code.append(inner_html)
@@ -327,12 +329,11 @@ class CompanyProcessor(BaseProcessor):
 
                         self.click(next_page_xpath, self.driver_wait)
                         while retry_count < max_retries:
-                            try:
-                                page_new = self.driver.find_element(By.XPATH, xpath_page).text
+                            elements = self.driver.find_elements(By.XPATH, xpath_page)
+                            if elements:
+                                page_new = elements[0].text
                                 if page_new != page_actual:
-                                    break  # Página mudou, sucesso
-                            except:
-                                pass
+                                    break  # sucess
 
                             retry_count += 1
                             time.sleep(self.dynamic_sleep())
