@@ -16,7 +16,7 @@ if __name__ == "__main__":
         if run_company_processor.strip().upper().startswith("Y"):
             company_processor = CompanyProcessor()
             company_processor.close_driver()
-            company_processor.main(thread=True)
+            company_processor.main(thread=False)
             company_processor.close_driver()
 
         # Ask the user if they want to get nsd information

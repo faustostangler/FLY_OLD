@@ -98,7 +98,9 @@ class CompanyProcessor(BaseProcessor):
             # Obter headers e proxy (opcional)
             # headers = self.header_random()
 
-            driver.get(self.config.domain["company_url"])
+            url = self.config.domain["company_url"]
+            driver.get(url)
+
 
             passed_dns_content = self.detect_dns_block(company_name, driver, driver_wait)
             if not passed_dns_content:
@@ -340,7 +342,6 @@ class CompanyProcessor(BaseProcessor):
                     extra_info = [f"page {page + 1}"]
                     self.print_info(i, pages_total + 1, start_time, extra_info)
                     # time.sleep(self.dynamic_sleep() / 50)
-
             except Exception as e:
                 self.config.log_error(e)
                 raw_code = []
@@ -403,12 +404,16 @@ class CompanyProcessor(BaseProcessor):
     def main(self, thread=True):
         """Main method to process data."""
         try:
-            # Load existing and new companies
-            local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
-            web_companies = self.get_web_companies()
+            # # Load existing and new companies
+            # local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
+            # web_companies = self.get_web_companies()
 
-            # Identify scrape targets
-            targets = self.get_targets(local_companies, web_companies)
+            # # Identify scrape targets
+            # targets = self.get_targets(local_companies, web_companies)
+
+            # targets.to_csv('targets.csv', index=False)
+            targets = pd.read_csv('targets.csv')
+            print('fast debug targets')
 
             # Exit if no targets
             if targets.empty:
