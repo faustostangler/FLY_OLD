@@ -151,19 +151,32 @@ class Config:
                 tbl_company_info: f"""
                     CREATE TABLE IF NOT EXISTS {tbl_company_info} (
                         cvm_code TEXT,
-                        company_name TEXT,
                         ticker TEXT,
+                        company_name TEXT,
+                        trading_name TEXT,
+                        cnpj TEXT,
+                        market_indicator TEXT,
+                        type_bdr TEXT,
+                        date_listing TEXT,
+                        status TEXT,
+                        segment TEXT,
+                        segment_eng TEXT,
+                        type TEXT,
+                        listing TEXT,
                         ticker_codes TEXT,
                         isin_codes TEXT,
-                        trading_name TEXT,
                         sector TEXT,
                         subsector TEXT,
-                        segment TEXT,
-                        listing TEXT,
                         activity TEXT,
+                        website TEXT,
                         registrar TEXT,
-                        cnpj TEXT,
-                        website TEXT, 
+                        main_registrar TEXT,
+                        last_date TEXT,
+                        has_quotation TEXT,
+                        has_emissions TEXT,
+                        has_bdr TEXT,
+                        describle_category_bvmf TEXT,
+                        date_quotation TEXT,
                         PRIMARY KEY (company_name)
                     );
                     CREATE INDEX IF NOT EXISTS idx_company_info ON {tbl_company_info} (company_name);
@@ -511,20 +524,39 @@ class Config:
             "website",
         ] 
 
-        columns_company_map = {
-                "codeCVM": "cvm_code",
-                "companyName": "company_name",
-                "issuingCompany": "ticker",
-                "tradingName": "trading_name",
-                "sector": "sector",
-                "subsector": "subsector",
-                "segment": "segment",
-                "cnpj": "cnpj",
-                "marketIndicator": "market_indicator",
-                "typeBDR": "type_bdr",
-                "dateListing": "date_listing",
-                "segmentEng": "segment_english",
-            } 
+        web_company_columns_mapping = {
+            "codeCVM": "cvm_code",
+            "issuingCompany": "ticker",
+            "companyName": "company_name",
+            "tradingName": "trading_name",
+            "market": "listing",
+            "ticker_codes": "ticker_codes",
+            "isin_codes": "isin_codes",
+            "sector": "sector",
+            "subsector": "subsector",
+            "segment": "segment",
+            "segmentEng": "segment_eng",
+            "activity": "activity",
+            "describle_category_bvmf": "describle_category_bvmf",
+
+            "last_date": "last_date",
+            "dateListing": "date_listing",
+            "date_quotation": "date_quotation",
+
+            "cnpj": "cnpj",
+            "website": "website",
+
+            "registrar": "registrar",
+            "main_registrar": "main_registrar",
+            "status": "status",
+            "type": "type",
+
+            "marketIndicator": "market_indicator",
+            "typeBDR": "type_bdr",
+            "has_quotation": "has_quotation",
+            "has_emissions": "has_emissions",
+            "has_bdr": "has_bdr",
+        }
 
         # NSD scraping settings
         columns_nsd = [
@@ -740,7 +772,7 @@ class Config:
             "companies_url": companies_url,
             "company_url": company_url,
             "columns_company_info": columns_company_info,
-            "columns_company_map": columns_company_map, 
+            "web_company_columns_mapping": web_company_columns_mapping, 
             "columns_nsd": columns_nsd,
             "sort_order_nsd": sort_order_nsd,
             "default_daily_submission_estimate": default_daily_submission_estimate,

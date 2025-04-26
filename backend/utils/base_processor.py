@@ -200,6 +200,7 @@ class BaseProcessor:
             try:
                 result = self.process_instance(batch, payload, progress)
                 results.append(result)
+
             except Exception as e:
                 self.log_error(f"Error in batch: {e}")
 
@@ -585,16 +586,21 @@ class BaseProcessor:
         try:
             # Remove punctuation, accents, and normalize case
             translation_table = str.maketrans("", "", string.punctuation)
-            text = unidecode.unidecode(text).translate(translation_table).upper().strip()
-            text = re.sub(r"\s+", " ", text)
+            if text:
+                text = unidecode.unidecode(text)
+                text = text.translate(translation_table)
+                text = text.upper()
+                text = text.strip()
+                text = re.sub(r"\s+", " ", text)
 
-            # Regular expression pattern to remove specific words from text
-            words_to_remove = "|".join(map(re.escape, self.config.domain["words_to_remove"]))
-            pattern = r"\b(?:" + words_to_remove + r")\b"
-            text = re.sub(pattern, "", text)
+                # Regular expression pattern to remove specific words from text
+                words_to_remove = "|".join(map(re.escape, self.config.domain["words_to_remove"]))
+                pattern = r"\b(?:" + words_to_remove + r")\b"
+                text = re.sub(pattern, "", text)
 
-            # Remove extra spaces after word removal
-            text = re.sub(r"\s+", " ", text).strip()
+                # Remove extra spaces after word removal
+                text = re.sub(r"\s+", " ", text)
+                text = text.strip()
 
         except Exception as e:
             self.log_error(e)
@@ -823,6 +829,43 @@ class BaseProcessor:
             A list of escaped keywords ready for regex operations.
         """
         return [re.escape(keyword) for keyword in keywords]
+
+    def map_dataframe_columns(self, df, mapping):
+        """
+        Map columns of a dataframe to a target schema, adjusting for missing columns.
+
+        Args:
+            df (pd.DataFrame): The input dataframe with raw scraped data.
+            mapping (dict): A dictionary where keys are source columns and values are target columns.
+
+        Returns:
+            pd.DataFrame: DataFrame with columns renamed and completed according to the target schema.
+        """
+        try:
+            # Defensive copy
+            df = df.copy()
+
+            # Check if mapping needs to be inverted
+            first_col = df.columns[0]
+            if first_col not in mapping.keys() and first_col in mapping.values():
+                mapping = {v: k for k, v in mapping.items()}
+
+            # Rename the dataframe
+            df = df.rename(columns=mapping)
+
+            # Add missing columns as None
+            for target_col in mapping.values():
+                if target_col not in df.columns:
+                    df[target_col] = None
+
+            # Reorder dataframe according to final column order
+            df = df[list(mapping.values())]
+
+        except Exception as e:
+            self.log_error(e)
+            return pd.DataFrame()
+
+        return df
 
     # APP METHODS
     def prefill_input(self, text, delay=None):
@@ -1334,7 +1377,6 @@ class BaseProcessor:
             with sqlite3.connect(db_filepath) as conn:
                 cursor = conn.cursor()
                 try:
-                    # primary_keys = self._get_primary_key(table_name, db_filepath)
                     if query:
                         sql_query = query if not params else f"SELECT COUNT(*) FROM ({query})"
                         (cursor.execute(sql_query, params) if params else cursor.execute(sql_query))
@@ -1438,6 +1480,8 @@ class BaseProcessor:
             database_name = os.path.basename(db_filepath)
             dataframes = []
 
+            columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
+
             # 1. Count total rows
             try:
                 # Retry logic for database connection
@@ -1453,7 +1497,7 @@ class BaseProcessor:
                             cursor = conn.cursor()
                             try:
                                 if table_name:
-                                    primary_keys = self._get_primary_key(table_name, database_name)
+                                    # columns, dtypes, primary_keys = 
                                     sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
                                     params = ()
                                 elif query:
@@ -1481,8 +1525,7 @@ class BaseProcessor:
 
                 if batch_number == 0 or batch_threads == 0:
                     schema_str = self.config.schemas[database_name][table_name]
-                    columns_types = self.get_columns(schema_str)
-                    df = pd.DataFrame(columns=columns_types.keys()).astype(columns_types)
+                    df = pd.DataFrame(columns=dtypes.keys()).astype(dtypes)
                     return df  # Nothing to process
 
                 start_time = time.time()
@@ -1586,6 +1629,7 @@ class BaseProcessor:
             max_retries = max_retries or self.config.selenium["max_retries"]
 
             primary_keys = self._get_primary_key(table_name, database_name)
+            columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
 
             # Prepare and Insert Data
             sql = self._get_sql_statement(dataframe, primary_keys, table_name, update=update)
@@ -1742,6 +1786,96 @@ class BaseProcessor:
             self.log_error(e)
 
         return primary_keys
+
+    def _get_table_structure(self, table_name, db_filepath):
+        """
+        Extracts all column names, pandas dtypes, and primary key columns from a CREATE TABLE statement.
+
+        Args:
+            table_name (str): Name of the table.
+            db_filepath (str): Path to the database file.
+
+        Returns:
+            tuple: (columns: List[str], dtypes: Dict[str, str], primary_keys: List[str])
+        """
+        columns = []
+        dtypes = {}
+        primary_keys = []
+        database_name = os.path.basename(db_filepath)
+
+        try:
+            schema = self.config.schemas[database_name][table_name]
+            lines = schema.strip().splitlines()
+
+            for line in lines:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                # Detect PRIMARY KEY
+                if "PRIMARY KEY" in line.upper():
+                    primary_key_index = line.upper().find("PRIMARY KEY")
+                    key_part_before = line[:primary_key_index].strip()
+                    key_part_after = line[primary_key_index + len("PRIMARY KEY"):].strip()
+
+                    if key_part_before:
+                        key = key_part_before.split()[0]
+                        primary_keys.append(key)
+
+                    if key_part_after.startswith("(") and key_part_after.endswith(")"):
+                        keys_in_parentheses = key_part_after[1:-1].split(",")
+                        primary_keys.extend(key.strip() for key in keys_in_parentheses)
+
+                # Detect column definitions
+                elif any(type_hint in line.upper() for type_hint in ["TEXT", "INTEGER", "REAL", "FLOAT", "DECIMAL", "CHAR", "DATE", "BLOB", "BOOLEAN"]):
+                    parts = line.replace(",", "").split()
+                    if len(parts) >= 2:
+                        column_name = parts[0].strip()
+                        sql_type = parts[1].strip().upper()
+
+                        columns.append(column_name)
+                        dtypes[column_name] = self._map_sql_to_pd_dtype(sql_type)
+
+        except Exception as e:
+            self.log_error(e)
+
+        return columns, dtypes, primary_keys
+
+    def _map_sql_to_pd_dtype(self, sql_type):
+        """
+        Map a SQL data type to the closest equivalent pandas dtype.
+
+        Args:
+            sql_type (str): SQL column type.
+
+        Returns:
+            str: pandas dtype string.
+        """
+        try:
+            sql_type = sql_type.upper().strip()
+
+            # SQL to pandas dtype mapping
+            if "INT" in sql_type:
+                pandas_type = "Int64"  # nullable integer
+            elif "REAL" in sql_type or "FLOAT" in sql_type or "DOUBLE" in sql_type or "DECIMAL" in sql_type:
+                pandas_type = "float64"
+            elif "TEXT" in sql_type or "CHAR" in sql_type or "CLOB" in sql_type:
+                pandas_type = "string"
+            elif "BLOB" in sql_type:
+                pandas_type = "object"  # binary/blob is generic object
+            elif "BOOLEAN" in sql_type:
+                pandas_type = "boolean"
+            elif "DATE" in sql_type or "TIME" in sql_type:
+                pandas_type = "datetime64[ns]"
+            else:
+                pandas_type = "object"  # fallback for unknown types
+
+        except Exception as e:
+            self.log_error(e)
+            pandas_type = "object"
+
+        return pandas_type
 
     def _get_sql_statement(self, dataframe, primary_keys, table_name, update=True):
         """Generate a SQL statement dynamically, ensuring column names are
