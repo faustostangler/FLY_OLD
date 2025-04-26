@@ -3,6 +3,7 @@ import re
 import time
 from threading import Lock
 
+import cloudscraper
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import TimeoutException
@@ -23,8 +24,8 @@ class CompanyProcessor(BaseProcessor):
         self.tbl_company_name = self.config.databases["raw"]["table"]["company_info"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-        # Initialize driver and other resources
-        self.driver, self.driver_wait = self._initialize_driver()
+        # # Initialize driver and other resources
+        # self.driver, self.driver_wait = self._initialize_driver()
 
     def process_instance(self, sub_batch, payload, progress):
         """Process a single batch by delegating to process_batch."""
@@ -42,9 +43,6 @@ class CompanyProcessor(BaseProcessor):
                 batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
-            # close instance
-            batch_processor.close_driver()
-
             # Save result to database
             self.save_to_db(
                 dataframe=result, table_name=self.tbl_company_name, db_filepath=self.db_filepath, alert=False
@@ -57,6 +55,225 @@ class CompanyProcessor(BaseProcessor):
         return result
 
     def process_batch(self, sub_batch, payload, progress):
+        '''
+        '''
+
+        result = ''
+
+        try:
+            all_data = []
+            start_time = time.time()
+            for i, (_, row) in enumerate(sub_batch.iterrows()):
+                ticker = row['ticker']
+                df = self._get_company_data(ticker)
+
+                if not df.empty:
+                    all_data.append(df)
+
+                    # logging
+                    cvm_code = df['cvm_code'][0]
+                    extra_info = [ticker, cvm_code]
+                    self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+            if all_data:
+                result = pd.concat(all_data, ignore_index=True)
+
+        except Exception as e:
+            result = pd.DataFrame()
+            self.log_error(e)
+
+        return result
+
+    # Define at the beginning of your script
+    total_block_time = 0  # Global counter
+
+    def _get_company_data(self, ticker):
+        '''
+        '''
+        global total_block_time
+
+        wait_time = 1
+
+        scraper = cloudscraper.create_scraper()
+        homepage_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
+        scraper.get(homepage_url, headers=self.header_random())
+
+        try:
+            # get company cvm_code - first request
+            payload_1 = {
+                "language": "pt-br",
+                "pageNumber": 1,
+                "pageSize": 20,
+                "company": ticker,
+            }
+            token_1 = self.base64_payload(payload_1)
+            url_1 = f"https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetInitialCompanies/{token_1}"
+
+            block_start_1 = None
+            while True:
+                try:
+                    response_1 = scraper.get(url_1, headers=self.header_random())
+                    if response_1.status_code == 200:
+                        if block_start_1:
+                            duration = time.time() - block_start_1
+                            total_block_time += duration
+                            # print(f"[{ticker}] Desbloqueado (Request 1) - +{duration:.2f}s | Total: {total_block_time:.2f}s")
+                            block_start_1 = None
+                            scraper = cloudscraper.create_scraper()
+                            scraper.get(homepage_url, headers=self.header_random())
+
+                        response_data = response_1.json()
+                        result_data = response_data.get("results", [])
+                        result = next((item for item in result_data if item.get("issuingCompany") == ticker), None)
+                        if not result:
+                            raise Exception(f"[{ticker}] No result found in Request 1")
+                        company = pd.DataFrame([result])
+                        company = self.clean_company_columns(company)
+                        break
+                    else:
+                        raise Exception(f"Status {response_1.status_code}")
+
+                except Exception as e:
+                    if not block_start_1:
+                        block_start_1 = time.time()
+                    # print(f"[{ticker}] Bloqueado (Request 1) - Aguardando {wait_time}s | {e}")
+                    time.sleep(self.dynamic_sleep())
+                    wait_time += 1
+                    self.log_error(e)
+
+            # get company details - second request
+            cvm_code = {result['codeCVM']}
+            payload_2 = {"codeCVM": f"{cvm_code}", "language": "pt-br"}
+            token_2 = self.base64_payload(payload_2)
+            url_2 = f"https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetDetail/{token_2}"
+
+            block_start_2 = None
+            while True:
+                try:
+                    response_2 = scraper.get(url_2, headers=self.header_random())
+                    if response_2.status_code == 200:
+                        if block_start_2:
+                            duration = time.time() - block_start_2
+                            total_block_time += duration
+                            # print(f"[{ticker}] Desbloqueado (Request 2) - +{duration:.2f}s | Total: {total_block_time:.2f}s")
+                            block_start_2 = None
+                            scraper = cloudscraper.create_scraper()
+                            scraper.get(homepage_url, headers=self.header_random())
+
+                        response_2_json = response_2.json()
+                        company_details = pd.DataFrame([response_2_json])
+                        column_map = {
+                            "codeCVM": "cvm_code",
+                            "companyName": "company_name",
+                            "tradingName": "trading_name",
+                            "cnpj": "cnpj",
+                            "industryClassification": "sector_full",  # auxiliar
+                            "market": "listing",
+                            "activity": "activity",
+                            "website": "website",
+                            "issuingCompany": "ticker",
+                            "status": "status",
+                            "marketIndicator": "market_indicator",
+                            "institutionCommon": "registrar",
+                            "institutionPreferred": "main_registrar",
+                            "hasEmissions": "has_emissions",
+                            "hasBDR": "has_bdr",
+                            "typeBDR": "type_bdr",
+                            "code": "main_code",
+                            "otherCodes": "other_codes", 
+                        }
+
+                        # isin and tickers
+                        def extract_codes(other_codes):
+                            if not isinstance(other_codes, list):
+                                other_codes = [other_codes] if pd.notna(other_codes) else []
+                                
+                            tickers = [item.get("code") for item in other_codes if isinstance(item, dict) and "code" in item]
+                            isins = [item.get("isin") for item in other_codes if isinstance(item, dict) and "isin" in item]
+                            
+                            return json.dumps(tickers), json.dumps(isins)
+                        if not company_details.empty:
+                            company_details["ticker_codes"], company_details["isin_codes"] = zip(*company_details["otherCodes"].apply(extract_codes))
+
+                            # Garante que a coluna existe
+                            if "industryClassification" in company_details.columns:
+                                split_sectors = company_details["industryClassification"].str.split("/", expand=True)
+                                company_details["sector"] = split_sectors[0].str.strip()
+                                company_details["subsector"] = split_sectors[1].str.strip() if split_sectors.shape[1] > 1 else split_sectors[0].str.strip()
+                                company_details["segment"] = split_sectors[2].str.strip() if split_sectors.shape[1] > 2 else split_sectors[0].str.strip()
+
+                            cols_to_clean = ['company_name', 'trading_name', 'sector_full', 'listing', 'sector', 'subsector', 'segment', 'registrar', 'main_registrar']
+
+                            company_details = self.clean_company_columns(company_details, column_map, cols_to_clean)
+
+                        break
+                    else:
+                        raise Exception(f"Status {response_2.status_code}")
+
+                except Exception as e:
+                    if not block_start_2:
+                        block_start_2 = time.time()
+                    # print(f"[{ticker}] Bloqueado (Request 2) - Aguardando {wait_time}s | {e}")
+                    time.sleep(self.dynamic_sleep())
+                    wait_time += 1
+                    self.log_error(e)
+
+
+            # get company shareholders - third request
+            url_3 = f"https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetListedFinancial/{token_2}"
+
+            block_start_3 = None
+            while True:
+                try:
+                    response_3 = scraper.get(url_3, headers=self.header_random())
+                    if response_3.status_code == 200:
+                        if block_start_3:
+                            duration = time.time() - block_start_3
+                            total_block_time += duration
+                            # print(f"[{ticker}] Desbloqueado (Request 3) - +{duration:.2f}s | Total: {total_block_time:.2f}s")
+                            block_start_3 = None
+                            scraper = cloudscraper.create_scraper()
+                            scraper.get(homepage_url, headers=self.header_random())
+
+                        if response_3.text:
+                            shareholder_data = response_3.json()
+                            shareholder_result = shareholder_data.get("positionShareholders", {}).get("results", [])
+                            shareholder = pd.DataFrame(shareholder_result)
+                            shareholder = shareholder.iloc[:-1, :-1]
+                            shareholder['cvm_code'] = cvm_code
+                        break
+                    else:
+                        raise Exception(f"Status {response_3.status_code}")
+
+                except Exception as e:
+                    if not block_start_3:
+                        block_start_3 = time.time()
+                    # print(f"[{ticker}] Bloqueado (Request 3) - Aguardando {wait_time}s | {e}")
+                    time.sleep(self.dynamic_sleep())
+                    wait_time += 1
+                    self.log_error(e)
+
+
+            # Merge and Return
+            if not company_details.empty:
+                df = pd.merge(company, company_details, on="cvm_code", how="outer", suffixes=("", "_details"))
+            else:
+                df = company
+            
+            # Convert the shareholder df to JSON (list of dicts)
+            if "shareholder" in locals() and isinstance(shareholder, pd.DataFrame) and not shareholder.empty:
+                shareholder_json = shareholder.to_json(orient="records", force_ascii=False)
+                # Assign it as a single JSON string to the DataFrame cell
+                df["shareholders"] = [shareholder_json]
+
+            return df
+
+        except Exception as e:
+            self.log_error(e)
+            # print(f"[{ticker}] Erro final: {e}")
+            return ticker
+
+
+    def process_batch_old(self, sub_batch, payload, progress):
         """Process a batch of company data by scraping details."""
         result = []
 
@@ -284,6 +501,59 @@ class CompanyProcessor(BaseProcessor):
         return company_details
 
     def get_web_companies(self):
+        '''
+        
+        '''
+        
+        try:
+            # Criar uma sessão
+            scraper = cloudscraper.create_scraper()
+
+            # Fazer a primeira requisição (gera os cookies)
+            homepage_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
+            scraper.get(homepage_url, headers=self.header_random())
+
+            # Get totalPages
+            payload = {"language": "pt-br", "pageNumber": 1, "pageSize": 120}
+            token = self.base64_payload(payload)
+            url = f'https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetInitialCompanies/'
+            response = scraper.get(url+token, headers=self.header_random())
+            request_result = response.json()
+            size = request_result['page']['totalPages']
+
+            all_companies = []
+
+            start_time = time.time()
+            for i in range(0, size):
+                try:
+                    payload = {
+                        "language": "pt-br",
+                        "pageNumber": i+1,
+                        "pageSize": 120
+                        }
+                    token = self.base64_payload(payload)
+
+                    response = scraper.get(url+token, headers=self.header_random())
+                    request_result = response.json()
+                    companies = request_result['results']
+                    all_companies.extend(request_result['results'])
+
+                    # logging
+                    extra_info = [f"page {i+1}, from {companies[0]['issuingCompany']} to {companies[-1]['issuingCompany']}"]
+                    self.print_info(i, size, start_time, extra_info)
+                except Exception as e:
+                    self.log_error(e)
+            df = pd.DataFrame(all_companies)
+            df = df.rename(columns={"issuingCompany": "ticker"})
+            df = df[["ticker"]]
+
+        except Exception as e:
+            self.log_error(e)
+            df = pd.DataFrame()
+
+        return df
+
+    def get_web_companies_old(self):
         """"""
         try:
             field_mapping = {
@@ -391,15 +661,97 @@ class CompanyProcessor(BaseProcessor):
         return df
 
     def get_targets(self, local_companies, web_companies):
-        """"""
-        result = []
+        """
+        Garante que web_companies tenha a estrutura de colunas igual à de local_companies,
+        e retorna apenas os registros ainda não existentes.
+        """
+        # Filtra apenas os novos tickers
         try:
-            result = web_companies[~web_companies["company_name"].isin(local_companies["company_name"])]
-        except Exception:
-            # self.log_error(e)
-            result = web_companies
+            result = web_companies[~web_companies['ticker'].isin(local_companies['ticker'])]
+        except Exception as e:
+            self.log_error(e)
+            result = pd.DataFrame(columns=['ticker'])
 
         return result
+
+    def clean_company_columns(self, df, column_map=None, cols_to_clean=None):
+        '''
+        '''
+        try:
+            # clean and organize df
+            column_map = column_map or self.config.domain['columns_company_map']
+            df = self.auto_map_columns(df, column_map)
+
+            cols_to_clean = cols_to_clean or ["company_name", "trading_name"]
+            for col in cols_to_clean:
+                df[col] = df[col].apply(self.clean_text)
+
+
+            # Define colunas finais desejadas (mesmas do local)
+            expected_columns = [
+                "cvm_code", "company_name", "ticker", "ticker_codes", "isin_codes", "trading_name",
+                "sector", "subsector", "segment", "listing", "activity", "registrar", "cnpj", "website"
+            ]
+
+            # Garante todas as colunas, adicionando vazias se necessário
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = None  # ou "" se preferir string vazia
+
+            # Reduz e reordena as colunas para o padrão local
+            df = df[expected_columns]
+
+            df["segment"] = df["segment"].replace("Não Classificado", "Não Classificados")
+
+            # Preencher valores ausentes com base em "segment"
+            df["sector"] = df["sector"].fillna(df["segment"])
+            df["subsector"] = df["subsector"].fillna(df["segment"])
+
+        except Exception as e:
+            self.log_error(e)
+        
+        return df
+
+    def get_sss(self):
+        '''
+        '''
+        try:
+            # Criar uma sessão
+            scraper = cloudscraper.create_scraper()
+
+            # Fazer a primeira requisição (gera os cookies)
+            homepage_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
+            scraper.get(homepage_url, headers=self.header_random())
+
+            # get sector, subsector, segment to merge
+            payload = {'language': 'pt-br'}
+            token = self.base64_payload(payload)
+            url = 'https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetIndustryClassification/'
+            
+            response = scraper.get(url+token, headers=self.header_random())
+            response_request = response.json()  # ou json.loads(res2.text)
+            # Expandir para DataFrame
+            rows = []
+            for setor in response_request:
+                nome_setor = setor["sector"]
+                for subsetor in setor.get("subSectors", []):
+                    nome_subsetor = subsetor["describle"]
+                    for segmento in subsetor.get("segment", []):
+                        rows.append({
+                            "Setor": nome_setor,
+                            "Subsetor": nome_subsetor,
+                            "Segmento": segmento
+                        })
+            sss = pd.DataFrame(rows)
+            sss = sss.rename(columns={
+                "Segmento": "segment",
+                "Setor": "sector",
+                "Subsetor": "subsector"
+            })
+        except Exception as e:
+            self.log_error(e)
+
+        return sss
 
     def main(self, thread=True):
         """Main method to process data."""
@@ -409,11 +761,8 @@ class CompanyProcessor(BaseProcessor):
             web_companies = self.get_web_companies()
 
             # Identify scrape targets
+            local_companies = local_companies[0:0]
             targets = self.get_targets(local_companies, web_companies)
-
-            targets.to_csv('targets.csv', index=False)
-            targets = pd.read_csv('targets.csv')
-            print('fast debug targets')
 
             # Exit if no targets
             if targets.empty:

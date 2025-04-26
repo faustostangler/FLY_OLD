@@ -509,7 +509,22 @@ class Config:
             "registrar",
             "cnpj",
             "website",
-        ]
+        ] 
+
+        columns_company_map = {
+                "codeCVM": "cvm_code",
+                "companyName": "company_name",
+                "issuingCompany": "ticker",
+                "tradingName": "trading_name",
+                "sector": "sector",
+                "subsector": "subsector",
+                "segment": "segment",
+                "cnpj": "cnpj",
+                "marketIndicator": "market_indicator",
+                "typeBDR": "type_bdr",
+                "dateListing": "date_listing",
+                "segmentEng": "segment_english",
+            } 
 
         # NSD scraping settings
         columns_nsd = [
@@ -725,6 +740,7 @@ class Config:
             "companies_url": companies_url,
             "company_url": company_url,
             "columns_company_info": columns_company_info,
+            "columns_company_map": columns_company_map, 
             "columns_nsd": columns_nsd,
             "sort_order_nsd": sort_order_nsd,
             "default_daily_submission_estimate": default_daily_submission_estimate,

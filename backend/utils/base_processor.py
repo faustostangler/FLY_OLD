@@ -1,3 +1,4 @@
+import base64
 import concurrent.futures
 import inspect
 import json
@@ -208,6 +209,116 @@ class BaseProcessor:
     def process_instance(self, batch, payload, progress):
         """To be implemented by child classes."""
         pass
+
+    # WEB & REQUESTS
+    def header_random(self):
+        """Generate random HTTP headers for requests."""
+        try:
+            user_agent = random.choice(self.config.requests["user_agents"])
+            referer = random.choice(self.config.requests["referers"])
+            language = random.choice(self.config.requests["languages"])
+
+            headers = {"User-Agent": user_agent, "Referer": referer, "Accept-Language": language}
+
+            # headers = {
+            #     "User-Agent": user_agent,
+            #     "Referer": referer,
+            #     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            #     "Accept-Encoding": "gzip, deflate, br",
+            #     "Accept-Language": language,
+            #     "Connection": "keep-alive",
+            #     "Upgrade-Insecure-Requests": "1",
+            #     "DNT": "1",
+            #     "Sec-Fetch-Mode": "navigate",
+            #     "Sec-Fetch-Site": "none",
+            #     "Sec-Fetch-User": "?1",
+            #     "Sec-Fetch-Dest": "document",
+            # }
+
+        except Exception as e:
+            self.log_error(e)
+
+        return headers
+
+    def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
+        """Test internet connection by sending an HTTP GET request to a
+        specified URL. Retries if no connection is detected.
+
+        Parameters:
+            url (str): The URL to request (default: Google's favicon URL).
+        """
+        wait_time = wait_time = self.dynamic_sleep() * 10
+
+        while True:
+            try:
+                # set random headers
+                headers = self.header_random()
+                session = requests.Session()
+                session.headers.update(headers)
+
+                # Make a lightweight GET request
+                response = session.get(url, timeout=wait_time)
+                if response.status_code == 200:
+                    return True  # Connection is successful
+            except Exception:
+                # Log the error or suppress if preferred
+                # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
+                pass
+            time.sleep(wait_time)  # Wait before retrying
+
+    def detect_dns_block(self, title, driver=False, driver_wait=False, content=False, debug=False, block=False):
+        """
+        Detecta se uma resposta HTML foi bloqueada pela Cloudflare.
+        Funciona com Selenium (driver.page_source) e requests (response.text).
+        
+        Args:
+            title (str): Título para o arquivo de debug.
+            driver (WebDriver): Instância do Selenium WebDriver.
+            debug (bool): Indica se deve salvar o HTML para debug.
+
+        Returns:
+            str or bool: Conteúdo da página ou False se bloqueado.
+        """
+        try:
+            self._simulate_human_interaction(driver)
+            if not content:
+                content = driver.page_source.lower().strip()
+
+                # Verifica bloqueio tentando encontrar elemento exclusivo do erro 1015
+                cloudflare_xpath = "//div[@id='cf-error-details']"
+                is_blocked = self.wait_forever(driver_wait, cloudflare_xpath, max_retries=1) is not False
+            else:
+                block_indicators = [
+                    "error 1015",
+                    "rate limited",
+                    "access denied",
+                    "cloudflare",
+                    "ray id", 
+                ]
+
+                is_blocked = any(term in content for term in block_indicators) or (
+                    "<app-root></app-root>" in content and len(content) < 10000
+                )
+
+            is_blocked = block if block else is_blocked
+
+            filename = f"{'dns_block_' if is_blocked else ''}{title}.html"
+
+            if debug:
+                temp_path = os.path.join(self.config.paths["temp_folder"], filename)
+                try:
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                except Exception as e:
+                    self.log_error(f"Failed to save blocked HTML content: {e}")
+
+            if is_blocked:
+                time.sleep(self.config.selenium['wait_time'] * self.dynamic_sleep())
+                content = False
+        except Exception as e:
+            self.log_error(e)
+
+        return content
 
     # SELENIUM DRIVER METHODS
     def _get_chrome_version(self):
@@ -855,6 +966,48 @@ class BaseProcessor:
 
         return corrected_df
 
+    def base64_payload(self, payload: dict) -> str:
+        """
+        Gera um token Base64 com os parâmetros corretos para o endpoint da B3.
+
+        Args:
+            payload (dict): Dicionário com parâmetros como language, pageNumber, etc.
+
+        Returns:
+            str: String Base64 pronta para ser usada na URL.
+        """
+        try:
+            json_str = json.dumps(payload, separators=(',', ':'))
+            base64_encoded = base64.b64encode(json_str.encode()).decode()
+
+        except Exception as e:
+            self.log_error(e)
+
+        return base64_encoded
+
+    def base64_decode(self, token_base64: str) -> dict:
+        """
+        Decodifica um payload Base64 da B3 e retorna como dicionário JSON.
+
+        Args:
+            token_base64 (str): Token codificado (ex: 'eyJsYW5ndWFnZSI6InB0LWJyIn0=')
+
+        Returns:
+            dict: Dicionário com os dados decodificados
+        """
+        if token_base64.startswith("https"):
+            token_base64 = token_base64.rstrip("/").split("/")[-1]
+
+        try:
+            decoded_bytes = base64.b64decode(token_base64)
+            decoded_str = decoded_bytes.decode()
+            json_str = json.loads(decoded_str)
+            return json_str
+
+        except Exception as e:
+            self.log_error(e)
+            return {}
+
     # BENCHMARK, LOG & DEBUG METHODS
     def benchmark_function(self, function, *args, benchmark_mode=False, workers_list=None, **kwargs):
         """Generic benchmarking method to evaluate resource usage with
@@ -1116,6 +1269,34 @@ class BaseProcessor:
             self.log_error(e)
 
         return conn
+
+    def auto_map_columns(self, df, column_map):
+        """
+        Converte os nomes das colunas de um DataFrame de local → web ou web → local,
+        baseado nas colunas detectadas no DataFrame.
+
+        Parâmetros:
+        - df: pd.DataFrame
+        - column_map: dict — mapeamento local → web
+
+        Retorno:
+        - DataFrame com colunas renomeadas (ou original, se irrelevante)
+        """
+        df_cols = set(column_map.keys())
+        df_reverse = set(column_map.values())
+        current_cols = set(df.columns)
+
+        if df_cols & current_cols:
+            # Se contém colunas
+            rename_map = column_map
+        elif df_reverse & current_cols:
+            # Se o mapa está invertido
+            rename_map = {v: k for k, v in column_map.items()}
+        else:
+            # Nenhuma coluna relevante encontrada
+            return df
+
+        return df.rename(columns=rename_map)
 
     def _add_columns_if_not_exist(self, db_filepath, table_name, column_names):
         """Adds multiple columns to the table if they do not already exist.
@@ -1703,116 +1884,6 @@ class BaseProcessor:
 
         except sqlite3.Error as e:
             self.log_error(f"An error occurred during database optimization: {e}")
-
-    # WEB & REQUESTS
-    def header_random(self):
-        """Generate random HTTP headers for requests."""
-        try:
-            user_agent = random.choice(self.config.requests["user_agents"])
-            referer = random.choice(self.config.requests["referers"])
-            language = random.choice(self.config.requests["languages"])
-
-            headers = {"User-Agent": user_agent, "Referer": referer, "Accept-Language": language}
-
-            # headers = {
-            #     "User-Agent": user_agent,
-            #     "Referer": referer,
-            #     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            #     "Accept-Encoding": "gzip, deflate, br",
-            #     "Accept-Language": language,
-            #     "Connection": "keep-alive",
-            #     "Upgrade-Insecure-Requests": "1",
-            #     "DNT": "1",
-            #     "Sec-Fetch-Mode": "navigate",
-            #     "Sec-Fetch-Site": "none",
-            #     "Sec-Fetch-User": "?1",
-            #     "Sec-Fetch-Dest": "document",
-            # }
-
-        except Exception as e:
-            self.log_error(e)
-
-        return headers
-
-    def test_internet(self, wait_time=None, url="https://www.google.com/favicon.ico"):
-        """Test internet connection by sending an HTTP GET request to a
-        specified URL. Retries if no connection is detected.
-
-        Parameters:
-            url (str): The URL to request (default: Google's favicon URL).
-        """
-        wait_time = wait_time = self.dynamic_sleep() * 10
-
-        while True:
-            try:
-                # set random headers
-                headers = self.header_random()
-                session = requests.Session()
-                session.headers.update(headers)
-
-                # Make a lightweight GET request
-                response = session.get(url, timeout=wait_time)
-                if response.status_code == 200:
-                    return True  # Connection is successful
-            except Exception:
-                # Log the error or suppress if preferred
-                # print(f"No Internet connection: {e}. Retrying in {wait_time} seconds...")
-                pass
-            time.sleep(wait_time)  # Wait before retrying
-
-    def detect_dns_block(self, title, driver=False, driver_wait=False, content=False, debug=False, block=False):
-        """
-        Detecta se uma resposta HTML foi bloqueada pela Cloudflare.
-        Funciona com Selenium (driver.page_source) e requests (response.text).
-        
-        Args:
-            title (str): Título para o arquivo de debug.
-            driver (WebDriver): Instância do Selenium WebDriver.
-            debug (bool): Indica se deve salvar o HTML para debug.
-
-        Returns:
-            str or bool: Conteúdo da página ou False se bloqueado.
-        """
-        try:
-            self._simulate_human_interaction(driver)
-            if not content:
-                content = driver.page_source.lower().strip()
-
-                # Verifica bloqueio tentando encontrar elemento exclusivo do erro 1015
-                cloudflare_xpath = "//div[@id='cf-error-details']"
-                is_blocked = self.wait_forever(driver_wait, cloudflare_xpath, max_retries=1) is not False
-            else:
-                block_indicators = [
-                    "error 1015",
-                    "rate limited",
-                    "access denied",
-                    "cloudflare",
-                    "ray id", 
-                ]
-
-                is_blocked = any(term in content for term in block_indicators) or (
-                    "<app-root></app-root>" in content and len(content) < 10000
-                )
-
-            is_blocked = block if block else is_blocked
-
-            filename = f"{'dns_block_' if is_blocked else ''}{title}.html"
-
-            if debug:
-                temp_path = os.path.join(self.config.paths["temp_folder"], filename)
-                try:
-                    with open(temp_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-                except Exception as e:
-                    self.log_error(f"Failed to save blocked HTML content: {e}")
-
-            if is_blocked:
-                time.sleep(self.config.selenium['wait_time'] * self.dynamic_sleep())
-                content = False
-        except Exception as e:
-            self.log_error(e)
-
-        return content
 
     # OTHER NOT CLASSIFIED YET
     def explode_company(self, company_info):
