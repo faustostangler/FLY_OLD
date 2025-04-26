@@ -23,6 +23,12 @@ class CompanyProcessor(BaseProcessor):
 
         # Define at the beginning of your script
         self.total_block_time = 0
+        
+        # track total bytes transferred (in bytes)
+        self.shared_total_bytes = None  # dicionário { "total": int, "threads": {thread_id: subtotal} }
+        self.total_bytes_transferred = 0  # fallback local counter (for single-thread usage)
+        self.shared_lock = None
+        self.thread_id = None  # cada processor deve saber seu thread_id
 
         self.homepage_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
 
@@ -44,10 +50,21 @@ class CompanyProcessor(BaseProcessor):
 
             batch_processor = CompanyProcessor()
 
+            # Injetar o controle compartilhado
+            batch_processor.shared_total_bytes = self.shared_total_bytes
+            batch_processor.shared_lock = self.shared_lock
+            batch_processor.thread_id = progress["thread_id"]  # IMPORTANTE
+
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
                 batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
+
+            # total download
+            if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+                with self.shared_lock:
+                    subtotal = self.shared_total_bytes["threads"].get(self.thread_id, 0)
+                    print(f"\n[Batch Completed] Thread {self.thread_id}: {self._format_bytes(subtotal)} transferred")
 
             # Save result to database
             self.save_to_db(
@@ -81,6 +98,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Start the timer to measure processing time
             start_time = time.time()
+            batch_start_bytes = self.total_bytes_transferred
 
             # create first scraper
             scraper = self._init_scraper()
@@ -102,12 +120,24 @@ class CompanyProcessor(BaseProcessor):
                     cvm_code = df['cvm_code'][0]
                     company_name = df['company_name'][0]
 
+                    # Track bytes transferred after this ticker
+                    bytes_after = self.total_bytes_transferred
+                    bytes_this_company = bytes_after - batch_start_bytes
+                    formatted_size = self._format_bytes(bytes_this_company)
+                    batch_start_bytes = bytes_after  # <- Atualiza aqui!!
+
                     # Log current progress
-                    extra_info = [cvm_code, ticker, company_name]
+                    extra_info = [f"Worker {progress['thread_id']}", cvm_code, ticker, company_name, f"({formatted_size})"]
                     self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             # After processing all rows, concatenate the collected DataFrames
             if all_data:
+
+                # Total Transfered
+                bytes_transferred = self.total_bytes_transferred
+                formatted_size = self._format_bytes(bytes_transferred)
+                print(f'Downloaded: {formatted_size}')
+
                 result = pd.concat(all_data, ignore_index=True)
 
         except Exception as e:
@@ -117,24 +147,34 @@ class CompanyProcessor(BaseProcessor):
 
         return result
 
-    def _init_scraper(self):
+    def _init_scraper(self, wait_time=None):
         """Create a cloudscraper instance with randomized headers and prime it on the homepage."""
-        try:
-            headers = self.header_random()
-            
-            # backup 
-            scraper = requests.Session()
-            scraper.headers.update(headers)
+        wait_time = wait_time or self.config.selenium['wait_time']
+        r = None
+        while True:
+            try:
+                headers = self.header_random()
 
-            # real one
-            scraper = cloudscraper.create_scraper()
-            scraper.headers.update(headers)
-            scraper.get(self.homepage_url)
-        except Exception as e:
-            self.log_error(e)
+                # backup
+                scraper = requests.Session()
+                scraper.headers.update(headers)
+
+                # real one
+                scraper = cloudscraper.create_scraper()
+                scraper.headers.update(headers)
+                r = scraper.get(self.homepage_url)
+
+                if r.status_code == 200:
+                    break  # Success! Exit the loop
+
+            except Exception as e:
+                self.log_error(e)
+
+            # small sleep to avoid hammering
+            wait_time += 1
+            time.sleep(self.dynamic_sleep() + wait_time)
 
         return scraper
-
     def _fetch_with_retry(self, scraper, url, wait=1):
         """
         Keep calling scraper.get(url) until we get status_code 200,
@@ -144,11 +184,26 @@ class CompanyProcessor(BaseProcessor):
         block_start = None
         while True:
             try:
+                # get url
                 r = scraper.get(url)
                 r.raise_for_status()
+
+                # total bytes transferred
+                bytes_transferred = len(r.content)
+                if self.shared_total_bytes is not None and self.shared_lock is not None:
+                    with self.shared_lock:
+                        self.shared_total_bytes["total"] += bytes_transferred
+                        if self.thread_id is not None:
+                            if self.thread_id not in self.shared_total_bytes["threads"]:
+                                self.shared_total_bytes["threads"][self.thread_id] = 0
+                            self.shared_total_bytes["threads"][self.thread_id] += bytes_transferred
+                else:
+                    # fallback caso esteja rodando isolado
+                    self.total_bytes_transferred += bytes_transferred
+
                 if block_start:
                     self.total_block_time += time.time() - block_start
-                    print(f'Server total block time: {self.total_block_time:.2f}s')
+                    print(f'Dodging server block: {self.total_block_time:.2f}s')
                 return r
             except Exception as e:
                 if block_start is None:
@@ -156,7 +211,6 @@ class CompanyProcessor(BaseProcessor):
                 wait += 1
                 time.sleep(self.dynamic_sleep() + wait)
                 scraper = self._init_scraper()
-                print('Dodging server block')
 
     def _extract_codes(self, otherCodes):
         '''
@@ -181,6 +235,14 @@ class CompanyProcessor(BaseProcessor):
             self.log_error(e)
         return df
 
+    def _format_bytes(self, bytes_amount):
+        if bytes_amount < 1024:
+            return f"{bytes_amount:.0f} B"
+        elif bytes_amount < 1024 * 1024:
+            return f"{bytes_amount / 1024:.2f} KB"
+        else:
+            return f"{bytes_amount / (1024 * 1024):.2f} MB"
+
     def _get_company_data(self, ticker, scraper=None):
         """
         Fetch company info, details and shareholders from B3 for the given ticker,
@@ -192,7 +254,7 @@ class CompanyProcessor(BaseProcessor):
 
         try:
             # Prepare payloads, tokens and endpoints
-            payload1 = {"language": "pt-br", "pageNumber": 1, "pageSize": 20, "company": ticker}
+            payload1 = {"language": "pt-br", "pageNumber": 1, "pageSize": 120, "company": ticker}
             token1   = self.base64_payload(payload1)
             endpoint1 = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetInitialCompanies/"
             endpoint2 = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetDetail/"
@@ -205,7 +267,8 @@ class CompanyProcessor(BaseProcessor):
             results = r1.json().get("results", [])
             row     = next((i for i in results if i.get("issuingCompany") == ticker), None)
             if not row:
-                raise
+                return pd.DataFrame()  # retorna vazio para essa empresa
+
             company = pd.DataFrame([row])
             cvm_code = row["codeCVM"]
 
@@ -304,7 +367,6 @@ class CompanyProcessor(BaseProcessor):
             # Initialize the scraper
             scraper = self._init_scraper()
 
-
             # Container for all companies data
             all_companies = []
 
@@ -383,6 +445,14 @@ class CompanyProcessor(BaseProcessor):
     def main(self, thread=True):
         """Main method to process data."""
         try:
+            # download size
+            shared_bytes = {"total": 0, "threads": {}}  # inclui total + subtotais por thread
+            shared_lock = Lock()
+
+            company_processor = CompanyProcessor()
+            company_processor.shared_total_bytes = shared_bytes
+            company_processor.shared_lock = shared_lock
+
             # Load existing and new companies
             local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
             web_companies = self.get_web_companies()
@@ -399,6 +469,11 @@ class CompanyProcessor(BaseProcessor):
             result = self.run(
                 targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
+
+            # Total Transfered
+            if self.shared_total_bytes:
+                total_mb = self.shared_total_bytes["total"]
+                print(f'Downloaded: {self._format_bytes(total_mb)}')
 
             # Save processed data
             if not result.empty:

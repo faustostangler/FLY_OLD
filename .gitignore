@@ -99,6 +99,7 @@ temp/
 *.odp
 *.rtf
 *.txt
+*.lnk
 
 # Compressed and archived files
 *.zip

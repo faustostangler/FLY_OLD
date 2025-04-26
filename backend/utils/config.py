@@ -154,29 +154,35 @@ class Config:
                         ticker TEXT,
                         company_name TEXT,
                         trading_name TEXT,
-                        cnpj TEXT,
                         market_indicator TEXT,
-                        type_bdr TEXT,
-                        date_listing TEXT,
-                        status TEXT,
-                        segment TEXT,
-                        segment_eng TEXT,
-                        type TEXT,
+
                         listing TEXT,
                         ticker_codes TEXT,
                         isin_codes TEXT,
+
                         sector TEXT,
                         subsector TEXT,
+                        segment TEXT,
                         activity TEXT,
+                        describle_category_bvmf TEXT,
+                        segment_eng TEXT,
+
+                        cnpj TEXT,
                         website TEXT,
                         registrar TEXT,
                         main_registrar TEXT,
+
+                        date_listing TEXT,
                         last_date TEXT,
+                        date_quotation TEXT,
+
+                        type TEXT,
+                        status TEXT,
+                        type_bdr TEXT,
                         has_quotation TEXT,
                         has_emissions TEXT,
                         has_bdr TEXT,
-                        describle_category_bvmf TEXT,
-                        date_quotation TEXT,
+
                         PRIMARY KEY (company_name)
                     );
                     CREATE INDEX IF NOT EXISTS idx_company_info ON {tbl_company_info} (company_name);
