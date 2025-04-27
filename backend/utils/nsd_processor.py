@@ -37,7 +37,7 @@ class NsdProcessor(BaseProcessor):
 
         try:
             print(
-                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
+                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
 
             batch_processor = NsdProcessor()
@@ -56,8 +56,7 @@ class NsdProcessor(BaseProcessor):
             if self.shared_total_bytes and self.shared_lock and progress.get("thread_id") is not None:
                 with self.shared_lock:
                     subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
-                    print(f"Batch Completed Worker {progress['thread_id']}: {self._format_bytes(subtotal)} transferred")
-
+                    print(f"Worker {progress['thread_id']} download: {self._format_bytes(subtotal)}")
             # Save result to database
             self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
 
@@ -105,9 +104,9 @@ class NsdProcessor(BaseProcessor):
                     batch = 1 # self.config.selenium['log_loop']
                     if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
                         # Log progress
-                        actual_item = progress["batch_start"] + i
-                        total_items = progress["scrape_size"] + 1
-                        worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
+                        actual_item = progress["batch_start"] + i + 1
+                        total_items = progress["scrape_size"] + 0
+                        worker_info = f"Worker download {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item+0}/{total_items})"
                         extra_info = [
                             worker_info,
                             nsd,
@@ -298,7 +297,7 @@ class NsdProcessor(BaseProcessor):
             # Total Transfered
             if self.shared_total_bytes:
                 total_mb = self.shared_total_bytes["total"]
-                print(f'Total downloaded: {self._format_bytes(total_mb)}')
+                print(f'Total download: {self._format_bytes(total_mb)}')
 
             # Save processed data
             if not result.empty:

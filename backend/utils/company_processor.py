@@ -30,7 +30,7 @@ class CompanyProcessor(BaseProcessor):
         self.homepage_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
 
         # Initialize database and table names
-        self.tbl_company_name = self.config.databases["raw"]["table"]["company_info"]
+        self.table_name = self.config.databases["raw"]["table"]["company_info"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
         # # Initialize driver and other resources
@@ -42,7 +42,7 @@ class CompanyProcessor(BaseProcessor):
 
         try:
             print(
-                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
+                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
 
             batch_processor = CompanyProcessor()
@@ -61,11 +61,10 @@ class CompanyProcessor(BaseProcessor):
             if self.shared_total_bytes and self.shared_lock and progress.get("thread_id") is not None:
                 with self.shared_lock:
                     subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
-                    print(f"Batch Completed Worker {progress['thread_id']}: {self._format_bytes(subtotal)} transferred")
-
+                    print(f"Worker {progress['thread_id']} download: {self._format_bytes(subtotal)}")
             # Save result to database
             self.save_to_db(
-                dataframe=result, table_name=self.tbl_company_name, db_filepath=self.db_filepath, alert=False
+                dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False
             )
 
         except Exception as e:
@@ -134,9 +133,9 @@ class CompanyProcessor(BaseProcessor):
                     batch = 1 # self.config.selenium['log_loop']
                     if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
                         # Log progress
-                        actual_item = progress["batch_start"] + i
-                        total_items = progress["scrape_size"] + 1
-                        worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.2f}% ({actual_item}/{total_items})"
+                        actual_item = progress["batch_start"] + i + 1
+                        total_items = progress["scrape_size"] + 0
+                        worker_info = f"Worker download {progress['thread_id']} Item {100 * actual_item / total_items:.2f}% ({actual_item}/{total_items})"
                         extra_info = [
                             worker_info,
                             cvm_code,
@@ -397,7 +396,7 @@ class CompanyProcessor(BaseProcessor):
             batch_processor.shared_lock = shared_lock
 
             # Load existing and new companies
-            local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
+            local_companies = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
             web_companies = self.get_web_companies()
 
             # Identify scrape targets
@@ -416,11 +415,11 @@ class CompanyProcessor(BaseProcessor):
             # Total Transfered
             if self.shared_total_bytes:
                 total_mb = self.shared_total_bytes["total"]
-                print(f'Total downloaded: {self._format_bytes(total_mb)}')
+                print(f'Total download: {self._format_bytes(total_mb)}')
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(result, table_name=self.tbl_company_name, db_filepath=self.db_filepath)
+                self.save_to_db(result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

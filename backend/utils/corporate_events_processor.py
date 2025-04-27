@@ -41,7 +41,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         try:
             print(
-                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
+                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
             batch_processor = EventsStatementsProcessor()
 

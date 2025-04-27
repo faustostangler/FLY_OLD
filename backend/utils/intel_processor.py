@@ -53,7 +53,7 @@ class IntelProcessor(BaseProcessor):
 
         try:
             print(
-                f"Starting batch {progress['batch_index']}/{progress['total_batches']} {100 * progress['batch_index'] / progress['total_batches']:.02f}%"
+                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
             batch_processor = IntelProcessor()
 
@@ -73,7 +73,7 @@ class IntelProcessor(BaseProcessor):
 
             # first = f"{sub_batch['company_name'].iloc[0]}"
             # last = f"{sub_batch['company_name'].iloc[-1]}"
-            # extra_info = [f"Worker {progress['thread_id']}"]
+            # extra_info = [f"Worker download {progress['thread_id']}"]
             # self.print_info(progress['batch_index'], progress['total_batches'], progress['start_time'], extra_info)
 
         except Exception as e:
@@ -128,9 +128,9 @@ class IntelProcessor(BaseProcessor):
                 )
 
                 # Log progress
-                actual_item = progress["batch_start"] + i
-                total_items = progress["scrape_size"] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
+                actual_item = progress["batch_start"] + i + 1
+                total_items = progress["scrape_size"] + 0
+                worker_info = f"Worker download {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item+0}/{total_items})"
 
                 # Retrieve quarter max and min values
                 quarter_min = (

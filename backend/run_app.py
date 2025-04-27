@@ -31,7 +31,7 @@ if __name__ == "__main__":
         run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
             statements_processor = StatementsProcessor()
-            statements_processor.main(thread=True)
+            statements_processor.main(thread=False)
 
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "N"

@@ -37,6 +37,7 @@ class StatementsProcessor(BaseProcessor):
         self.tbl_statements_raw = self.config.databases["raw"]["table"]["statements_raw"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
         self.database_name = os.path.basename(self.db_filepath)
+        self.table_name = self.tbl_statements_raw
 
         # # Initialize driver and other resources
         # self.driver, self.driver_wait = self._initialize_driver()
@@ -47,8 +48,8 @@ class StatementsProcessor(BaseProcessor):
 
         try:
             print(
-                f"Starting batch {progress['batch_index']}/{progress['total_batches']} "
-                f"{100 * progress['batch_index'] / progress['total_batches']:.02f}%"
+                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} "
+                f"{100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
             batch_processor = StatementsProcessor()
 
@@ -66,17 +67,12 @@ class StatementsProcessor(BaseProcessor):
             if self.shared_total_bytes and self.shared_lock and progress.get("thread_id") is not None:
                 with self.shared_lock:
                     subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
-                    print(f"Batch Completed Worker {progress['thread_id']}: {self._format_bytes(subtotal)} transferred")
-
+                    print(f"Worker {progress['thread_id']} download: {self._format_bytes(subtotal)}")
             # Save result to database
             self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
 
-            # Clean up driver after processing
-            batch_processor.close_driver()
-
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
@@ -117,16 +113,15 @@ class StatementsProcessor(BaseProcessor):
                     batch = 1 # self.config.selenium['log_loop']
                     if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
                     #     # Log progress
-                        actual_item = progress["batch_start"] + i
-                        total_items = progress["scrape_size"] + 1
-                        worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
+                        actual_item = progress["batch_start"] + i + 1 - 1
+                        total_items = progress["scrape_size"] + 0
+                        worker_info = f"Worker download {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item+0}/{total_items})"
                         nsd = row["nsd"]
                         cvm_code = row['cvm_code']
                         version = ''.join(filter(str.isdigit, str(row['version'])))
                         company_name = row.get("company_name", "")
                         quarter = row.get("quarter").strftime("%Y-%m") if row.get("quarter") else ""
                         sent_date = row.get("sent_date").strftime("%Y-%m-%d %H:%M:%S") if row.get("sent_date") else ""
-
                         extra_info = [
                             worker_info,
                             sent_date,
@@ -134,6 +129,7 @@ class StatementsProcessor(BaseProcessor):
                             company_name,
                             quarter,
                             version, 
+                            nsd, 
                             f"({formatted_size})", 
                         ]
                         self.print_info(i, len(sub_batch), start_time, extra_info)
@@ -142,10 +138,10 @@ class StatementsProcessor(BaseProcessor):
                         if result:
                             temp_df = pd.concat(result, ignore_index=True)
                         else:
-                            columns, dtypes, primary_keys = self._get_table_structure(self.tbl_statements_raw, self.db_filepath)
+                            columns, dtypes, primary_keys = self._get_table_structure(self.table_name, self.db_filepath)
                             temp_df = pd.DataFrame(columns=columns)
 
-                        self.save_to_db(dataframe=temp_df, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath, alert=False)
+                        self.save_to_db(dataframe=temp_df, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
 
                 except Exception as e:
                     self.log_error(f"Error processing row {i}: {e}")
@@ -253,8 +249,8 @@ class StatementsProcessor(BaseProcessor):
             # row values
             nsd = row['nsd']
             company_name = row['company_name']
-            quarter = row['quarter']
-            version = row['version']
+            quarter = row.get("quarter").strftime("%Y-%m") if row.get("quarter") else ""
+            version = ''.join(filter(str.isdigit, str(row['version'])))
             cvm_code = row['cvm_code']
             nsd_type = row['nsd_type']
             ticker = row['ticker']
@@ -283,7 +279,7 @@ class StatementsProcessor(BaseProcessor):
             for i, quarter_item in enumerate(urls_company_quarter):
                 grupo = quarter_item['grupo']
                 quadro = quarter_item['quadro']
-                quarter = quarter_item['quarter']
+                quarter = quarter_item["quarter"]
                 quarter_url = quarter_item['url']
                 name = f"{i}_{grupo}_{quadro}"
 
@@ -292,7 +288,9 @@ class StatementsProcessor(BaseProcessor):
                 soup = BeautifulSoup(html, "html.parser")
 
                 temp_folder = self.config.paths["temp_folder"]
-                filename = f"{company_name} {quarter} {version} {nsd} {grupo} {quadro}.html"
+                base_name = f"{company_name} {quarter} {version} {nsd} {grupo} {quadro}"
+
+                filename = f"{base_name}.html"
                 file_path = os.path.join(temp_folder, filename)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(html)
@@ -350,7 +348,7 @@ class StatementsProcessor(BaseProcessor):
                         )
 
                     # Append the processed DataFrame to the list
-                    columns, dtypes, primary_keys = self._get_table_structure(self.tbl_statements_raw, self.db_filepath)
+                    columns, dtypes, primary_keys = self._get_table_structure(self.table_name, self.db_filepath)
 
                     quarter_dfs.append(df[columns])
 
@@ -656,24 +654,36 @@ class StatementsProcessor(BaseProcessor):
             # Load necessary data
             company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
             existing_nsd = self.load_data(table_name=self.tbl_nsd, db_filepath=self.db_filepath)
-            financial_statements = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+            financial_statements = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
             # Identify scrape targets
             targets = self.get_targets(company_info, existing_nsd, financial_statements)
-            targets.to_csv('targets.csv', index=False)
+
             # Exit if no targets
             if targets.empty:
                 self.db_optimize(self.config.databases["raw"]["filepath"])
                 return True
 
-            # Process targets using threading or sequential logic
-            result = self.run(
+            # download size tracking
+            shared_bytes = {"total": 0, "threads": {}}
+            shared_lock = Lock()
+
+            batch_processor = StatementsProcessor()
+            batch_processor.shared_total_bytes = shared_bytes
+            batch_processor.shared_lock = shared_lock
+
+            result = batch_processor.run(
                 targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
 
+            # Total Transferred
+            if shared_bytes:
+                total_mb = shared_bytes["total"]
+                print(f'Total download: {self._format_bytes(total_mb)}')
+
             # Save processed data
             if not result.empty:
-                self.save_to_db(dataframe=result, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+                self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

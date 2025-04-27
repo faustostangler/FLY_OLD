@@ -29,7 +29,7 @@ class HistoricalStockUrlProcessor(BaseProcessor):
         try:
             # print(f'Requesting batch {progress["batch_index"]}/{progress["total_batches"]} {100*progress["batch_index"]/progress["total_batches"]:.02f}%')
 
-            extra_info = [f"Worker {progress['thread_id']}", " ".join(sub_batch)]
+            extra_info = [f"Worker download {progress['thread_id']}", " ".join(sub_batch)]
             self.print_info(progress["batch_index"], progress["total_batches"], progress["start_time"], extra_info)
             # Delegate to process_batch for the actual batch processing
             result = self.process_batch(sub_batch, progress)
