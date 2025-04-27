@@ -356,6 +356,7 @@ class Config:
         """Configurações específicas do Selenium."""
         wait_time = 2
         max_retries = 5
+        log_loop = 50
 
         registry_paths = [
             r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
@@ -373,6 +374,7 @@ class Config:
         return {
             "wait_time": wait_time,
             "max_retries": max_retries,
+            "log_loop": log_loop, 
             "driver": None,
             "driver_wait": None,
             "registry_paths": registry_paths,

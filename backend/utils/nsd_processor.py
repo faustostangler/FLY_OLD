@@ -17,6 +17,16 @@ class NsdProcessor(BaseProcessor):
         super().__init__()
         self.db_lock = Lock()  # Initialize a threading Lock
 
+        # params
+        self.homepage_url = 'https://www.google.com'
+
+        # size
+        self.shared_total_bytes = {"total": 0, "threads": {}}
+        self.shared_lock = Lock()
+        self.total_bytes_transferred = 0
+        self.thread_id = None
+        self.total_block_time = 0
+
         # Initialize database and table names
         self.table_name = self.config.databases["raw"]["table"]["nsd"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
@@ -32,13 +42,24 @@ class NsdProcessor(BaseProcessor):
 
             batch_processor = NsdProcessor()
 
+            # Inject shared control
+            batch_processor.shared_total_bytes = self.shared_total_bytes
+            batch_processor.shared_lock = self.shared_lock
+            batch_processor.thread_id = progress["thread_id"]  # <- inject thread_id
+
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
                 batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
+            # Show subtotal download size
+            if self.shared_total_bytes and self.shared_lock and progress.get("thread_id") is not None:
+                with self.shared_lock:
+                    subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
+                    print(f"Batch Completed Worker {progress['thread_id']}: {self._format_bytes(subtotal)} transferred")
+
             # Save result to database
-            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
+            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -48,43 +69,76 @@ class NsdProcessor(BaseProcessor):
     def process_batch(self, sub_batch, payload, progress):
         """Process a batch of NSD data by scraping and extracting relevant
         information."""
-        result = pd.DataFrame(columns=self.config.domain["columns_nsd"])
-        dfs = []
-        start_time = time.time()
+        try:
+            result = pd.DataFrame(columns=self.config.domain["columns_nsd"])
+            dfs = []
 
-        for i, (_, row) in enumerate(sub_batch.iterrows()):
-            try:
-                nsd = row["nsd"]
-                # Fetch and process NSD details
-                nsd_data = self._fetch_nsd_html(nsd)
-                if nsd_data:
-                    dfs.append(nsd_data)
+            # start time
+            start_time = time.time()
 
-                # Log progress
-                actual_item = progress["batch_start"] + i
-                total_items = progress["scrape_size"] + 1
-                worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
-                extra_info = [
-                    worker_info,
-                    nsd,
-                    (nsd_data.get("sent_date").strftime("%Y-%m-%d %H:%M:%S") if nsd_data.get("sent_date") else ""),
-                    nsd_data.get("nsd_type", ""),
-                    nsd_data.get("company_name", ""),
-                    (nsd_data.get("quarter").strftime("%Y-%m") if nsd_data.get("quarter") else ""),
-                ]
-                self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+            # Initialize batch size tracking
+            if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+                batch_start_bytes = self.shared_total_bytes["threads"].get(self.thread_id, 0)
+            else:
+                batch_start_bytes = self.total_bytes_transferred
 
-            except Exception as e:
-                self.log_error(f"Error processing NSD {row['nsd']}: {e}")
+            # create first scraper
+            scraper = self._init_scraper(url=self.homepage_url)
 
-        # Combine results into a DataFrame
-        if dfs:
-            result = pd.DataFrame(dfs, columns=self.config.domain["columns_nsd"])
+            for i, (_, row) in enumerate(sub_batch.iterrows()):
+                try:
+                    nsd = row["nsd"]
+                    # Fetch and process NSD details
+                    nsd_data = self._fetch_nsd_html(nsd, scraper)
+                    if nsd_data:
+                        dfs.append(nsd_data)
+
+                    # Track bytes transferred after this ticker
+                    if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+                        bytes_after = self.shared_total_bytes["threads"].get(self.thread_id, 0)
+                    else:
+                        bytes_after = self.total_bytes_transferred
+                    bytes_this_item = bytes_after - batch_start_bytes
+                    formatted_size = self._format_bytes(bytes_this_item)
+                    batch_start_bytes = bytes_after  # Update for next item
+
+                    batch = 1 # self.config.selenium['log_loop']
+                    if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
+                        # Log progress
+                        actual_item = progress["batch_start"] + i
+                        total_items = progress["scrape_size"] + 1
+                        worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item}/{total_items})"
+                        extra_info = [
+                            worker_info,
+                            nsd,
+                            (nsd_data.get("sent_date").strftime("%Y-%m-%d %H:%M:%S") if nsd_data.get("sent_date") else ""),
+                            nsd_data.get("nsd_type", ""),
+                            nsd_data.get("company_name", ""),
+                            (nsd_data.get("quarter").strftime("%Y-%m") if nsd_data.get("quarter") else ""),
+                            f"({formatted_size})", 
+                        ]
+                        self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+
+                        # Save result to database
+                        temp_df = pd.DataFrame(dfs, columns=self.config.domain["columns_nsd"])
+                        self.save_to_db(dataframe=temp_df, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
+
+                except Exception as e:
+                    self.log_error(f"Error processing NSD {row['nsd']}: {e}")
+
+            # Combine results into a DataFrame
+            if dfs:
+                result = pd.DataFrame(dfs, columns=self.config.domain["columns_nsd"])
+        
+        except Exception as e:
+            self.log_error(e)
 
         return result
 
     def _generate_nsd_list(self, existing_nsd):
         """"""
+        nsd_range = list(range(1, 100))  # <- default se tudo falhar (100 primeiros NSDs)
+
         try:
             last_nsd = existing_nsd["nsd"].max()
             if pd.isna(last_nsd):  # Check if last_nsd is NaN
@@ -110,43 +164,42 @@ class NsdProcessor(BaseProcessor):
                 estimated_new_nsds = (
                     int(daily_submission_estimate * days_elapsed * self.config.domain["safety_factor"]) + 1
                 )
-                nsd_range = list(range(last_nsd + 1, 1 + last_nsd + estimated_new_nsds))
-
+                future_nsds = list(range(last_nsd + 1, last_nsd + 1 + estimated_new_nsds))
             else:
-                nsd_range = list(range(last_nsd + 1, last_nsd + 1 + self.config.scraping["batch_size"]))
+                future_nsds = list(range(last_nsd + 1, last_nsd + 1 + self.config.scraping["batch_size"]))
         except Exception as e:
-            self.log_error(e)
+            pass
+
+        # Handle missing NSDs (holes in past)
+        all_possible = set(range(1, last_nsd + 1))
+        existing_ids = set(existing_nsd["nsd"].dropna().astype(int))
+        missing_nsds = list(sorted(all_possible - existing_ids))
+
+        # Combine missing and future
+        nsd_range =  missing_nsds + future_nsds
 
         targets = pd.DataFrame({"nsd": list(nsd_range)})
 
         return targets
 
-    def _fetch_nsd_html(self, nsd):
+    def _fetch_nsd_html(self, nsd, scraper=None):
         """Fetch and parse NSD data for a given NSD value."""
         result = {"nsd": nsd}  # Minimal data to prevent stopping the process
-        try:
-            url = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
-            headers = self.header_random()
-            self.test_internet()
 
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
+        if scraper is None:
+            scraper = self._init_scraper()
+
+        try:
+            endpoint = f"https://www.rad.cvm.gov.br/ENET/frmGerenciaPaginaFRE.aspx?NumeroSequencialDocumento={nsd}&CodigoTipoInstituicao=1"
+
+            # Fire off the three requests, with automatic retry on blocks
+            r1 = self._fetch_with_retry(scraper, endpoint)
 
             # Parse the response HTML
-            html = response.text
+            html = r1.text
 
             # Create a file with nsd as the name
             file_path = os.path.join(self.config.paths["temp_folder"], f"nsd_{nsd}.html")
-            with open(file_path, "w", encoding="utf-8") as file:
-                file.write(html)
-
-            html = self.detect_dns_block(nsd, content=html, debug=True)
-
-            # Parse the response HTML
-            html = response.text
-
-            # Create a file with nsd as the name
-            file_path = os.path.join(self.config.paths["temp_folder"], f"nsd_{nsd}_dns_block.html")
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(html)
 
@@ -163,6 +216,7 @@ class NsdProcessor(BaseProcessor):
         try:
             soup = BeautifulSoup(html, "html.parser")
             data = {"nsd": nsd}
+            hash_value = soup.select_one("#hdnHash")["value"]
 
             # Define selectors for the required data
             selectors = {
@@ -211,18 +265,23 @@ class NsdProcessor(BaseProcessor):
         """Main method to scrape NSD data, parse it, and save it to the
         database."""
         try:
+            # download size
+            shared_bytes = {"total": 0, "threads": {}}  # inclui total + subtotais por thread
+            shared_lock = Lock()
+
+            batch_processor = NsdProcessor()
+            batch_processor.shared_total_bytes = shared_bytes
+            batch_processor.shared_lock = shared_lock
+
             # Load existing NSD data
             existing_nsd = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
-            try:
-                # Filter by the last sent_date
+            if not existing_nsd.empty:
                 existing_nsd["sent_date"] = pd.to_datetime(
                     existing_nsd["sent_date"], format="%Y-%m-%dT%H:%M:%S", errors="coerce"
                 )
                 last_valid_index = existing_nsd.sort_values(by="sent_date", ascending=False).index[0]
                 existing_nsd = existing_nsd.loc[:last_valid_index]
-            except Exception as e:
-                self.log_error(e)
 
             targets = self._generate_nsd_list(existing_nsd)
 
@@ -236,6 +295,11 @@ class NsdProcessor(BaseProcessor):
                 targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
             )
 
+            # Total Transfered
+            if self.shared_total_bytes:
+                total_mb = self.shared_total_bytes["total"]
+                print(f'Downloaded: {self._format_bytes(total_mb)}')
+
             # Save processed data
             if not result.empty:
                 self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
@@ -244,3 +308,4 @@ class NsdProcessor(BaseProcessor):
             self.log_error(f"Error in main: {e}")
 
         return True
+

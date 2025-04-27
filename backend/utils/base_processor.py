@@ -1,5 +1,6 @@
 import base64
 import concurrent.futures
+import cloudscraper
 import inspect
 import json
 import logging
@@ -7,6 +8,7 @@ import os
 import platform
 import random
 import re
+import requests
 import sqlite3
 import string
 import subprocess
@@ -320,6 +322,74 @@ class BaseProcessor:
             self.log_error(e)
 
         return content
+
+    def _init_scraper(self, url, wait_time=None):
+        """Create a cloudscraper instance with randomized headers and prime it on the homepage."""
+        wait_time = wait_time or self.config.selenium['wait_time']
+        r = None
+        while True:
+            try:
+                self.test_internet()
+    
+                headers = self.header_random()
+
+                # backup
+                scraper = requests.Session()
+                scraper.headers.update(headers)
+
+                # real one
+                scraper = cloudscraper.create_scraper()
+                scraper.headers.update(headers)
+                r = scraper.get(url)
+
+                if r.status_code == 200:
+                    break  # Success! Exit the loop
+
+            except Exception as e:
+                self.log_error(e)
+
+            # small sleep to avoid hammering
+            wait_time += 1
+            time.sleep(self.dynamic_sleep() + wait_time)
+
+        return scraper
+
+    def _fetch_with_retry(self, scraper, url, wait=1):
+        """
+        Keep calling scraper.get(url) until we get status_code 200,
+        tracking block times and using dynamic_sleep() between tries.
+        Returns the successful Response.
+        """
+        block_start = None
+        while True:
+            try:
+                # get url
+                r = scraper.get(url)
+                r.raise_for_status()
+
+                # total bytes transferred
+                bytes_transferred = len(r.content)
+                if self.shared_total_bytes is not None and self.shared_lock is not None:
+                    with self.shared_lock:
+                        self.shared_total_bytes["total"] += bytes_transferred
+                        if self.thread_id is not None:
+                            if self.thread_id not in self.shared_total_bytes["threads"]:
+                                self.shared_total_bytes["threads"][self.thread_id] = 0
+                            self.shared_total_bytes["threads"][self.thread_id] += bytes_transferred
+                else:
+                    # fallback caso esteja rodando isolado
+                    self.total_bytes_transferred += bytes_transferred
+
+                if block_start:
+                    self.total_block_time += time.time() - block_start
+                    print(f'Dodging server block: {self.total_block_time:.2f}s')
+                return r
+            except Exception as e:
+                if block_start is None:
+                    block_start = time.time()
+                wait += 1
+                time.sleep(self.dynamic_sleep() + wait)
+                scraper = self._init_scraper()
 
     # SELENIUM DRIVER METHODS
     def _get_chrome_version(self):
@@ -866,6 +936,14 @@ class BaseProcessor:
             return pd.DataFrame()
 
         return df
+
+    def _format_bytes(self, bytes_amount):
+        if bytes_amount < 1024:
+            return f"{bytes_amount:.4f} B"
+        elif bytes_amount < 1024 * 1024:
+            return f"{bytes_amount / 1024:.2f} KB"
+        else:
+            return f"{bytes_amount / (1024 * 1024):.2f} MB"
 
     # APP METHODS
     def prefill_input(self, text, delay=None):

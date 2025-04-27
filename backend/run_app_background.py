@@ -12,7 +12,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get company information
         run_company_processor = "N"
         prompt = "Want to update company information? (YES/NO): "
-        run_company_processor = base.timed_input(prompt)
+        # run_company_processor = base.timed_input(prompt)
         if run_company_processor.strip().upper().startswith("Y"):
             company_processor = CompanyProcessor()
             company_processor.main(thread=True)
@@ -23,7 +23,7 @@ if __name__ == "__main__":
         run_nsd_processor = base.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith("Y"):
             nsd_processor = NsdProcessor()
-            nsd_processor.main(thread=True)
+            nsd_processor.main(thread=False)
 
         # Ask the user if they want to get finantial statements
         run_statements_processor = "N"
@@ -31,9 +31,7 @@ if __name__ == "__main__":
         run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
             statements_processor = StatementsProcessor()
-            statements_processor.close_driver()
             statements_processor.main(thread=False)
-            statements_processor.close_driver()
 
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "N"

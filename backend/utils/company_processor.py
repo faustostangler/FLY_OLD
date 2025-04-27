@@ -1,11 +1,8 @@
 import json
-import re
 import time
 from threading import Lock
 
-import cloudscraper
 import pandas as pd
-import requests
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
@@ -61,10 +58,10 @@ class CompanyProcessor(BaseProcessor):
             )
 
             # total download
-            if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+            if self.shared_total_bytes and self.shared_lock and progress.get("thread_id") is not None:
                 with self.shared_lock:
-                    subtotal = self.shared_total_bytes["threads"].get(self.thread_id, 0)
-                    print(f"\n[Batch Completed] Thread {self.thread_id}: {self._format_bytes(subtotal)} transferred")
+                    subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
+                    print(f"Batch Completed Worker {progress['thread_id']}: {self._format_bytes(subtotal)} transferred")
 
             # Save result to database
             self.save_to_db(
@@ -98,10 +95,15 @@ class CompanyProcessor(BaseProcessor):
 
             # Start the timer to measure processing time
             start_time = time.time()
-            batch_start_bytes = self.total_bytes_transferred
+
+            # download control
+            if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+                batch_start_bytes = self.shared_total_bytes["threads"].get(self.thread_id, 0)
+            else:
+                batch_start_bytes = self.total_bytes_transferred
 
             # create first scraper
-            scraper = self._init_scraper()
+            scraper = self._init_scraper(url=self.homepage_url)
 
             # Loop through each row in the sub-batch
             for i, (_, row) in enumerate(sub_batch.iterrows()):
@@ -116,18 +118,30 @@ class CompanyProcessor(BaseProcessor):
                     # Append the company data to the list
                     all_data.append(df)
 
-                    # Extract CVM code for logging
+                    # Track bytes transferred after this ticker
+                    if self.shared_total_bytes and self.shared_lock and self.thread_id is not None:
+                        bytes_after = self.shared_total_bytes["threads"].get(self.thread_id, 0)
+                    else:
+                        bytes_after = self.total_bytes_transferred
+                    bytes_this_item = bytes_after - batch_start_bytes
+                    formatted_size = self._format_bytes(bytes_this_item)
+                    batch_start_bytes = bytes_after  # <- Atualiza aqui!!
+
+                    # Extract CVM code and company name for logging
                     cvm_code = df['cvm_code'][0]
                     company_name = df['company_name'][0]
 
-                    # Track bytes transferred after this ticker
-                    bytes_after = self.total_bytes_transferred
-                    bytes_this_company = bytes_after - batch_start_bytes
-                    formatted_size = self._format_bytes(bytes_this_company)
-                    batch_start_bytes = bytes_after  # <- Atualiza aqui!!
-
-                    # Log current progress
-                    extra_info = [f"Worker {progress['thread_id']}", cvm_code, ticker, company_name, f"({formatted_size})"]
+                    # Log progress
+                    actual_item = progress["batch_start"] + i
+                    total_items = progress["scrape_size"] + 1
+                    worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.2f}% ({actual_item}/{total_items})"
+                    extra_info = [
+                        worker_info,
+                        cvm_code,
+                        ticker,
+                        company_name,
+                        f"({formatted_size})",
+                    ]
                     self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             # After processing all rows, concatenate the collected DataFrames
@@ -146,71 +160,6 @@ class CompanyProcessor(BaseProcessor):
             self.log_error(e)
 
         return result
-
-    def _init_scraper(self, wait_time=None):
-        """Create a cloudscraper instance with randomized headers and prime it on the homepage."""
-        wait_time = wait_time or self.config.selenium['wait_time']
-        r = None
-        while True:
-            try:
-                headers = self.header_random()
-
-                # backup
-                scraper = requests.Session()
-                scraper.headers.update(headers)
-
-                # real one
-                scraper = cloudscraper.create_scraper()
-                scraper.headers.update(headers)
-                r = scraper.get(self.homepage_url)
-
-                if r.status_code == 200:
-                    break  # Success! Exit the loop
-
-            except Exception as e:
-                self.log_error(e)
-
-            # small sleep to avoid hammering
-            wait_time += 1
-            time.sleep(self.dynamic_sleep() + wait_time)
-
-        return scraper
-    def _fetch_with_retry(self, scraper, url, wait=1):
-        """
-        Keep calling scraper.get(url) until we get status_code 200,
-        tracking block times and using dynamic_sleep() between tries.
-        Returns the successful Response.
-        """
-        block_start = None
-        while True:
-            try:
-                # get url
-                r = scraper.get(url)
-                r.raise_for_status()
-
-                # total bytes transferred
-                bytes_transferred = len(r.content)
-                if self.shared_total_bytes is not None and self.shared_lock is not None:
-                    with self.shared_lock:
-                        self.shared_total_bytes["total"] += bytes_transferred
-                        if self.thread_id is not None:
-                            if self.thread_id not in self.shared_total_bytes["threads"]:
-                                self.shared_total_bytes["threads"][self.thread_id] = 0
-                            self.shared_total_bytes["threads"][self.thread_id] += bytes_transferred
-                else:
-                    # fallback caso esteja rodando isolado
-                    self.total_bytes_transferred += bytes_transferred
-
-                if block_start:
-                    self.total_block_time += time.time() - block_start
-                    print(f'Dodging server block: {self.total_block_time:.2f}s')
-                return r
-            except Exception as e:
-                if block_start is None:
-                    block_start = time.time()
-                wait += 1
-                time.sleep(self.dynamic_sleep() + wait)
-                scraper = self._init_scraper()
 
     def _extract_codes(self, otherCodes):
         '''
@@ -235,14 +184,6 @@ class CompanyProcessor(BaseProcessor):
             self.log_error(e)
         return df
 
-    def _format_bytes(self, bytes_amount):
-        if bytes_amount < 1024:
-            return f"{bytes_amount:.0f} B"
-        elif bytes_amount < 1024 * 1024:
-            return f"{bytes_amount / 1024:.2f} KB"
-        else:
-            return f"{bytes_amount / (1024 * 1024):.2f} MB"
-
     def _get_company_data(self, ticker, scraper=None):
         """
         Fetch company info, details and shareholders from B3 for the given ticker,
@@ -250,7 +191,7 @@ class CompanyProcessor(BaseProcessor):
         mapped and cleaned columns, or the ticker string on failure.
         """
         if scraper is None:
-            scraper = self._init_scraper()
+            scraper = self._init_scraper(url=self.homepage_url)
 
         try:
             # Prepare payloads, tokens and endpoints
@@ -365,7 +306,7 @@ class CompanyProcessor(BaseProcessor):
         """
         try:
             # Initialize the scraper
-            scraper = self._init_scraper()
+            scraper = self._init_scraper(url=self.homepage_url)
 
             # Container for all companies data
             all_companies = []
@@ -412,7 +353,7 @@ class CompanyProcessor(BaseProcessor):
 
                     except Exception as e:
                         # Reset scraper and retry
-                        scraper = self._init_scraper()
+                        scraper = self._init_scraper(url=self.homepage_url)
                         self.log_error(e)
 
             # Convert the list of companies into a DataFrame
@@ -449,9 +390,9 @@ class CompanyProcessor(BaseProcessor):
             shared_bytes = {"total": 0, "threads": {}}  # inclui total + subtotais por thread
             shared_lock = Lock()
 
-            company_processor = CompanyProcessor()
-            company_processor.shared_total_bytes = shared_bytes
-            company_processor.shared_lock = shared_lock
+            batch_processor = CompanyProcessor()
+            batch_processor.shared_total_bytes = shared_bytes
+            batch_processor.shared_lock = shared_lock
 
             # Load existing and new companies
             local_companies = self.load_data(table_name=self.tbl_company_name, db_filepath=self.db_filepath)
