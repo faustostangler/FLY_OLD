@@ -945,6 +945,69 @@ class BaseProcessor:
         else:
             return f"{bytes_amount / (1024 * 1024):.2f} MB"
 
+    def get_float_from_text(self, value):
+        """
+        Automatically detect and parse a number from mixed decimal systems.
+
+        Args:
+            value (str or int or float): Input value.
+
+        Returns:
+            float: Parsed float value.
+        """
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        value = value.strip().replace('\xa0', '')
+
+        if ',' in value and '.' in value:
+            # Both ',' and '.' exist
+            if value.rfind(',') > value.rfind('.'):
+                # Comma comes after dot => dot = thousand separator
+                value = value.replace('.', '').replace(',', '.')
+            else:
+                # Dot comes after comma => comma = thousand separator
+                value = value.replace(',', '')
+        elif ',' in value:
+            # Only comma present => comma is decimal separator
+            value = value.replace('.', '').replace(',', '.')
+        elif '.' in value:
+            # Only dot present
+            parts = value.split('.')
+            if len(parts[-1]) <= 2:
+                # Last part has 2 or fewer digits: treat as decimal separator
+                pass  # Do nothing
+            else:
+                # Last part has more than 2 digits: treat dot as thousand separator
+                value = value.replace('.', '')
+        else:
+            # No separator
+            pass
+
+        return float(value)
+
+    def _clean_number(self, text):
+        if text is None:
+            return 0
+        
+        value = text.strip()
+        if not value or set(value.replace('\xa0', '').replace('.', '').replace(',', '')) == {'0'}:
+            return float(0)
+        
+        result = self.get_float_from_text(value)
+        return result
+
+    def safe_parse_date(self, val):
+        if pd.isna(val) or val is None:
+            return pd.NaT
+        val = str(val).strip()
+        if "-" in val and "T" in val:
+            # ISO format detected
+            return pd.to_datetime(val, errors='coerce', dayfirst=False)
+        else:
+            # Assume Brazilian format
+            return pd.to_datetime(val, errors='coerce', dayfirst=True)
+
     # APP METHODS
     def prefill_input(self, text, delay=None):
         """Simulate typing the default text into the input field.

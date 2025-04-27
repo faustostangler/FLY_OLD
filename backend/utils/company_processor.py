@@ -131,18 +131,20 @@ class CompanyProcessor(BaseProcessor):
                     cvm_code = df['cvm_code'][0]
                     company_name = df['company_name'][0]
 
-                    # Log progress
-                    actual_item = progress["batch_start"] + i
-                    total_items = progress["scrape_size"] + 1
-                    worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.2f}% ({actual_item}/{total_items})"
-                    extra_info = [
-                        worker_info,
-                        cvm_code,
-                        ticker,
-                        company_name,
-                        f"({formatted_size})",
-                    ]
-                    self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
+                    batch = 1 # self.config.selenium['log_loop']
+                    if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
+                        # Log progress
+                        actual_item = progress["batch_start"] + i
+                        total_items = progress["scrape_size"] + 1
+                        worker_info = f"Worker {progress['thread_id']} Item {100 * actual_item / total_items:.2f}% ({actual_item}/{total_items})"
+                        extra_info = [
+                            worker_info,
+                            cvm_code,
+                            ticker,
+                            company_name,
+                            f"({formatted_size})",
+                        ]
+                        self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=0)
 
             # After processing all rows, concatenate the collected DataFrames
             if all_data:
@@ -414,7 +416,7 @@ class CompanyProcessor(BaseProcessor):
             # Total Transfered
             if self.shared_total_bytes:
                 total_mb = self.shared_total_bytes["total"]
-                print(f'Downloaded: {self._format_bytes(total_mb)}')
+                print(f'Total downloaded: {self._format_bytes(total_mb)}')
 
             # Save processed data
             if not result.empty:

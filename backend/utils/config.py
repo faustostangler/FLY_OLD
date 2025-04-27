@@ -514,6 +514,30 @@ class Config:
         companies_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/search?language=pt-br"
         company_url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br"
 
+        endpoints_config = {
+            # Dados da Empresa
+            ('Dados da Empresa', 'Composição do Capital'): {"Informacao": None, "Demonstracao": None, "Periodo": 0},
+
+            # DFs Individuais
+            ('DFs Individuais', 'Balanço Patrimonial Ativo'): {"Informacao": 1, "Demonstracao": 2, "Periodo": 0},
+            ('DFs Individuais', 'Balanço Patrimonial Passivo'): {"Informacao": 1, "Demonstracao": 3, "Periodo": 0},
+            ('DFs Individuais', 'Demonstração do Resultado'): {"Informacao": 1, "Demonstracao": 4, "Periodo": 0},
+            ('DFs Individuais', 'Demonstração do Resultado Abrangente'): {"Informacao": 1, "Demonstracao": 5, "Periodo": 0},
+            ('DFs Individuais', 'Demonstração do Fluxo de Caixa'): {"Informacao": 1, "Demonstracao": 99, "Periodo": 0},
+            ('DFs Individuais', 'Demonstração de Valor Adicionado'): {"Informacao": 1, "Demonstracao": 9, "Periodo": 0},
+
+            # DFs Consolidadas
+            ('DFs Consolidadas', 'Balanço Patrimonial Ativo'): {"Informacao": 2, "Demonstracao": 2, "Periodo": 0},
+            ('DFs Consolidadas', 'Balanço Patrimonial Passivo'): {"Informacao": 2, "Demonstracao": 3, "Periodo": 0},
+            ('DFs Consolidadas', 'Demonstração do Resultado'): {"Informacao": 2, "Demonstracao": 4, "Periodo": 0},
+            ('DFs Consolidadas', 'Demonstração do Resultado Abrangente'): {"Informacao": 2, "Demonstracao": 5, "Periodo": 0},
+            ('DFs Consolidadas', 'Demonstração do Fluxo de Caixa'): {"Informacao": 2, "Demonstracao": 99, "Periodo": 0},
+            ('DFs Consolidadas', 'Demonstração de Valor Adicionado'): {"Informacao": 2, "Demonstracao": 9, "Periodo": 0},
+        }
+
+
+
+
         # Colunas colunas de "company_info"
         columns_company_info = [
             "cvm_code",
@@ -779,6 +803,7 @@ class Config:
             "indent": indent,
             "companies_url": companies_url,
             "company_url": company_url,
+            "endpoints_config": endpoints_config, 
             "columns_company_info": columns_company_info,
             "web_company_columns_mapping": web_company_columns_mapping, 
             "columns_nsd": columns_nsd,

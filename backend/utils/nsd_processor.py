@@ -176,7 +176,7 @@ class NsdProcessor(BaseProcessor):
         missing_nsds = list(sorted(all_possible - existing_ids))
 
         # Combine missing and future
-        nsd_range =  missing_nsds + future_nsds
+        nsd_range = future_nsds + missing_nsds
 
         targets = pd.DataFrame({"nsd": list(nsd_range)})
 
@@ -298,7 +298,7 @@ class NsdProcessor(BaseProcessor):
             # Total Transfered
             if self.shared_total_bytes:
                 total_mb = self.shared_total_bytes["total"]
-                print(f'Downloaded: {self._format_bytes(total_mb)}')
+                print(f'Total downloaded: {self._format_bytes(total_mb)}')
 
             # Save processed data
             if not result.empty:
