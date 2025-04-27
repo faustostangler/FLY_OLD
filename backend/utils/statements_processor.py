@@ -136,7 +136,6 @@ class StatementsProcessor(BaseProcessor):
                             version, 
                             f"({formatted_size})", 
                         ]
-
                         self.print_info(i, len(sub_batch), start_time, extra_info)
 
                         # Save result to database
@@ -293,7 +292,7 @@ class StatementsProcessor(BaseProcessor):
                 soup = BeautifulSoup(html, "html.parser")
 
                 temp_folder = self.config.paths["temp_folder"]
-                filename = f"{cvm_code} {nsd} {quarter} {version} {grupo} {quadro}.html"
+                filename = f"{company_name} {quarter} {version} {nsd} {grupo} {quadro}.html"
                 file_path = os.path.join(temp_folder, filename)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(html)
@@ -354,12 +353,6 @@ class StatementsProcessor(BaseProcessor):
                     columns, dtypes, primary_keys = self._get_table_structure(self.tbl_statements_raw, self.db_filepath)
 
                     quarter_dfs.append(df[columns])
-
-                    temp_folder = self.config.paths["temp_folder"]
-                    filename = f"{cvm_code} {nsd} {quarter} {version} {grupo} {quadro}.html"
-                    file_path = os.path.join(temp_folder, filename)
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(html)
 
                 except Exception as e:
                     pass
@@ -479,7 +472,11 @@ class StatementsProcessor(BaseProcessor):
             date_columns = ['quarter', 'sent_date', 'date_listing', 'last_date', 'date_quotation']
             for col in date_columns:
                 try:
-                    targets[col] = targets[col].apply(self.safe_parse_date)
+                    mask_iso = targets[col].astype(str).str.contains('-', na=False) & targets[col].astype(str).str.contains('T', na=False)
+                    mask_brazil = ~mask_iso & targets[col].notna()
+
+                    targets.loc[mask_iso, col] = pd.to_datetime(targets.loc[mask_iso, col], errors='coerce', dayfirst=False)
+                    targets.loc[mask_brazil, col] = pd.to_datetime(targets.loc[mask_brazil, col], errors='coerce', dayfirst=True)
                 except Exception as e:
                     self.log_error(e)
 
