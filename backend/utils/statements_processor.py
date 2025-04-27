@@ -113,9 +113,9 @@ class StatementsProcessor(BaseProcessor):
                     batch = 1 # self.config.selenium['log_loop']
                     if i % batch == 0 or i == len(sub_batch) - 1:  # Always log last item too
                     #     # Log progress
-                        actual_item = progress["batch_start"] + i + 1 - 1
+                        actual_item = progress["batch_start"] + i + 1 
                         total_items = progress["scrape_size"] + 0
-                        worker_info = f"Worker download {progress['thread_id']} Item {100 * actual_item / total_items:.02f}% ({actual_item+0}/{total_items})"
+                        worker_info = f"Worker {progress['thread_id']} {100 * actual_item / total_items:.02f}% ({actual_item+0}/{total_items})"
                         nsd = row["nsd"]
                         cvm_code = row['cvm_code']
                         version = ''.join(filter(str.isdigit, str(row['version'])))
