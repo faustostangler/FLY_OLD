@@ -1609,7 +1609,8 @@ class BaseProcessor:
             self.log_error(e)
 
     def load_data(self, table_name=None, query=None, params=None, db_filepath=None, max_retries=None, alert=True):
-        """Load data from the SQLite database into a pandas DataFrame using
+        """
+        Load data from the SQLite database into a pandas DataFrame using
         multithreading for faster reads.
 
         Dynamically creates databases and tables if they do not exist.
@@ -1621,77 +1622,112 @@ class BaseProcessor:
             database_name = os.path.basename(db_filepath)
             dataframes = []
 
-            columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
-
-            # 1. Count total rows
+            # Ensure database and table exist ONCE, before multithreading
             try:
-                # Retry logic for database connection
-                attempts = 0
-                while attempts < max_retries:
-                    # Database Code
-                    with self.db_lock:
-                        # Ensure the database and table exist
-                        self._initialize_database(db_filepath, database_name, table_name)
-                        self._configure_db(db_filepath)
-
-                        with self._get_db_connection(db_filepath, read_only=True) as conn:
-                            cursor = conn.cursor()
-                            try:
-                                if table_name:
-                                    # columns, dtypes, primary_keys = 
-                                    sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
-                                    params = ()
-                                elif query:
-                                    query_count_index = query.upper().find("FROM")
-                                    sql_query = f"SELECT COUNT(*) {query[query_count_index:]}"
-
-                                cursor.execute(sql_query, params)
-                                total_rows = cursor.fetchone()[0]
-
-                            except Exception:
-                                self._initialize_table(db_filepath, database_name, table_name)
-                                total_rows = 0
-                    break
+                with self.db_lock:
+                    self._initialize_database(db_filepath, database_name, table_name)
+                    self._configure_db(db_filepath)
             except Exception as e:
                 self.log_error(e)
 
-            # 2. Load database
             try:
-                # Total number of batches
-                batch_size = self.config.scraping["chunk_size"]
-                batch_number = (total_rows // batch_size) + (1 if total_rows % batch_size > 0 else 0)
+                with self._get_db_connection(db_filepath, read_only=False) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';"
+                    )
+                    table_exists = cursor.fetchone()
+                    if not table_exists:
+                        self._initialize_table(db_filepath, database_name, table_name)
+            except Exception as e:
+                self.log_error(f"Error checking/creating table {table_name}: {e}")
 
+            # 1. Count total rows (fast version using MAX(rowid))
+            try:
+                attempts = 0
+                total_rows = 0
+
+                while attempts < max_retries:
+                    with self._get_db_connection(db_filepath, read_only=True) as conn:
+                        cursor = conn.cursor()
+
+                        if table_name:
+                            try:
+                                # Try fast MAX(rowid) first
+                                sql_query = f"SELECT MAX(rowid) FROM {table_name}"
+                                cursor.execute(sql_query)
+                                max_rowid = cursor.fetchone()[0]
+
+                                total_rows = max_rowid if max_rowid is not None else 0
+                                params = ()
+
+                            except Exception as e:
+                                # If MAX(rowid) fails, fallback to COUNT(*)
+                                self.log_error(f"MAX(rowid) failed: {e}")
+                                columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
+                                sql_query = f"SELECT COUNT({primary_keys[0]}) FROM {table_name}"
+                                params = ()
+                                cursor.execute(sql_query, params)
+                                total_rows = cursor.fetchone()[0]
+
+                        elif query:
+                            query_count_index = query.upper().find("FROM")
+                            sql_query = f"SELECT COUNT(*) {query[query_count_index:]}"
+                            cursor.execute(sql_query, params)
+                            total_rows = cursor.fetchone()[0]
+
+                        break
+
+            except Exception as e:
+                self.log_error(e)
+                total_rows = 0
+
+            # 2. Load database using multithreaded reads (rowid‐pagination + sem sleeps)
+            try:
+                batch_size    = self.config.scraping["chunk_size"]
+                batch_number  = (total_rows // batch_size) + (1 if total_rows % batch_size > 0 else 0)
                 batch_threads = min(self.config.scraping["max_workers"], batch_number)
-                offsets = range(0, total_rows, batch_size)
 
                 if batch_number == 0 or batch_threads == 0:
-                    schema_str = self.config.schemas[database_name][table_name]
+                    # nada a fazer
                     df = pd.DataFrame(columns=dtypes.keys()).astype(dtypes)
-                    return df  # Nothing to process
+                    return df
+
+                # 2.1 – determinar intervalo de rowid para cada batch
+                with self._get_db_connection(db_filepath, read_only=True) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(f"SELECT MAX(rowid) FROM {table_name}")
+                    max_rowid = cursor.fetchone()[0] or 0
+
+                # calcula faixas aproximadas de rowid por batch
+                chunk_range = int(max_rowid / batch_number) or batch_size
+                rowid_starts = [i * chunk_range + 1 for i in range(batch_number)]
+                # garante que a última faixa vá até o fim
+                rowid_ends   = [start + chunk_range for start in rowid_starts]
+                rowid_ends[-1] = max_rowid + 1
 
                 start_time = time.time()
 
-                # Internal method for batch sql reading
-                def read_batch(
-                    offset, batch_number, table_name, query, params, start_time=start_time, alert=True
-                ):
+                def read_batch(start_id, end_id, batch_idx, table_name, query, params, alert=True):
+                    """Lê o batch filtrando por rowid em vez de OFFSET."""
                     if alert:
-                        extra_info = [f"Parte {batch_number + 1}/{batch_number}"]
-                        self.print_info(batch_number, start_time, extra_info)
+                        extra_info = [f"from {start_id} to {end_id}"]
+                        self.print_info(batch_idx, batch_number, start_time, extra_info)
 
-                    # Retry logic for database connection
                     attempt = 0
                     while attempt < max_retries:
                         try:
-                            # Database Code
                             with self._get_db_connection(db_filepath, read_only=True) as conn:
                                 if table_name:
-                                    query_batch = f"SELECT * FROM {table_name} LIMIT {batch_size} OFFSET {offset}"
-                                elif query:
-                                    query_batch = f"{query} LIMIT {batch_size} OFFSET {offset}"
-                                query_df = pd.read_sql_query(query_batch, conn, params=params)
-
-                                return query_df
+                                    sql = (
+                                        f"SELECT * FROM {table_name} "
+                                        f"WHERE rowid >= {start_id} AND rowid < {end_id}"
+                                    )
+                                else:
+                                    # continua suportando query customizada com LIMIT
+                                    sql = f"{query} LIMIT {batch_size}"
+                                df_batch = pd.read_sql_query(sql, conn, params=params)
+                                return df_batch
 
                         except Exception as e:
                             if "database is locked" in str(e):
@@ -1701,32 +1737,31 @@ class BaseProcessor:
                                 raise
                     raise Exception(f"Failed to read batch after {max_retries} attempts.")
 
-                # **TQDM Progress Bar Inside Multithreading**
+                # 2.2 – executar em paralelo sem sleeps
                 with ThreadPoolExecutor(max_workers=batch_threads) as executor:
-                    tasks = []
-                    with tqdm(total=total_rows, unit=" rows", desc=f"{table_name}", leave=False) as pbar:
-                        for batch_number, offset in enumerate(offsets):
-                            task = executor.submit(
-                                read_batch, offset, batch_number, table_name, query, params, alert=False
+                    futures = []
+                    for idx, (start_id, end_id) in enumerate(zip(rowid_starts, rowid_ends)):
+                        futures.append(
+                            executor.submit(
+                                read_batch,
+                                start_id,
+                                end_id,
+                                idx,
+                                table_name,
+                                query,
+                                params,
+                                alert=False,  # alert=False para não poluir demais o log
                             )
-                            tasks.append(task)
-                            time.sleep(1)
+                        )
 
-                        # Collect results while updating the progress bar
-                        for task in tasks:
-                            dataframes.append(task.result())
-                            pbar.update(batch_size)  # Update progress bar
+                    # 2.3 – coletar resultados atualizando tqdm
+                    with tqdm(total=total_rows, unit=" rows", desc=f"{table_name}", leave=False) as pbar:
+                        for future in as_completed(futures):
+                            df_part = future.result()
+                            dataframes.append(df_part)
+                            pbar.update(len(df_part))
 
                 final_df = pd.concat(dataframes, ignore_index=True) if dataframes else pd.DataFrame()
-
-                # if normalize_columns:
-                #     for col in normalize_columns:
-                #         if col in final_df.columns:
-                #             if 'date' in col.lower() or 'time' in col.lower():
-                #                 final_df[col] = pd.to_datetime(final_df[col], errors='coerce')
-                #             else:
-                #                 final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
-
                 return final_df
 
             except Exception as e:
@@ -1738,7 +1773,6 @@ class BaseProcessor:
 
         except Exception as e:
             self.log_error(e)
-            return pd.DataFrame()  # Return an empty DataFrame in case of failure
 
     def save_to_db(
         self,

@@ -528,18 +528,18 @@ class EventsStatementsProcessor(BaseProcessor):
     def main(self, thread=True):
         """definitions."""
         try:
-            # # Carregar dados processados anteriormente
-            # standart_statements = self.load_data(
-            #     table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
-            # )
-            # standart_statements = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
+            # Carregar dados processados anteriormente
+            standart_statements = self.load_data(
+                table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
+            )
+            standart_statements = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
 
             # load existing company_info data
             company_info = self.load_data(table_name=self.tbl_company_info, db_filepath=self.db_filepath)
-            # statements_corp_events = self.load_data(
-            #     table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath
-            # )
-            standart_statements = statements_corp_events = pd.DataFrame()
+            statements_corp_events = self.load_data(
+                table_name=self.tbl_statements_corp_events, db_filepath=self.db_filepath
+            )
+            # standart_statements = statements_corp_events = pd.DataFrame()
             targets = self.get_targets(company_info)
 
             # Exit if no targets

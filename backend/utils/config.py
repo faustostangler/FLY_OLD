@@ -307,42 +307,66 @@ class Config:
             },
         }
 
+    def _find_heaviest_table(self, db_filepath, sample_size=10_000):
+        """Encontra a tabela com linhas mais pesadas para basear o chunk_size."""
+        heaviest_table = None
+        max_memory_per_row = 1  # fallback seguro
+
+        try:
+            with sqlite3.connect(db_filepath) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = [row[0] for row in cursor.fetchall()]
+
+                for table in tables:
+                    try:
+                        df_sample = pd.read_sql_query(f"SELECT * FROM {table} LIMIT ?", conn, params=(sample_size,))
+                        if len(df_sample) > 0:
+                            memory_per_row = df_sample.memory_usage(deep=True).sum() / len(df_sample)
+                            if memory_per_row > max_memory_per_row:
+                                max_memory_per_row = memory_per_row
+                                heaviest_table = table
+                    except Exception:
+                        continue  # ignora erros de leitura de tabela
+
+        except Exception as e:
+            self.log_error(f"Erro ao encontrar tabela mais pesada: {e}")
+
+        return heaviest_table, max_memory_per_row
+
     def _define_scraping_config(self):
         """Configurações gerais de scraping e processamento em lote."""
         cpu = os.cpu_count() or 1
         batch_size = cpu * 10
-        max_workers = cpu * 1  # ou outro cálculo
+        max_workers = cpu * 1
         stock_data_start_date = "1960-01-01"
         update_days = 2
 
         # Database configuration
         databases = self._define_database_config()
         raw_path = databases["raw"]["filepath"]
-        tbl_nsd = databases["raw"]["table"]["nsd"]
 
-        # Load a small sample of your dataset
-        db_lock = Lock()
+        # Inicializa
         sample_size = 10_000
         memory_per_row = 1
-        while True:
-            with db_lock:  # Ensure thread-safe database access
-                try:
-                    with sqlite3.connect(raw_path) as conn:
-                        df_sample = pd.read_sql_query(f"SELECT * FROM {tbl_nsd} LIMIT ?", conn, params=(sample_size,))
-                        if len(df_sample) > 0:
-                            memory_per_row = df_sample.memory_usage(deep=True).sum() / len(df_sample)
-                        else:
-                            memory_per_row = df_sample.memory_usage(deep=True).sum()
-                        # memory parameters
-                        memory_total = psutil.virtual_memory().total
-                        memory_available = psutil.virtual_memory().available
-                        memory_budget = memory_available * 0.5
+        db_lock = Lock()
 
-                        chunk_size = int(memory_budget / memory_per_row)
+        with db_lock:
+            try:
+                heaviest_table, memory_per_row = self._find_heaviest_table(raw_path, sample_size)
 
-                except Exception:
-                    chunk_size = sample_size
-            break
+                if memory_per_row <= 0:
+                    memory_per_row = 1  # proteção para divisões
+
+                memory_total = psutil.virtual_memory().total
+                memory_available = psutil.virtual_memory().available
+                memory_budget = memory_available * 0.5  # usar 50% da memória disponível
+
+                chunk_size = int(memory_budget / memory_per_row)
+
+            except Exception as e:
+                self.log_error(f"Erro na definição de chunk_size dinâmico: {e}")
+                chunk_size = sample_size
 
         return {
             "batch_size": batch_size,
