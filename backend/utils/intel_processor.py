@@ -581,8 +581,11 @@ class IntelProcessor(BaseProcessor):
     def main(self, thread=True):
         """docstring."""
         try:
+            start_time = time.time()
+            targets = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+            end_time = time.time()
             # Get updated targets
-            targets = self.get_targets(process_new=True, limit=False)
+            # targets = self.get_targets(process_new=True, limit=False)
 
             # Exit if no targets
             if targets.empty:
