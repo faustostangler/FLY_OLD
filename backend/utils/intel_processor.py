@@ -5,6 +5,7 @@ from threading import Lock
 
 import pandas as pd
 from tqdm import tqdm
+from typing import Generator, Tuple, List
 
 from utils import intel
 from utils.base_processor import BaseProcessor
@@ -578,33 +579,72 @@ class IntelProcessor(BaseProcessor):
         except Exception as e:
             self.log_error(e)
 
+    def iter_statements_by_company(self, db_path: str):
+        '''
+        '''
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            for row in cursor.execute("SELECT DISTINCT company_name FROM tbl_statements_raw ORDER BY company_name"):
+                company_name = row[0]
+                cursor2 = conn.cursor()
+                cursor2.execute("SELECT * FROM tbl_statements_raw WHERE company_name = ?", (company_name,))
+                statements = cursor2.fetchall()
+                columns = [desc[0] for desc in cursor2.description]
+                yield company_name, statements, columns
+
+            conn.close()
+        except Exception as e:
+            self.log_error(e)
+
     def main(self, thread=True):
         """docstring."""
         try:
-            start_time = time.time()
-            targets = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
-            end_time = time.time()
+            # start_time = time.time()
+            # targets = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+            # end_time = time.time()
+
+            # start_time_2 = time.time()
+            # targets = self.load_data(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath, multi_thread=False)
+            # end_time_2 = time.time()
+
+
             # Get updated targets
             # targets = self.get_targets(process_new=True, limit=False)
 
-            # Exit if no targets
-            if targets.empty:
-                self.db_optimize(self.config.databases["raw"]["filepath"])
-                return True
+            company_names = [row[0] for row in sqlite3.connect(self.db_filepath).execute(
+                "SELECT DISTINCT company_name FROM tbl_company_info"
+            )]
 
-            # Process targets using threading or sequential logic
-            result = self.run(
-                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
-            )
+            start_time = time.time()
+            for i, (company_name, statements, columns) in enumerate(self.iter_statements_by_company(self.db_filepath)):
+                if not statements:
+                    continue
 
-            # Save processed data
-            if not result.empty:
-                self.save_to_db(
-                    dataframe=result, table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
+                targets = pd.DataFrame.from_records(statements, columns=columns)
+
+                # Chama run para processar os dados dessa empresa
+                result = self.run(
+                    targets,
+                    thread=thread,
+                    module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
                 )
 
-            # optimize db before return
+                # Salva se houver resultado
+                # if not result.empty:
+                #     self.save_to_db(
+                #         dataframe=result,
+                #         table_name=self.tbl_statements_normalized,
+                #         db_filepath=self.db_filepath
+                #     )
+
+                extra_info = [f'{company_name} — {len(targets)} linhas → {len(result)} normalizadas em {time.time() - start_time:.2f}']
+                self.print_info(i, len(company_names), start_time, extra_info=extra_info)
+
             self.db_optimize(self.db_filepath)
+            
 
         except Exception as e:
             self.log_error(e)

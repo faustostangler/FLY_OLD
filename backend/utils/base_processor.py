@@ -54,12 +54,14 @@ class BaseProcessor:
     def run(self, data, payload=None, thread=True, module_name=""):
         """Split data into batches and process them sequentially or with
         threads."""
+        num_workers = self.config.scraping['max_workers']
         results = []
         try:
             if "utils.intel_processor" in module_name:
-                batches = self._split_batches_by_company(data, self.config.scraping["max_workers"])
+                batches, num_workers = self._split_batches_by_company(data, num_workers)
+                items_per_batch = len(batches[0])
             else:
-                batches = self._split_batches(data, self.config.scraping["max_workers"])
+                batches = self._split_batches(data, num_workers)
                 items_per_batch = len(batches[0])
 
             if thread:
@@ -69,7 +71,7 @@ class BaseProcessor:
                 results = self._process_with_threads(batches, payload=payload)
             else:
                 print(
-                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {self.config.scraping['max_workers']} batches of up to {items_per_batch} items each"
+                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {num_workers} batches of up to {items_per_batch} items each"
                 )
                 results = self._process_sequentially(batches, payload=payload)
 
@@ -137,7 +139,7 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
-        return batches
+        return batches, num_workers
 
     def _process_with_threads(self, batches, payload):
         """Process batches with threading."""
@@ -1614,26 +1616,27 @@ class BaseProcessor:
         query: str | None = None,
         params: tuple | None = None,
         db_filepath: str | None = None,
+        *,
+        multi_thread: bool = True,  # <<< nova flag
         max_retries: int | None = None,
         alert: bool = True,
     ):
         """
-        Carrega dados de um banco SQLite em DataFrame – com multithread e paginação
-        adaptativa (por rowid ou ROW_NUMBER()).
+        Carrega dados de um banco SQLite em DataFrame – com ou sem multithread,
+        e com paginação adaptativa (por rowid ou ROW_NUMBER).
 
-        - Se `table_name` for passado, pagina usando rowid (mais rápido).
-        - Se `query` for passado, encapsula em CTE, numera com ROW_NUMBER() e
-        pagina em faixas (seguro para consultas complexas).
+        - Se `table_name` for passado, pagina usando rowid.
+        - Se `query` for passado, encapsula em CTE, numera com ROW_NUMBER()
+        - Se `multi_thread=False`, lê os batches sequencialmente.
         """
         try:
-            # ---------- parâmetros e inicialização ----------
             params        = params or ()
             max_retries   = max_retries or self.config.selenium["max_retries"]
             db_filepath   = db_filepath or self.config.databases["raw"]["filepath"]
             database_name = os.path.basename(db_filepath)
             dataframes    = []
 
-            # garante que o BD/tabela existam (apenas 1x, antes das threads)
+            # ---------- Inicialização de banco e tabela ----------
             with self.db_lock:
                 self._initialize_database(db_filepath, database_name, table_name)
                 self._configure_db(db_filepath)
@@ -1654,51 +1657,43 @@ class BaseProcessor:
                 try:
                     with self._get_db_connection(db_filepath, read_only=True) as conn:
                         cur = conn.cursor()
-
-                        if table_name:                              # modo rowid
+                        if table_name:
                             cur.execute(f"SELECT MAX(rowid) FROM {table_name}")
                             max_rowid = cur.fetchone()[0]
                             total_rows = max_rowid or 0
-
-                        elif query:                                 # modo query
-                            base_query = query.strip().rstrip(";")  # remove ‘;’
+                        elif query:
+                            base_query = query.strip().rstrip(";")
                             cur.execute(f"SELECT COUNT(*) FROM ({base_query}) AS sub", params)
                             total_rows = cur.fetchone()[0]
-
-                        break  # contagem OK
-
+                        break
                 except Exception as e:
                     self.log_error(e)
                     attempts += 1
                     time.sleep(self.dynamic_sleep())
 
-            # ---------- early-exit se BD vazio ----------
             if total_rows == 0:
                 return pd.DataFrame()
 
-            # ---------- 2. Definições de lote ----------
+            # ---------- 2. Definir batches ----------
             batch_size    = self.config.scraping["chunk_size"]
             batch_number  = (total_rows // batch_size) + (1 if total_rows % batch_size else 0)
             batch_threads = min(self.config.scraping["max_workers"], batch_number)
             start_time    = time.time()
 
-            # ---------- 2a. Gerar intervalos ----------
             if table_name:
-                # rowid puro
                 rowid_starts = [i * batch_size + 1 for i in range(batch_number)]
                 rowid_ends   = [s + batch_size for s in rowid_starts]
-                rowid_ends[-1] = (rowid_starts[-1] + batch_size)  # garante final
+                rowid_ends[-1] = rowid_starts[-1] + batch_size
             else:
-                # para ROW_NUMBER() precisamos só do índice de batch
-                pass  # rownum será calculado on-the-fly
+                pass  # ROW_NUMBER() paginará dinamicamente
 
-            # ---------- 3. Função de leitura ----------
+            # ---------- 3. Função para ler lote ----------
             def read_batch(idx: int):
                 attempt = 0
                 while attempt < max_retries:
                     try:
                         with self._get_db_connection(db_filepath, read_only=True) as conn:
-                            if table_name:           # ---------- rowid ----------
+                            if table_name:
                                 start_id = rowid_starts[idx]
                                 end_id   = rowid_ends[idx]
                                 sql = (
@@ -1706,8 +1701,7 @@ class BaseProcessor:
                                     f"WHERE rowid >= {start_id} AND rowid < {end_id}"
                                 )
                                 df = pd.read_sql_query(sql, conn)
-
-                            else:                    # ---------- ROW_NUMBER() ----------
+                            else:
                                 start_row = idx * batch_size + 1
                                 end_row   = min(start_row + batch_size - 1, total_rows)
                                 base_q    = query.strip().rstrip(";")
@@ -1723,24 +1717,30 @@ class BaseProcessor:
                                 WHERE rownum BETWEEN {start_row} AND {end_row};
                                 """
                                 df = pd.read_sql_query(sql, conn, params=params)
-
                             return df
-
-                    except Exception as exc:
-                        if "database is locked" in str(exc):
+                    except Exception as e:
+                        if "database is locked" in str(e):
                             attempt += 1
                             time.sleep(self.dynamic_sleep())
                         else:
                             raise
-
                 raise RuntimeError(f"Falha após {max_retries} tentativas no batch {idx}")
 
-            # ---------- 4. Execução paralela ----------
-            with ThreadPoolExecutor(max_workers=batch_threads) as executor:
-                futures = [executor.submit(read_batch, i) for i in range(batch_number)]
+            # ---------- 4. Execução dos batches ----------
+            if multi_thread:
+                # Modo original com ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=batch_threads) as executor:
+                    futures = [executor.submit(read_batch, i) for i in range(batch_number)]
+                    with tqdm(total=total_rows, unit=" rows", desc=str(table_name or 'query'), leave=False) as pbar:
+                        for fut in as_completed(futures):
+                            part = fut.result()
+                            dataframes.append(part)
+                            pbar.update(len(part))
+            else:
+                # Novo modo sequencial
                 with tqdm(total=total_rows, unit=" rows", desc=str(table_name or 'query'), leave=False) as pbar:
-                    for fut in as_completed(futures):
-                        part = fut.result()
+                    for i in range(batch_number):
+                        part = read_batch(i)
                         dataframes.append(part)
                         pbar.update(len(part))
 
@@ -1748,10 +1748,11 @@ class BaseProcessor:
 
         except Exception as e:
             self.log_error(e)
+
             # ---------- fallback simples: OFFSET/LIMIT sequencial ----------
             try:
-                batch_size = self.config.scraping["chunk_size"]
-                offset     = 0
+                batch_size   = self.config.scraping["chunk_size"]
+                offset       = 0
                 dfs_fallback = []
 
                 with self._get_db_connection(db_filepath, read_only=True) as conn:
@@ -1764,7 +1765,7 @@ class BaseProcessor:
                             df_part = pd.read_sql_query(sql_fb, conn, params=params)
 
                         if df_part.empty:
-                            break  # terminou
+                            break
                         dfs_fallback.append(df_part)
                         offset += batch_size
 
@@ -1773,7 +1774,7 @@ class BaseProcessor:
             except Exception as ex2:
                 self.log_error(ex2)
                 return pd.DataFrame()
-    
+
     def save_to_db(
         self,
         dataframe,
@@ -1802,9 +1803,38 @@ class BaseProcessor:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
             max_retries = max_retries or self.config.selenium["max_retries"]
-
             primary_keys = self._get_primary_key(table_name, database_name)
-            columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
+ 
+            with self._get_db_connection(db_filepath, read_only=False) as conn:
+                cursor = conn.cursor()
+
+                # Verifica se a tabela existe
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?;",
+                    (table_name,)
+                )
+                table_exists = cursor.fetchone() is not None
+
+                if not table_exists:
+                    # Se existir schema salvo, executa diretamente
+                    try:
+                        schema = self.config.schemas[database_name][table_name]
+                        cursor.executescript(schema)
+                        conn.commit()
+                    except KeyError:
+                        # Fallback: cria a tabela com base no dataframe
+                        columns = list(dataframe.columns)
+                        dtypes = {
+                            col: self._map_pd_to_sql_dtype(dataframe[col].dtype)
+                            for col in columns
+                        }
+
+                        col_defs = [
+                            f'"{col}" {dtypes.get(col, "TEXT")}' for col in columns
+                        ]
+                        create_sql = f"CREATE TABLE {table_name} ({', '.join(col_defs)});"
+                        cursor.execute(create_sql)
+                        conn.commit()
 
             # Prepare and Insert Data
             sql = self._get_sql_statement(dataframe, primary_keys, table_name, update=update)
