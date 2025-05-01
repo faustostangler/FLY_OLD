@@ -95,13 +95,17 @@ class IntelProcessor(BaseProcessor):
                 mask = sub_batch["company_name"] == company_name
                 df = sub_batch[mask]
 
-                # result = self.generate_standard_financial_statements(df, progress)
+                # standardization
+                result = self.generate_standard_financial_statements(df, progress)
 
-                # # sanitize db
-                # result = self.adjust_columns(result)
+                # math transformation
+                result = self._transform_quarterly_values(result)
 
-                # # Outlier detection
-                # result = self.detect_and_correct_outliers(result)
+                # sanitize db
+                result = self.adjust_columns(result)
+
+                # Outlier detection
+                result = self.detect_and_correct_outliers(result)
 
                 # save results
                 self.save_to_db(
@@ -481,6 +485,69 @@ class IntelProcessor(BaseProcessor):
             print(f"criteria error {e}")
 
         return df, section_name, account, description
+
+    def _transform_quarterly_values(self, df):
+        """Aplica transformações matemáticas conforme tipo de conta."""
+        try:
+            df = df.copy()
+
+            df["quarter"] = pd.to_datetime(df["quarter"])
+            df["year"] = df["quarter"].dt.year
+            df["month"] = df["quarter"].dt.month
+
+            # Separar grupos
+            year_end_accounts = ("3", "4")
+            cumulative_accounts = ("6", "7")
+
+            df["account_prefix"] = df["account_standard"].str[0]
+
+            def pivot_and_adjust(group_df, tipo):
+                pivot = group_df.pivot_table(
+                    index=["company_name", "type", "frame", "account_standard", "year"],
+                    columns="month",
+                    values="value",
+                    aggfunc="first",
+                ).reset_index()
+
+                if tipo == "year_end":
+                    pivot[12] = pivot.get(12, 0) - pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
+                elif tipo == "cumulative":
+                    pivot[6] = pivot.get(6, 0) - pivot.get(3, 0)
+                    pivot[9] = pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
+                    pivot[12] = pivot.get(12, 0) - pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
+
+                melted = pivot.melt(
+                    id_vars=["company_name", "type", "frame", "account_standard", "year"],
+                    value_vars=[3, 6, 9, 12],
+                    var_name="month",
+                    value_name="value",
+                )
+                melted["quarter"] = pd.to_datetime(melted["year"].astype(str) + "-" + melted["month"].astype(str) + "-01") + pd.offsets.MonthEnd(0)
+                return melted
+
+            # Aplicar transformação nos grupos
+            dfs = []
+            for prefix, tipo in [(year_end_accounts, "year_end"), (cumulative_accounts, "cumulative")]:
+                target = df[df["account_prefix"].isin(prefix)]
+                if not target.empty:
+                    transformed = pivot_and_adjust(target, tipo)
+                    other_cols = df.drop(columns=["value"]).drop_duplicates()
+                    merged = pd.merge(transformed, other_cols, on=["company_name", "type", "frame", "account_standard", "quarter"], how="left")
+                    dfs.append(merged)
+
+            # Unificar com dados que não precisam de transformação
+            untouched = df[~df["account_prefix"].isin(year_end_accounts + cumulative_accounts)]
+            untouched = untouched.drop(columns=["account_prefix", "year", "month"])
+            dfs.append(untouched)
+
+            result = pd.concat(dfs, ignore_index=True)
+            result = result.drop(columns=["account_prefix", "year", "month"], errors="ignore")
+            return result
+
+        except Exception as e:
+            self.log_error(f"Erro ao transformar valores trimestrais: {e}")
+            return df
+
 
     def adjust_columns(self, df0):
         """docstring."""
