@@ -63,14 +63,14 @@ class IntelProcessor(BaseProcessor):
                 batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
             )
 
-            # Save result to database
-            self.save_to_db(
-                dataframe=result,
-                table_name=self.tbl_statements_normalized,
-                db_filepath=self.db_filepath,
-                alert=False,
-                update=False,
-            )
+            # # Save result to database
+            # self.save_to_db(
+            #     dataframe=result,
+            #     table_name=self.tbl_statements_normalized,
+            #     db_filepath=self.db_filepath,
+            #     alert=False,
+            #     update=False,
+            # )
 
             # first = f"{sub_batch['company_name'].iloc[0]}"
             # last = f"{sub_batch['company_name'].iloc[-1]}"
@@ -84,24 +84,24 @@ class IntelProcessor(BaseProcessor):
 
     def process_batch(self, sub_batch, payload, progress):
         """"""
-        result = ""
+        result = pd.DataFrame(columns=sub_batch.columns)
 
         try:
             companies = sub_batch["company_name"].unique()
             total_companies = len(companies)
 
             start_time = time.time()
-            for i, company in enumerate(companies):
-                mask = sub_batch["company_name"] == company
+            for i, company_name in enumerate(companies):
+                mask = sub_batch["company_name"] == company_name
                 df = sub_batch[mask]
 
-                result = self.generate_standard_financial_statements(df, progress)
+                # result = self.generate_standard_financial_statements(df, progress)
 
-                # sanitize db
-                result = self.adjust_columns(result)
+                # # sanitize db
+                # result = self.adjust_columns(result)
 
-                # Outlier detection
-                result = self.detect_and_correct_outliers(result)
+                # # Outlier detection
+                # result = self.detect_and_correct_outliers(result)
 
                 # save results
                 self.save_to_db(
@@ -112,11 +112,12 @@ class IntelProcessor(BaseProcessor):
                     update=False,
                 )
 
-                # Atualiza a coluna processed para todas as linhas na tbl_statements_raw
+                # Atualiza a coluna processed para todas as linhas pertinentes na tbl_statements_raw
                 sql_update = """
                     UPDATE tbl_statements_raw
                     SET processed = version
-                    WHERE company_name = ?;
+                    WHERE company_name = ?
+                    AND (processed IS NULL OR processed <> version);
                 """
 
                 self.save_to_db(
@@ -125,7 +126,7 @@ class IntelProcessor(BaseProcessor):
                     db_filepath=self.db_filepath,
                     alert=False,
                     sql_update=sql_update,
-                    sql_update_params=(company,),  # Pass company name
+                    sql_update_params=(company_name,),  # Pass company name
                 )
 
                 # Log progress
@@ -152,7 +153,8 @@ class IntelProcessor(BaseProcessor):
 
                 quarter_info = f"from {quarter_min} to {quarter_max}"
 
-                extra_info = [worker_info, company, quarter_info]
+                extra_info = [worker_info, sector, subsector, segment, company_name, quarter_info]
+                extra_info = [worker_info, company_name, quarter_info]
                 self.print_info(i, len(companies), start_time, extra_info, indent_level=0)
 
         except Exception as e:
@@ -175,12 +177,13 @@ class IntelProcessor(BaseProcessor):
             Combined DataFrame of all generated financial statement sections.
         """
         try:
-            sector = sub_batch.iloc[0]["sector"]
-            subsector = sub_batch.iloc[0]["subsector"]
-            segment = sub_batch.iloc[0]["segment"]
-            company_name = sub_batch.iloc[0]["company_name"]
-            # Loop through each section in the standardization pack
-            start_time = time.time()
+            # # Loop through each section in the standardization pack
+            # sector = sub_batch.iloc[0]["sector"]
+            # subsector = sub_batch.iloc[0]["subsector"]
+            # segment = sub_batch.iloc[0]["segment"]
+            # company_name = sub_batch.iloc[0]["company_name"]
+            # start_time = time.time()
+            
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
@@ -580,25 +583,43 @@ class IntelProcessor(BaseProcessor):
             self.log_error(e)
 
     def iter_statements_by_company(self, db_path: str):
-        '''
-        '''
+        """
+        Itera sobre os dados de tbl_statements_raw agrupados por company_name,
+        retornando apenas os registros que ainda não foram processados
+        ou cuja versão foi atualizada.
+        """
         try:
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            for row in cursor.execute("SELECT DISTINCT company_name FROM tbl_statements_raw ORDER BY company_name"):
+            # Seleciona empresas com dados pendentes de processamento
+            query_companies = """
+                SELECT DISTINCT company_name
+                FROM tbl_statements_raw
+                WHERE processed IS NULL OR processed <> version
+                ORDER BY company_name
+            """
+            for row in cursor.execute(query_companies):
                 company_name = row[0]
+
+                # Coleta apenas os dados brutos ainda não processados ou com nova versão
+                query_data = """
+                    SELECT *
+                    FROM tbl_statements_raw
+                    WHERE company_name = ?
+                    AND (processed IS NULL OR processed <> version)
+                """
                 cursor2 = conn.cursor()
-                cursor2.execute("SELECT * FROM tbl_statements_raw WHERE company_name = ?", (company_name,))
+                cursor2.execute(query_data, (company_name,))
                 statements = cursor2.fetchall()
                 columns = [desc[0] for desc in cursor2.description]
+
                 yield company_name, statements, columns
 
             conn.close()
         except Exception as e:
             self.log_error(e)
-
     def main(self, thread=True):
         """docstring."""
         try:
@@ -620,9 +641,6 @@ class IntelProcessor(BaseProcessor):
 
             start_time = time.time()
             for i, (company_name, statements, columns) in enumerate(self.iter_statements_by_company(self.db_filepath)):
-                if not statements:
-                    continue
-
                 targets = pd.DataFrame.from_records(statements, columns=columns)
 
                 # Chama run para processar os dados dessa empresa
@@ -633,12 +651,12 @@ class IntelProcessor(BaseProcessor):
                 )
 
                 # Salva se houver resultado
-                # if not result.empty:
-                #     self.save_to_db(
-                #         dataframe=result,
-                #         table_name=self.tbl_statements_normalized,
-                #         db_filepath=self.db_filepath
-                #     )
+                if not result.empty:
+                    self.save_to_db(
+                        dataframe=result,
+                        table_name=self.tbl_statements_normalized,
+                        db_filepath=self.db_filepath
+                    )
 
                 extra_info = [f'{company_name} — {len(targets)} linhas → {len(result)} normalizadas em {time.time() - start_time:.2f}']
                 self.print_info(i, len(company_names), start_time, extra_info=extra_info)

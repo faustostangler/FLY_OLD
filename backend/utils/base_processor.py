@@ -1783,8 +1783,8 @@ class BaseProcessor:
         alert=True,
         max_retries=None,
         update=True,
-        sql_update=None,  # New parameter for optional SQL update
-        sql_update_params=None,  # Parameters for the update query
+        sql_update=None,
+        sql_update_params=None,
     ):
         """
         Save or update a DataFrame in a SQLite database table.
@@ -1804,7 +1804,8 @@ class BaseProcessor:
             database_name = os.path.basename(db_filepath)
             max_retries = max_retries or self.config.selenium["max_retries"]
             primary_keys = self._get_primary_key(table_name, database_name)
- 
+
+            # Conexão inicial para verificar/criar tabela
             with self._get_db_connection(db_filepath, read_only=False) as conn:
                 cursor = conn.cursor()
 
@@ -1816,19 +1817,18 @@ class BaseProcessor:
                 table_exists = cursor.fetchone() is not None
 
                 if not table_exists:
-                    # Se existir schema salvo, executa diretamente
                     try:
+                        # Cria a tabela a partir do schema salvo (se existir)
                         schema = self.config.schemas[database_name][table_name]
                         cursor.executescript(schema)
                         conn.commit()
                     except KeyError:
-                        # Fallback: cria a tabela com base no dataframe
+                        # Se não houver schema, cria a partir do DataFrame
                         columns = list(dataframe.columns)
                         dtypes = {
                             col: self._map_pd_to_sql_dtype(dataframe[col].dtype)
                             for col in columns
                         }
-
                         col_defs = [
                             f'"{col}" {dtypes.get(col, "TEXT")}' for col in columns
                         ]
@@ -1836,79 +1836,73 @@ class BaseProcessor:
                         cursor.execute(create_sql)
                         conn.commit()
 
-            # Prepare and Insert Data
-            sql = self._get_sql_statement(dataframe, primary_keys, table_name, update=update)
-
-            if sql_update:
-                pass
-            else:
+            # Se for inserção, prepara dados e SQL
+            if not sql_update:
                 dataframe = self._prepare_dataframe(dataframe)
                 data_tuples = [tuple(row) for row in dataframe.itertuples(index=False)]
+                sql = self._get_sql_statement(dataframe, primary_keys, table_name, update=update)
 
-            # Acquire the lock to ensure thread safety
+            # Segunda conexão protegida por lock para executar a escrita
             with self.db_lock, self._get_db_connection(db_filepath, read_only=False) as conn:
                 cursor = conn.cursor()
-
-                # Ensure Table Columns Match DataFrame
-                cursor.execute(f"PRAGMA table_info({table_name})")
-                existing_columns = {row[1] for row in cursor.fetchall()}
-
-                missing_columns = [col for col in dataframe.columns if col not in existing_columns]
-
-                for _, col in enumerate(missing_columns):
-                    safe_col = f'"{col}"'  # Ensure proper escaping of column names
-                    alter_query = f"ALTER TABLE {table_name} ADD COLUMN {safe_col} REAL;"
-                    cursor.execute(alter_query)
-
-                conn.commit()  # Apply table modifications
-
                 attempts = 0
 
                 while attempts < max_retries:
                     try:
                         if sql_update:
-                            # If sql_update is provided, execute it instead of inserting data
+                            # Executa SQL personalizado (ex: UPDATE processed = version)
                             cursor.execute(sql_update, sql_update_params or ())
                             conn.commit()
 
-                            # debug
+                            # Debug opcional
                             time.sleep(self.dynamic_sleep())
                             row_count = cursor.rowcount
-
                             verify_sql = f"""
-                                SELECT COUNT(*) FROM {table_name} WHERE processed IS NOT NULL AND company_name = ?;
+                                SELECT COUNT(*) FROM {table_name}
+                                WHERE processed IS NOT NULL AND company_name = ?;
                             """
                             cursor.execute(verify_sql, sql_update_params or ())
                             row_updated = cursor.fetchone()[0]
                             if row_count != row_updated:
                                 print(f"DEBUG executed: {row_count}, updated: {row_updated}")
                                 print(
-                                    f"  SELECT COUNT(*) FROM tbl_statements_raw WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';"
+                                    f"  SELECT COUNT(*) FROM {table_name} WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';"
                                 )
 
                         else:
-                            # Otherwise, proceed with batch insertion
+                            # Verifica se há colunas faltantes e ajusta tabela
+                            cursor.execute(f"PRAGMA table_info({table_name})")
+                            existing_columns = {row[1] for row in cursor.fetchall()}
+                            missing_columns = [col for col in dataframe.columns if col not in existing_columns]
+
+                            for col in missing_columns:
+                                safe_col = f'"{col}"'
+                                alter_query = f"ALTER TABLE {table_name} ADD COLUMN {safe_col} REAL;"
+                                cursor.execute(alter_query)
+                            conn.commit()
+
+                            # Insere os dados
                             cursor.executemany(sql, data_tuples)
                             conn.commit()
 
                         if alert:
                             print(f"Updated {table_name} in {database_name}")
 
-                        break  # Exit loop on success
+                        break  # Sai do loop em caso de sucesso
 
                     except Exception as e:
                         if "database is locked" in str(e):
                             attempts += 1
                             time.sleep(self.dynamic_sleep())
                         else:
-                            raise  # Exit on other errors
+                            raise  # Repassa exceções reais
 
         except Exception as e:
             print(dataframe.dtypes)
-            print(sql)
-            dataframe.to_csv("dataframe.csv", index=False)
+            if not sql_update:
+                print(sql)
+                dataframe.to_csv("dataframe.csv", index=False)
             self.log_error(f"Error saving to database: {e}")
-
     def get_columns(self, schema_str):
         """
         Extract column names and corresponding pandas dtypes from a SQL CREATE TABLE string.
@@ -2097,39 +2091,42 @@ class BaseProcessor:
         """
         sql = ""
         try:
-            # Wrap columns in double quotes if needed (special characters, spaces, or digits at the start)
             def quote_column(col):
-                result = f'"{col}"' if not col.isidentifier() or col[0].isdigit() else col
-                return result
+                return f'"{col}"' if not col.isidentifier() or col[0].isdigit() else col
 
-            # Quote column names and primary keys
             quoted_columns = [quote_column(col) for col in dataframe.columns]
             quoted_primary_keys = [quote_column(col) for col in primary_keys] if primary_keys else []
 
-            # Build the basic fields and values parts of the query
             f_fields = "(" + ", ".join(quoted_columns) + ")"
             f_values = "(" + ", ".join(["?"] * len(dataframe.columns)) + ")"
 
-            # Start building SQL query
             sql = f"INSERT INTO {table_name} {f_fields} VALUES {f_values}"
 
-            # Only add ON CONFLICT if primary keys exist and `update` is True
             if quoted_primary_keys and update:
                 f_primary_keys = f"({', '.join(quoted_primary_keys)})"
                 sql += f" ON CONFLICT {f_primary_keys}"
 
-                # Create the UPDATE set clause (update all columns except primary keys)
-                f_update_set = ", ".join([
-                    f"{col} = excluded.{col}" for col in quoted_columns if col not in quoted_primary_keys
-                ])
+                f_update_set_parts = []
+                for col in quoted_columns:
+                    col_raw = col.strip('"')  # unquoted name
+                    if col in quoted_primary_keys:
+                        continue
+                    elif col_raw == "processed":
+                        f_update_set_parts.append(
+                            f"""processed = CASE
+                                WHEN {table_name}.version = excluded.version
+                                THEN {table_name}.processed
+                                ELSE NULL
+                            END"""
+                        )
+                    else:
+                        f_update_set_parts.append(f"{col} = excluded.{col}")
 
-                if f_update_set:
-                    sql += f" DO UPDATE SET {f_update_set}"
+                if f_update_set_parts:
+                    sql += f" DO UPDATE SET {', '.join(f_update_set_parts)}"
                 else:
-                    sql += " DO NOTHING"  # Do nothing if no columns to update
-
+                    sql += " DO NOTHING"
             else:
-                # If update is False, use INSERT OR IGNORE to ignore duplicates
                 sql = f"INSERT OR IGNORE INTO {table_name} {f_fields} VALUES {f_values}"
 
         except Exception as e:
