@@ -42,7 +42,7 @@ class IntelProcessor(BaseProcessor):
             "Demonstração de Valor Adiconado": intel.section_7_criteria,
         }
 
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, progress, msg):
         """Process a single batch by delegating from abstract base_processor
         method to this class process_batch (true process info method) via this
         process_instance method (create instance method).
@@ -54,9 +54,10 @@ class IntelProcessor(BaseProcessor):
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
         try:
-            print(
-                f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
-            )
+            if msg:
+                print(
+                    f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
+                )
             batch_processor = IntelProcessor()
 
             # Delegate to process_batch for the actual batch processing
@@ -851,14 +852,16 @@ class IntelProcessor(BaseProcessor):
             )]
 
             start_time = time.time()
-            for i, (company_name, statements, columns) in enumerate(self.iter_statements_by_company(self.db_filepath)):
+            statement_iterator = self.iter_statements_by_company(self.db_filepath)
+            for i, (company_name, statements, columns) in enumerate(statement_iterator):
                 targets = pd.DataFrame.from_records(statements, columns=columns)
 
                 # Chama run para processar os dados dessa empresa
                 result = self.run(
                     targets,
                     thread=thread,
-                    module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
+                    module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__, 
+                    msg=False
                 )
 
                 # Salva se houver resultado
@@ -866,10 +869,11 @@ class IntelProcessor(BaseProcessor):
                     self.save_to_db(
                         dataframe=result,
                         table_name=self.tbl_statements_normalized,
-                        db_filepath=self.db_filepath
+                        db_filepath=self.db_filepath, 
+                        alert=False
                     )
 
-                extra_info = [f'{company_name} — de {len(targets)} para {len(result)} normalizadas em {time.time() - start_time:.2f}s']
+                extra_info = [f'{company_name} {len(result)} registros normalizados']
                 self.print_info(i, len(company_names), start_time, extra_info=extra_info)
 
             self.db_optimize(self.db_filepath)

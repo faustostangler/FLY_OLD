@@ -51,7 +51,7 @@ class BaseProcessor:
         self.db_lock = Lock()  # Initialize a threading Lock
 
     # APP FLOW LOGIC
-    def run(self, data, payload=None, thread=True, module_name=""):
+    def run(self, data, payload=None, thread=True, module_name="", msg=True):
         """Split data into batches and process them sequentially or with
         threads."""
         num_workers = self.config.scraping['max_workers']
@@ -65,15 +65,17 @@ class BaseProcessor:
                 items_per_batch = len(batches[0])
 
             if thread:
-                print(
-                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each"
-                )
-                results = self._process_with_threads(batches, payload=payload)
+                if msg:
+                    print(
+                        f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each"
+                    )
+                results = self._process_with_threads(batches, payload=payload, msg=msg)
             else:
-                print(
-                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {num_workers} batches of up to {items_per_batch} items each"
-                )
-                results = self._process_sequentially(batches, payload=payload)
+                if msg:
+                    print(
+                        f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {num_workers} batches of up to {items_per_batch} items each"
+                    )
+                results = self._process_sequentially(batches, payload=payload, msg=msg)
 
         except Exception as e:
             self.log_error(e)
@@ -141,7 +143,7 @@ class BaseProcessor:
 
         return batches, num_workers
 
-    def _process_with_threads(self, batches, payload):
+    def _process_with_threads(self, batches, payload, msg):
         """Process batches with threading."""
         results = []
         try:
@@ -168,7 +170,7 @@ class BaseProcessor:
                     cumulative += len(batch)  # add the length of this batch for the next iteration
 
                     # Submit task with progress
-                    futures.append(executor.submit(self.process_instance, batch, payload, progress))
+                    futures.append(executor.submit(self.process_instance, batch, payload, progress, msg))
 
                 for future in as_completed(futures):
                     try:
@@ -181,7 +183,7 @@ class BaseProcessor:
 
         return results
 
-    def _process_sequentially(self, batches, payload):
+    def _process_sequentially(self, batches, payload, msg):
         """"""
         results = []
         start_time = time.time()
@@ -202,7 +204,7 @@ class BaseProcessor:
             }
 
             try:
-                result = self.process_instance(batch, payload, progress)
+                result = self.process_instance(batch, payload, progress, msg)
                 results.append(result)
 
             except Exception as e:
@@ -211,7 +213,7 @@ class BaseProcessor:
         return results
 
     @abstractmethod
-    def process_instance(self, batch, payload, progress):
+    def process_instance(self, batch, payload, progress, msg):
         """To be implemented by child classes."""
         pass
 
@@ -1376,6 +1378,7 @@ class BaseProcessor:
                     conn.execute("PRAGMA locking_mode=NORMAL;")
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("PRAGMA synchronous=NORMAL;")
+                    conn.execute("PRAGMA cache_size = -20000;")
 
                 if table_name:
                     self._initialize_table(db_filepath, database_name, table_name)
@@ -1411,6 +1414,7 @@ class BaseProcessor:
                 conn.execute("PRAGMA locking_mode=NORMAL;")
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("PRAGMA synchronous=NORMAL;")
+                conn.execute("PRAGMA cache_size = -20000;")
             # print("Database configured successfully.")
         except Exception as e:
             self.log_error(e)
