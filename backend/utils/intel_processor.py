@@ -163,7 +163,7 @@ class IntelProcessor(BaseProcessor):
 
                 extra_info = [worker_info, sector, subsector, segment, company_name, quarter_info]
                 extra_info = [worker_info, company_name, quarter_info]
-                self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
+                # self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
 
         except Exception as e:
             self.log_error(e)
@@ -700,7 +700,7 @@ class IntelProcessor(BaseProcessor):
                         db_filepath=self.db_filepath
                     )
 
-                extra_info = [f'{company_name} — {len(targets)} linhas → {len(result)} normalizadas em {time.time() - start_time:.2f}']
+                extra_info = [f'{company_name} — de {len(targets)} para {len(result)} normalizadas em {time.time() - start_time:.2f}s']
                 self.print_info(i, len(company_names), start_time, extra_info=extra_info)
 
             self.db_optimize(self.db_filepath)

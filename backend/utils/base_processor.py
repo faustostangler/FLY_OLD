@@ -1803,7 +1803,7 @@ class BaseProcessor:
             db_filepath = db_filepath or self.config.db_filepath
             database_name = os.path.basename(db_filepath)
             max_retries = max_retries or self.config.selenium["max_retries"]
-            primary_keys = self._get_primary_key(table_name, database_name)
+            columns, dtypes, primary_keys = self._get_table_structure(table_name, database_name)
 
             # Conexão inicial para verificar/criar tabela
             with self._get_db_connection(db_filepath, read_only=False) as conn:
@@ -1903,6 +1903,7 @@ class BaseProcessor:
                 print(sql)
                 dataframe.to_csv("dataframe.csv", index=False)
             self.log_error(f"Error saving to database: {e}")
+
     def get_columns(self, schema_str):
         """
         Extract column names and corresponding pandas dtypes from a SQL CREATE TABLE string.
@@ -1949,42 +1950,6 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
             return {}
-
-    def _get_primary_key(self, table_name, db_filepath):
-        """"""
-        primary_key = ""
-        database_name = os.path.basename(db_filepath)
-
-        try:
-            schema = self.config.schemas[database_name][table_name]
-            lines = schema.strip().splitlines()
-
-            # Step 2: Initialize Variables for Parsing
-            primary_keys = []
-
-            # Step 3: Parse the Lines for PRIMARY KEY
-            for line in lines:
-                if "PRIMARY KEY" in line.upper():
-                    primary_key_index = line.upper().find("PRIMARY KEY")
-                    key_part_before = line[:primary_key_index].strip()  # Part before PRIMARY KEY
-                    key_part_after = line[primary_key_index + len("PRIMARY KEY") :].strip()  # Part after PRIMARY KEY
-
-                    # Handle keys before PRIMARY KEY
-                    if key_part_before:
-                        key = key_part_before.split()[0]  # Extract the first part as the key
-                        primary_keys.append(key)
-
-                    # Handle keys inside parentheses after PRIMARY KEY
-                    if key_part_after.startswith("(") and key_part_after.endswith(")"):
-                        keys_in_parentheses = key_part_after[1:-1].split(",")  # Remove parentheses and split keys
-                        primary_keys.extend(key.strip() for key in keys_in_parentheses)
-
-            # primary_key = primary_keys[0] if len(primary_keys) == 1 else ",".join(primary_keys)
-
-        except Exception as e:
-            self.log_error(e)
-
-        return primary_keys
 
     def _get_table_structure(self, table_name, db_filepath):
         """
