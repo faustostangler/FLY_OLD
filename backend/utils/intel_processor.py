@@ -191,7 +191,12 @@ class IntelProcessor(BaseProcessor):
             # segment = sub_batch.iloc[0]["segment"]
             # company_name = sub_batch.iloc[0]["company_name"]
             # start_time = time.time()
-            
+
+            # Precompute lowercase and level columns to accelerate filtering
+            sub_batch["account_lower"] = sub_batch["account"].astype(str).str.lower().str.strip()
+            sub_batch["description_lower"] = sub_batch["description"].astype(str).str.lower().str.strip()
+            sub_batch["account_level"] = sub_batch["account"].astype(str).str.count(r"\.") + 1
+
             for i, (section_name, section_criteria) in enumerate(self.section_criterias.items()):
                 sub_batch = self.apply_section_criteria(sub_batch, section_name, section_criteria)
 
@@ -229,7 +234,171 @@ class IntelProcessor(BaseProcessor):
 
         return df
 
+    # Helper: compile or retrieve regex for union of terms (ANY of the terms)
+    def get_regex_union(self, values):
+        pattern_key = ("ANY", tuple(values))
+        if pattern_key not in self.regex_cache:
+            pattern = "|".join(map(re.escape, values))
+            self.regex_cache[pattern_key] = re.compile(pattern, re.IGNORECASE)
+        return self.regex_cache[pattern_key]
+    
+    # Helper: compile or retrieve regex for all terms (ALL must appear)
+    def get_regex_all(self, values):
+        pattern_key = ("ALL", tuple(values))
+        if pattern_key not in self.regex_cache:
+            # Lookahead for each term ensures all are present
+            pattern = "^" + "".join(f"(?=.*{re.escape(val)})" for val in values)
+            self.regex_cache[pattern_key] = re.compile(pattern, re.IGNORECASE)
+        return self.regex_cache[pattern_key]
+    
+    # Helper: compile regex for includes (any or all) and excludes combined
+    def get_regex_include_exclude(self, includes, excludes, require_all=False):
+        key = ("ALL_NONE" if require_all else "ANY_NONE", tuple(includes), tuple(excludes))
+        if key not in self.regex_cache:
+            # Build pattern with negative lookahead for each exclude and positive for includes
+            neg_part = "".join(f"(?!.*{re.escape(term)})" for term in excludes)
+            if require_all:
+                # All 'includes' must be present
+                pos_part = "".join(f"(?=.*{re.escape(term)})" for term in includes)
+            else:
+                # At least one of 'includes' present
+                pos_part = f"(?=.*(?:{'|'.join(map(re.escape, includes))}))"
+            pattern = "^" + neg_part + pos_part
+            self.regex_cache[key] = re.compile(pattern, re.IGNORECASE)
+        return self.regex_cache[key]
+
     def apply_criteria(
+        self, df, section_name, criteria_item,
+        parent_mask=None, output_file="output.txt", level=1
+    ):
+        """Applies a criterion (and its sub-criteria) to the DataFrame with optimized string filtering."""
+        target = criteria_item["target_line"]
+        filters = criteria_item["criteria"]
+        sub_criteria = criteria_item.get("sub_criteria", [])
+        df = df.reset_index(drop=True)  # ensure a clean index
+        
+        # Start with all rows or the provided parent mask
+        mask = parent_mask.copy() if parent_mask is not None else pd.Series(True, index=df.index)
+        
+        # Combine multiple filters on the same column for efficiency
+        combined_filters = []
+        seen_col = {}
+        for col, cond, val in filters:
+            # Normalize value to list if needed for certain conditions
+            if cond in {"contains_any", "contains_none", "contains_all", "not_contains", "not_contains_all"}:
+                if not isinstance(val, list):
+                    val = [val]
+            # Merge conditions on the same column
+            if col in seen_col:
+                prev_idx = seen_col[col]
+                prev_col, prev_cond, prev_val = combined_filters[prev_idx]
+                # Merge multiple "contains_any" on same column
+                if prev_cond == "contains_any" and cond == "contains_any":
+                    prev_list = prev_val if isinstance(prev_val, list) else [prev_val]
+                    new_list = prev_list + (val if isinstance(val, list) else [val])
+                    combined_filters[prev_idx] = (col, "contains_any", list({v.lower() for v in new_list}))
+                    continue
+                # Merge multiple "contains_none" on same column
+                if prev_cond == "contains_none" and cond == "contains_none":
+                    prev_list = prev_val if isinstance(prev_val, list) else [prev_val]
+                    new_list = prev_list + (val if isinstance(val, list) else [val])
+                    combined_filters[prev_idx] = (col, "contains_none", list({v.lower() for v in new_list}))
+                    continue
+                # Combine a positive and a negative filter on the same column
+                positive_conds = {"contains_any", "contains_all"}
+                negative_conds = {"contains_none", "not_contains"}
+                if (prev_cond in positive_conds and cond in negative_conds) or (prev_cond in negative_conds and cond in positive_conds):
+                    # Determine includes vs excludes sets
+                    if prev_cond in positive_conds:
+                        includes = prev_val if isinstance(prev_val, list) else [prev_val]
+                        excludes = val if isinstance(val, list) else [val]
+                        require_all = (prev_cond == "contains_all")
+                    else:
+                        includes = val if isinstance(val, list) else [val]
+                        excludes = prev_val if isinstance(prev_val, list) else [prev_val]
+                        require_all = (cond == "contains_all")
+                    combined_filters[prev_idx] = (col, "combined_include_exclude", (includes, excludes, require_all))
+                    continue
+            # New filter (no merge)
+            seen_col[col] = len(combined_filters)
+            combined_filters.append((col, cond, val))
+        
+        # Apply each filter condition vectorically
+        for filter_col, filter_cond, filter_val in combined_filters:
+            # Use precomputed lowercase columns for 'account' and 'description'
+            if filter_col in ("account", "description"):
+                col_series = df[f"{filter_col}_lower"]
+            else:
+                col_series = df[filter_col].astype(str).str.lower().str.strip()
+            # Determine condition mask using vectorized operations
+            if filter_cond == "equals":
+                condition_mask = (col_series == str(filter_val).lower())
+            elif filter_cond == "not_equals":
+                condition_mask = (col_series != str(filter_val).lower())
+            elif filter_cond == "startswith":
+                condition_mask = col_series.str.startswith(str(filter_val).lower())
+            elif filter_cond == "not_startswith":
+                condition_mask = ~col_series.str.startswith(str(filter_val).lower())
+            elif filter_cond == "endswith":
+                condition_mask = col_series.str.endswith(str(filter_val).lower())
+            elif filter_cond == "not_endswith":
+                condition_mask = ~col_series.str.endswith(str(filter_val).lower())
+            elif filter_cond == "contains_any":
+                regex = self.get_regex_union([v.lower() for v in filter_val])
+                condition_mask = col_series.str.contains(regex, na=False)
+            elif filter_cond == "contains_none":
+                regex = self.get_regex_union([v.lower() for v in filter_val])
+                condition_mask = ~col_series.str.contains(regex, na=False)
+            elif filter_cond == "contains_all":
+                regex = self.get_regex_all([v.lower() for v in filter_val])
+                condition_mask = col_series.str.contains(regex, na=False)
+            elif filter_cond in ("not_contains", "not_contains_all"):
+                regex = self.get_regex_all([v.lower() for v in filter_val])
+                condition_mask = ~col_series.str.contains(regex, na=False)
+            elif filter_cond == "level":
+                # Use precomputed numeric level
+                condition_mask = (df["account_level"] == int(filter_val))
+            elif filter_cond == "combined_include_exclude":
+                includes, excludes, require_all = filter_val
+                regex = self.get_regex_include_exclude([v.lower() for v in includes], [w.lower() for w in excludes], require_all)
+                condition_mask = col_series.str.contains(regex, na=False)
+            else:
+                raise ValueError(f"Unknown filter condition: {filter_cond}")
+            # Refine the mask
+            mask &= condition_mask
+            if not mask.any():  # short-circuit: no rows left
+                break
+        # Ensure output columns exist
+        for col in ("account_standard", "description_standard", "standard_criteria", "items_match"):
+            if col not in df.columns:
+                df[col] = ""
+        # Assign standardized account/description to rows matching all criteria
+        std_account, std_desc = target.split(" - ")
+        df.loc[mask, "account_standard"] = std_account
+        df.loc[mask, "description_standard"] = std_desc
+        df.loc[mask, "standard_criteria"] = " | ".join(f"{c} {cond} {val}" for c, cond, val in filters)
+        # Record which original items matched this criterion
+        if mask.any():
+            matched_items = (
+                df.loc[mask, ["account", "description"]]
+                .drop_duplicates()
+                .apply(lambda row: f"{row['account']} - {row['description']}", axis=1)
+                .tolist()
+            )
+            df.loc[mask, "items_match"] = " | ".join(matched_items)
+        # Recurse into sub-criteria (refine mask for child items without copying DataFrame)
+        for sub in sub_criteria:
+            # Identify accounts of rows that matched this criterion, then find all rows starting with those accounts
+            parent_accounts = df.loc[mask, "account"].astype(str).unique()
+            if len(parent_accounts) == 0:
+                continue
+            # Vectorized prefix match for any of the parent account prefixes
+            child_mask = df["account"].astype(str).str.startswith(tuple(parent_accounts))
+            df, section_name, _, _ = self.apply_criteria(df, section_name, sub, parent_mask=child_mask, level=level+1)
+        return df, section_name, std_account, std_desc
+
+
+    def apply_criteria_old(
         self,
         df,
         section_name,
