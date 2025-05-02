@@ -44,7 +44,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get corporate events from b3
         run_corporate_events_processor = "Y"
         prompt = "Want to update corporate events? (YES/NO): "
-        # run_corporate_events_processor = base.timed_input(prompt)
+        run_corporate_events_processor = base.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith("Y"):
             events_states_processor = EventsStatementsProcessor()
             events_states_processor.main(thread=False)

@@ -36,7 +36,7 @@ if __name__ == "__main__":
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "Y"
         prompt = "Want to standardize statements information? (YES/NO): "
-        run_statements_processor = base.timed_input(prompt)
+        # run_statements_processor = base.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith("Y"):
             intel_processor = IntelProcessor()
             intel_processor.main(thread=False)
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get corporate events from b3
         run_corporate_events_processor = "Y"
         prompt = "Want to update corporate events? (YES/NO): "
-        # run_corporate_events_processor = base.timed_input(prompt)
+        run_corporate_events_processor = base.timed_input(prompt)
         if run_corporate_events_processor.strip().upper().startswith("Y"):
             events_states_processor = EventsStatementsProcessor()
             events_states_processor.main(thread=False)
