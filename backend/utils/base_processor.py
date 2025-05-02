@@ -1096,7 +1096,7 @@ class BaseProcessor:
             statements_sheet_columns = self.config.domain["statements_sheet_columns"]
 
             # Initiate variables
-            group_cols = ["company_name", "account"]
+            group_cols = ["company_name", "type", "account"]
             value_col = "value"
             date_col = "quarter"
             neighbor_count = 5  # Quantidade de vizinhos a considerar para média

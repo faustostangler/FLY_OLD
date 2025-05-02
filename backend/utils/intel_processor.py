@@ -1,3 +1,4 @@
+import os
 import re
 import sqlite3
 import time
@@ -95,17 +96,20 @@ class IntelProcessor(BaseProcessor):
                 mask = sub_batch["company_name"] == company_name
                 df = sub_batch[mask]
 
+                # version control
+                result, df_older, df_duplicates = self._filter_newer_versions(df)
+
                 # standardization
                 result = self.generate_standard_financial_statements(df, progress)
-
-                # math transformation
-                result = self._transform_quarterly_values(result)
 
                 # sanitize db
                 result = self.adjust_columns(result)
 
                 # Outlier detection
                 result = self.detect_and_correct_outliers(result)
+
+                # math transformation
+                result = self._transform_quarterly_values(result)
 
                 # save results
                 self.save_to_db(
@@ -159,7 +163,7 @@ class IntelProcessor(BaseProcessor):
 
                 extra_info = [worker_info, sector, subsector, segment, company_name, quarter_info]
                 extra_info = [worker_info, company_name, quarter_info]
-                self.print_info(i, len(companies), start_time, extra_info, indent_level=0)
+                self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
 
         except Exception as e:
             self.log_error(e)
@@ -342,212 +346,182 @@ class IntelProcessor(BaseProcessor):
 
         return df, section_name, account, description
 
-    def apply_criteria_old(
-        self,
-        df,
-        section_name,
-        criteria_item,
-        parent_mask=None,
-        output_file="output.txt",
-        parent_criteria_info=None,
-        level=1,
-    ):
-        """Applies a criterion and its sub-criteria to the DataFrame.
+    def _filter_newer_versions(self, df):
+        """Filter and keep only the newest data from groups of (company_name,
+        quarter, type, frame, account).
 
-        Parameters:
-            df (pd.DataFrame): The DataFrame to be modified.
-            criteria_item (dict): A dictionary containing 'target', 'filter', and 'sub_criteria'.
-            parent_mask (pd.Series): Optional parent level mask to apply.
-            output_file (str): Path to the output file.
-            parent_criteria_info (list): List to keep track of parent criteria for output purposes.
+        Args:
+            df (pd.DataFrame): DataFrame containing the financial statements data.
 
         Returns:
-            pd.DataFrame: The modified DataFrame.
+            pd.DataFrame: Filtered DataFrame with only the latest versions for each group.
         """
+        group_columns = ["company_name", "quarter", "type", "frame", "account"]
+        version_column = "version"
+
         try:
-            target = criteria_item["target_line"]
-            filters = criteria_item["criteria"]
-            sub_criteria = criteria_item.get("sub_criteria", [])
-
-            # Initialize the parent criteria info list if not provided
-            if parent_criteria_info is None:
-                parent_criteria_info = []
-
-            # Initialize the mask for the entire DataFrame or use the parent mask
-            df = df.reset_index(drop=True)  # Reset df index for correct df and mask alignment
-            base_mask = pd.Series([True] * len(df)) if parent_mask is None else parent_mask.copy()
-            mask = base_mask.copy()
-
-            # Append the current criteria to the parent criteria info
-            parent_criteria_info.append({"target": target, "filters": filters})
-
-            # Define a dictionary to map filter conditions to functions
-            condition_map = {
-                "equals": lambda col, val: col == val.lower(),
-                "not_equals": lambda col, val: col != val.lower(),
-                # 'startswith': lambda col, val: col.str.startswith(tuple(map(str.lower, val))),
-                "startswith": lambda col, val: col.astype(str).str.startswith(val),
-                "not_startswith": lambda col, val: ~col.str.startswith(tuple(map(str.lower, val))),
-                "endswith": lambda col, val: col.str.endswith(tuple(map(str.lower, val))),
-                "not_endswith": lambda col, val: ~col.str.endswith(tuple(map(str.lower, val))),
-                "contains_all": lambda col, val: col.apply(
-                    lambda x: (all(term in x.lower() for term in val) if pd.notna(x) else False)
-                ),
-                "contains_any": lambda col, val: col.str.contains("|".join(map(re.escape, val)), case=False, na=False),
-                "contains_none": lambda col, val: ~col.str.contains(
-                    "|".join(map(re.escape, val)), case=False, na=False
-                ),
-                "not_contains": lambda col, val: col.apply(
-                    lambda x: (not all(term in x.lower() for term in val) if pd.notna(x) else True)
-                ),
-                "not_contains_any": lambda col, val: col.apply(
-                    lambda x: (all(term not in x.lower() for term in val) if pd.notna(x) else True)
-                ),
-                "level": lambda col, val: (col.str.count(r"\.") + 1)
-                == int(val),  # Merged level filter for exact levels
-            }
-
-            crits = []
-
-            # Apply each filter to the mask
-            for filter_column, filter_condition, filter_value in filters:
-                crits.append([filter_column, filter_condition, filter_value])
-
-                # Convert filter values to lists for conditions that need lists
-                if filter_condition in ["contains_any", "contains_none", "contains_all", "not_contains_all"]:
-                    if not isinstance(filter_value, list):
-                        filter_value = [filter_value]
-
-                # df_column_lower = df[filter_column].str.lower() if df[filter_column].dtype == 'O' else df[filter_column]
-                # df_column_lower = df[filter_column].str.lower().str.strip() if df[filter_column].dtype == 'O' else df[filter_column]
-                # df_column_lower = df[filter_column].astype(str).str.lower().str.strip()
-                df_column_lower = (
-                    df[filter_column].astype(str).str.lower().str.strip()
-                    if df[filter_column].dtype == "O"
-                    else df[filter_column]
-                )
-
-                # Apply the filter condition using the mapping
-                if filter_condition in condition_map:
-                    condition_mask = condition_map[filter_condition](df_column_lower, filter_value)
-                    mask &= condition_mask
-                else:
-                    raise ValueError(f"Unknown filter condition: {filter_condition}")
-
-            # Ensure 'account_standard', 'description_standard', 'standard_criteria', and 'items_match' columns exist
-            if "account_standard" not in df.columns:
-                df["account_standard"] = ""
-            if "description_standard" not in df.columns:
-                df["description_standard"] = ""
-            if "standard_criteria" not in df.columns:
-                df["standard_criteria"] = ""
-            if "items_match" not in df.columns:
-                df["items_match"] = ""
-
-            # Apply the target modifications to the DataFrame for the current mask
-            account, description = target.split(" - ")
-            df.loc[mask, "account_standard"] = account
-            df.loc[mask, "description_standard"] = description
-            df.loc[mask, "standard_criteria"] = self.config.domain["sep_pipe"].join([
-                f"{c[0]} {c[1]} {c[2]}" for c in crits
-            ])  # Add criteria details
-
-            # Capture "contém itens como" (items that match the mask)
-            items_example = (
-                df.loc[mask, ["account", "description"]]
-                .drop_duplicates()
-                .apply(lambda row: f"{row['account']}{self.config.domain['sep_dash']}{row['description']}", axis=1)
-                .tolist()
+            df_sorted = df.sort_values(
+                by=group_columns + [version_column], ascending=[True] * len(group_columns) + [False]
             )
-            df.loc[mask, "items_match"] = self.config.domain["sep_pipe"].join(items_example)
+            df_filtered = df_sorted.drop_duplicates(subset=group_columns, keep="first")
 
-            # Recursively apply subcriteria using a new refined mask
-            for sub in sub_criteria:
-                # Create a new mask for sub-criteria by filtering the df with 'startswith' of the current filtered results
-                sub_accounts = df.loc[mask, "account"].unique()
-                # sub_mask = df['account'].apply(lambda x: any(x.startswith(acct) for acct in sub_accounts))
-                sub_mask = (
-                    df["account"].astype(str).apply(lambda x: any(x.startswith(str(acct)) for acct in sub_accounts))
-                )
+            # Todas as outras (não mais recentes)
+            mask_other = ~df_sorted.index.isin(df_filtered.index)
+            df_older = df_sorted[mask_other]
 
-                df, section_name, account, description = self.apply_criteria(
-                    df,
-                    section_name,
-                    sub,
-                    parent_mask=sub_mask,
-                    output_file=output_file,
-                    parent_criteria_info=parent_criteria_info.copy(),
-                    level=level + 1,
-                )
+            # Also return duplicates as an optional output
+            df_duplicates = df_sorted[
+                df_sorted.duplicated(subset=group_columns, keep=False)
+                & (df_sorted.duplicated(subset=group_columns + [version_column], keep=False) == False)
+            ]
+
+            return df_filtered, df_older, df_duplicates
 
         except Exception as e:
-            pass
-            print(f"criteria error {e}")
-
-        return df, section_name, account, description
+            self.log_error(f"Error during filtering newer versions: {e}")
+            columns, dtypes, primary_keys = self._get_table_structure(table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
+            return pd.DataFrame(columns=columns), pd.DataFrame(columns=columns)
 
     def _transform_quarterly_values(self, df):
-        """Aplica transformações matemáticas conforme tipo de conta."""
+        """
+        Apply B3 quarterly-value adjustments.
+
+        • Prefix **03 / 04** (income-statement): December is cumulative; derive Q4 by
+        subtracting Q1–Q3 (“year_end” logic).
+
+        • Prefix **06 / 07** (cash-flow): each quarter after Q1 is converted from
+        cumulative to single-period value (“cumulative” logic).
+
+        Original dates are preserved; only the numeric “value” column is updated.
+        """
+        index_cols = ["company_name", "type", "frame", "account", "year"]
+        merge_cols = index_cols + ["quarter_num"]
+
         try:
+            # Work on a copy to avoid side effects
             df = df.copy()
 
+            # Derive year and quarter number from the 'quarter' date column
             df["quarter"] = pd.to_datetime(df["quarter"])
             df["year"] = df["quarter"].dt.year
-            df["month"] = df["quarter"].dt.month
+            df["quarter_num"] = df["quarter"].dt.quarter
 
-            # Separar grupos
-            year_end_accounts = ("3", "4")
-            cumulative_accounts = ("6", "7")
+            # Guarantee numeric dtype for arithmetic operations
+            df["value"] = pd.to_numeric(df["value"], errors="coerce").fillna(0)
 
-            df["account_prefix"] = df["account_standard"].str[0]
+            # Normalize account code and capture its prefix
+            df["account"] = df["account"].astype(str).str.strip()
+            df["account_prefix"] = df["account"].str.split(".").str[0]
 
+            # Keep only the latest NSD for each unique quarterly key
+            df = (
+                df.sort_values("nsd")
+                .drop_duplicates(subset=merge_cols, keep="last")
+            )
+
+            # Log any surviving duplicates for offline inspection
+            dup = df[df.duplicated(subset=merge_cols, keep=False)]
+            if not dup.empty:
+                self.log_error(f"{len(dup)} rows duplicated in quarterly index")
+                filename = "rows_duplicated_in_quarterly_index.csv"
+                temp_path = os.path.join(self.config.paths["temp_folder"], filename)
+                dup.groupby(merge_cols).size().to_csv(temp_path)
+
+            # Helper: pivot to wide, adjust, then melt back to long
             def pivot_and_adjust(group_df, tipo):
-                pivot = group_df.pivot_table(
-                    index=["company_name", "type", "frame", "account_standard", "year"],
-                    columns="month",
-                    values="value",
-                    aggfunc="first",
-                ).reset_index()
+                # Convert quarterly values to wide format: one column per quarter (1 to 4)
+                pivot = (
+                    group_df.pivot_table(
+                        index=index_cols,
+                        columns="quarter_num",
+                        values="value",
+                        aggfunc="first",
+                    )
+                    .reset_index()
+                    .fillna(0)
+                )
 
+                # Apply account-specific adjustment logic
                 if tipo == "year_end":
-                    pivot[12] = pivot.get(12, 0) - pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
+                # For 'year_end': recalculate Q4 as Dec - (Q1 + Q2 + Q3)
+                    pivot[4] = (
+                        pivot.get(4, 0)
+                        - pivot.get(1, 0)
+                        - pivot.get(2, 0)
+                        - pivot.get(3, 0)
+                    )
                 elif tipo == "cumulative":
-                    pivot[6] = pivot.get(6, 0) - pivot.get(3, 0)
-                    pivot[9] = pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
-                    pivot[12] = pivot.get(12, 0) - pivot.get(9, 0) - pivot.get(6, 0) - pivot.get(3, 0)
+                # For 'cumulative': convert each Q to single-period value by subtracting previous quarters
+                    pivot[2] = pivot.get(2, 0) - pivot.get(1, 0)
+                    pivot[3] = pivot.get(3, 0) - (pivot.get(1, 0) + pivot.get(2, 0))
+                    pivot[4] = pivot.get(4, 0) - (
+                        pivot.get(1, 0) + pivot.get(2, 0) + pivot.get(3, 0)
+                    )
 
+                # Convert back to long format (one row per quarter)
                 melted = pivot.melt(
-                    id_vars=["company_name", "type", "frame", "account_standard", "year"],
-                    value_vars=[3, 6, 9, 12],
-                    var_name="month",
+                    id_vars=index_cols,
+                    value_vars=[1, 2, 3, 4],
+                    var_name="quarter_num",
                     value_name="value",
                 )
-                melted["quarter"] = pd.to_datetime(melted["year"].astype(str) + "-" + melted["month"].astype(str) + "-01") + pd.offsets.MonthEnd(0)
+
+                # Identify all remaining non-index columns to preserve metadata
+                other_cols = [c for c in df.columns if c not in merge_cols]
+
+                # Get distinct rows of original metadata (including NSD, document info, etc.)
+                df_temp = df[merge_cols + other_cols].drop_duplicates(subset=merge_cols)
+
+                # Merge metadata back into melted adjusted values
+                melted = (
+                    melted.merge(
+                        df_temp,
+                        on=merge_cols,
+                        how="left",
+                        suffixes=("", "_original"),
+                    )
+                    .drop_duplicates(subset=merge_cols)
+                )
+
+                # Remove entries with no NSD at all (which should not be saved)
+                melted = melted.dropna(subset=["nsd"], how="all")
+
                 return melted
-
-            # Aplicar transformação nos grupos
-            dfs = []
-            for prefix, tipo in [(year_end_accounts, "year_end"), (cumulative_accounts, "cumulative")]:
+            # Loop through account prefix groups and apply their specific adjustment rules
+            for prefix, tipo in [(("03", "04"), "year_end"), (("06", "07"), "cumulative")]:
+                
+                # Filter only the rows matching the current account prefix group
                 target = df[df["account_prefix"].isin(prefix)]
+                
+                # Proceed only if there's data to transform
                 if not target.empty:
+                    
+                    # Transform the quarterly values based on the account type rule
                     transformed = pivot_and_adjust(target, tipo)
-                    other_cols = df.drop(columns=["value"]).drop_duplicates()
-                    merged = pd.merge(transformed, other_cols, on=["company_name", "type", "frame", "account_standard", "quarter"], how="left")
-                    dfs.append(merged)
 
-            # Unificar com dados que não precisam de transformação
-            untouched = df[~df["account_prefix"].isin(year_end_accounts + cumulative_accounts)]
-            untouched = untouched.drop(columns=["account_prefix", "year", "month"])
-            dfs.append(untouched)
+                    # Extract adjusted values and align them by index for merging
+                    adjusted = (
+                        transformed.set_index(merge_cols)["value"]
+                                .rename("adjusted_value")
+                    )
 
-            result = pd.concat(dfs, ignore_index=True)
-            result = result.drop(columns=["account_prefix", "year", "month"], errors="ignore")
-            return result
+                    # Replace original values with adjusted ones where available
+                    df = df.set_index(merge_cols)
+                    df["value"] = adjusted.combine_first(df["value"])
+                    df = df.reset_index()
+
+            # Remove helper columns
+            df.drop(
+                columns=["account_prefix", "year", "quarter_num"],
+                inplace=True,
+                errors="ignore",
+            )
+
+            return df
 
         except Exception as e:
             self.log_error(f"Erro ao transformar valores trimestrais: {e}")
             return df
-
 
     def adjust_columns(self, df0):
         """docstring."""
@@ -687,6 +661,7 @@ class IntelProcessor(BaseProcessor):
             conn.close()
         except Exception as e:
             self.log_error(e)
+
     def main(self, thread=True):
         """docstring."""
         try:
