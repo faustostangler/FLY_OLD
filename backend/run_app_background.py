@@ -28,10 +28,10 @@ if __name__ == "__main__":
         # Ask the user if they want to get finantial statements
         run_statements_processor = "N"
         prompt = "Want to update statements information? (YES/NO): "
-        # run_statements_processor = base.timed_input(prompt)
+        run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
             statements_processor = StatementsProcessor()
-            statements_processor.main(thread=False)
+            statements_processor.main(thread=True)
 
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "Y"

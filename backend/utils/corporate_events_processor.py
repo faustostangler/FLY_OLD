@@ -528,11 +528,11 @@ class EventsStatementsProcessor(BaseProcessor):
     def main(self, thread=True):
         """definitions."""
         try:
-            # Carregar dados processados anteriormente
-            standart_statements = self.load_data(
-                table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
-            )
-            standart_statements = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
+            # # Carregar dados processados anteriormente
+            # standart_statements = self.load_data(
+            #     table_name=self.tbl_statements_normalized, db_filepath=self.db_filepath
+            # )
+            # standart_statements = standart_statements.loc[standart_statements.groupby(self.statements_version_delimiter)['version'].idxmax()]
 
             # load existing company_info data
             company_info = self.load_data(table_name=self.tbl_company_info, db_filepath=self.db_filepath)
@@ -548,7 +548,8 @@ class EventsStatementsProcessor(BaseProcessor):
                 return True
 
             # Process targets using threading or sequential logic
-            payload = {"standart_statements": standart_statements, "statements_corp_events": statements_corp_events}
+            # payload = {"standart_statements": standart_statements, "statements_corp_events": statements_corp_events}
+            payload={}
             result = self.run(
                 targets,
                 payload=payload,

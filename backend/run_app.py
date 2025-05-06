@@ -31,12 +31,12 @@ if __name__ == "__main__":
         # run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
             statements_processor = StatementsProcessor()
-            statements_processor.main(thread=False)
+            statements_processor.main(thread=True)
 
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "Y"
         prompt = "Want to standardize statements information? (YES/NO): "
-        # run_statements_processor = base.timed_input(prompt)
+        run_statements_processor = base.timed_input(prompt)
         if run_intel_processor.strip().upper().startswith("Y"):
             intel_processor = IntelProcessor()
             intel_processor.main(thread=False)

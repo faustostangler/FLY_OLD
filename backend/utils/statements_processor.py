@@ -37,7 +37,6 @@ class StatementsProcessor(BaseProcessor):
         self.tbl_statements_raw = self.config.databases["raw"]["table"]["statements_raw"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
         self.database_name = os.path.basename(self.db_filepath)
-        self.table_name = self.tbl_statements_raw
 
         # # Initialize driver and other resources
         # self.driver, self.driver_wait = self._initialize_driver()
@@ -68,8 +67,9 @@ class StatementsProcessor(BaseProcessor):
                 with self.shared_lock:
                     subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
                     print(f"Worker {progress['thread_id']} download: {self._format_bytes(subtotal)}")
+
             # Save result to database
-            self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
+            self.save_to_db(dataframe=result, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath, alert=False)
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
@@ -132,16 +132,16 @@ class StatementsProcessor(BaseProcessor):
                             nsd, 
                             f"({formatted_size})", 
                         ]
-                        self.print_info(i, len(sub_batch), start_time, extra_info)
+                        self.print_info(i, len(sub_batch), start_time, extra_info, indent_level=1)
 
                         # Save result to database
                         if result:
                             temp_df = pd.concat(result, ignore_index=True)
                         else:
-                            columns, dtypes, primary_keys = self._get_table_structure(self.table_name, self.db_filepath)
+                            columns, dtypes, primary_keys = self._get_table_structure(self.tbl_statements_raw, self.db_filepath)
                             temp_df = pd.DataFrame(columns=columns)
 
-                        self.save_to_db(dataframe=temp_df, table_name=self.table_name, db_filepath=self.db_filepath, alert=False)
+                        self.save_to_db(dataframe=temp_df, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath, alert=False)
 
                 except Exception as e:
                     self.log_error(f"Error processing row {i}: {e}")
@@ -348,7 +348,7 @@ class StatementsProcessor(BaseProcessor):
                         )
 
                     # Append the processed DataFrame to the list
-                    columns, dtypes, primary_keys = self._get_table_structure(self.table_name, self.db_filepath)
+                    columns, dtypes, primary_keys = self._get_table_structure(self.tbl_statements_raw, self.db_filepath)
 
                     quarter_dfs.append(df[columns])
 
@@ -362,75 +362,105 @@ class StatementsProcessor(BaseProcessor):
 
         return result
 
-    def get_targets(self, company_info, existing_nsd, financial_statements):
-        """"""
-        last_order = "ZZZZZZZZZZ"
-        scrape_order = ["sector", "subsector", "segment", "company_name", "quarter", "version"]
-
+    def get_targets(self, company_info, existing_nsd):
+        """
+        """
         try:
             # nsd_df keep only valid types
             nsd_df = existing_nsd[existing_nsd["nsd_type"].isin(self.config.domain["statements_types"])]
+            df_nsd_company = pd.merge(nsd_df, company_info, on="company_name", how="inner")
+            df_companies = df_nsd_company[['company_name', 'cvm_code', 'ticker', 'trading_name']].drop_duplicates().sort_values(by=['company_name']).reset_index(drop=True)
 
-            # merge nsd and company info
-            nsd_company_df = pd.merge(nsd_df, company_info, on="company_name", how="inner")
+            targets = []
+            start_time = time.time()
+            for i, row in df_companies.iterrows():
+                company_name = row['company_name']
+                cvm_code = row['cvm_code']
+                ticker = row['ticker']
+                trading_name = row['trading_name']
 
-            nsd_company_outer = pd.merge(nsd_df, company_info, on="company_name", how="outer")
-            nsd_company_unmatched_df = nsd_company_outer[~nsd_company_outer['company_name'].isin(nsd_company_df['company_name'])]
-            
-            try:
-                # remove already processed nsd (existing in financial_statements df)
-                targets = nsd_company_df[~nsd_company_df["nsd"].isin(financial_statements["nsd"].unique())]
-            except Exception as e:
-                targets = nsd_company_df
-                self.log_error(e)
+                company_query = f"""
+                        SELECT *
+                        FROM {self.tbl_statements_raw}
+                        WHERE company_name = ?
+                        ORDER BY quarter, version, type, frame, account
+                    """
+                financial_statements = self.load_data(query=company_query, params=(company_name,), db_filepath=self.db_filepath)
 
-            # Custom sorting to place empty fields last
-            targets.loc[targets["sector"] == "", "sector"] = last_order
-            targets.loc[targets["subsector"] == "", "subsector"] = last_order
-            targets.loc[targets["segment"] == "", "segment"] = last_order
+                # pega só a linha da empresa que interessa
+                company_df = company_info[ company_info["company_name"] == company_name ]
 
-            # Order the list by sector, subsector, segment, company_name, quarter, and version
-            targets = targets.sort_values(by=scrape_order, ascending=True)
+                # nsd_df: mantém apenas os tipos válidos e da empresa desejada
+                nsd_df = existing_nsd[
+                    (existing_nsd["nsd_type"].isin(self.config.domain["statements_types"])) &
+                    (existing_nsd["company_name"] == company_name)
+                ]
+                # merge nsd and company info
+                df_nsd_company = pd.merge(nsd_df, company_df, on="company_name", how="inner")
+                size = len(df_nsd_company)
 
-            # Restore empty fields
-            targets.loc[targets["sector"] == last_order, "sector"] = ""
-            targets.loc[targets["subsector"] == last_order, "subsector"] = ""
-            targets.loc[targets["segment"] == last_order, "segment"] = ""
-
-
-            date_columns = ['quarter', 'sent_date', 'date_listing', 'last_date', 'date_quotation']
-            for col in date_columns:
+                # unused dfs
+                nsd_company_outer = pd.merge(nsd_df, company_info, on="company_name", how="outer")
+                nsd_company_unmatched_df = nsd_company_outer[~nsd_company_outer['company_name'].isin(df_nsd_company['company_name'])]
+                
                 try:
-                    mask_iso = targets[col].astype(str).str.contains('-', na=False) & targets[col].astype(str).str.contains('T', na=False)
-                    mask_brazil = ~mask_iso & targets[col].notna()
-
-                    targets.loc[mask_iso, col] = pd.to_datetime(targets.loc[mask_iso, col], errors='coerce', dayfirst=False)
-                    targets.loc[mask_brazil, col] = pd.to_datetime(targets.loc[mask_brazil, col], errors='coerce', dayfirst=True)
+                    # remove already processed nsd (existing in financial_statements df)
+                    target = df_nsd_company[~df_nsd_company["nsd"].isin(financial_statements["nsd"].unique())]
+                    lines = len(target)
                 except Exception as e:
-                    self.log_error(e)
+                    target = df_nsd_company
+                    lines = 0
 
-            return targets
+                # Custom sorting to place empty fields last
+                if not target.empty:
+                    last_order = "ZZZZZZZZZZ"
+                    scrape_order = ["sector", "subsector", "segment", "company_name", "quarter", "version"]
 
+                    target.loc[target["sector"] == "", "sector"] = last_order
+                    target.loc[target["subsector"] == "", "subsector"] = last_order
+                    target.loc[target["segment"] == "", "segment"] = last_order
+
+                    # Order the list by sector, subsector, segment, company_name, quarter, and version
+                    target = target.sort_values(by=scrape_order, ascending=True)
+
+                    # Restore empty fields
+                    target.loc[target["sector"] == last_order, "sector"] = ""
+                    target.loc[target["subsector"] == last_order, "subsector"] = ""
+                    target.loc[target["segment"] == last_order, "segment"] = ""
+
+                    date_columns = ['quarter', 'sent_date', 'date_listing', 'last_date', 'date_quotation']
+                    for col in date_columns:
+                        try:
+                            mask_iso = target[col].astype(str).str.contains('-', na=False) & target[col].astype(str).str.contains('T', na=False)
+                            mask_brazil = ~mask_iso & target[col].notna()
+
+                            target.loc[mask_iso, col] = pd.to_datetime(target.loc[mask_iso, col], errors='coerce', dayfirst=False)
+                            target.loc[mask_brazil, col] = pd.to_datetime(target.loc[mask_brazil, col], errors='coerce', dayfirst=True)
+                        except Exception as e:
+                            pass
+
+                    targets.append(target)
+
+                extra_info = [cvm_code, ticker, trading_name, company_name, f'{size} lines, {lines} new']
+                self.print_info(i, len(df_companies), start_time, extra_info)
+
+            targets = [t for t in targets if isinstance(t, pd.DataFrame) and not t.empty]
+            targets = pd.concat(targets) if targets else pd.DataFrame()
+        
         except Exception as e:
             self.log_error(e)
+            targets = pd.DataFrame()
 
         return targets
 
     def main(self, thread=True):
         """Main method to process data."""
         try:
-            # Load necessary data
+            # Load data
             company_info = self.load_data(table_name=self.tbl_company, db_filepath=self.db_filepath)
             existing_nsd = self.load_data(table_name=self.tbl_nsd, db_filepath=self.db_filepath)
-            financial_statements = self.load_data(table_name=self.table_name, db_filepath=self.db_filepath)
 
-            # Identify scrape targets
-            targets = self.get_targets(company_info, existing_nsd, financial_statements)
-
-            # Exit if no targets
-            if targets.empty:
-                self.db_optimize(self.config.databases["raw"]["filepath"])
-                return True
+            targets = self.get_targets(company_info, existing_nsd)
 
             # download size tracking
             shared_bytes = {"total": 0, "threads": {}}
@@ -451,7 +481,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Save processed data
             if not result.empty:
-                self.save_to_db(dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath)
+                self.save_to_db(dataframe=result, table_name=self.tbl_statements_raw, db_filepath=self.db_filepath)
 
         except Exception as e:
             self.log_error(f"Error in main: {e}")

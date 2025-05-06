@@ -1,10 +1,15 @@
+import os
+import certifi
+# Garanta que o REQUESTS use o mesmo bundle de CA do certifi
+os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+os.environ['SSL_CERT_FILE']      = certifi.where()
+
 import base64
 import concurrent.futures
 import cloudscraper
 import inspect
 import json
 import logging
-import os
 import platform
 import random
 import re
@@ -21,6 +26,11 @@ from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from threading import Lock
+from urllib.parse import urlparse
+import sqlparse
+from sqlparse.sql import Identifier, IdentifierList
+from sqlparse.tokens import Keyword, DML, Name
+
 
 import pandas as pd
 import psutil
@@ -38,11 +48,13 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from tqdm import tqdm
 
 from utils.config import Config
+import ssl
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
-
 
 class BaseProcessor:
     def __init__(self):
@@ -170,7 +182,7 @@ class BaseProcessor:
                     cumulative += len(batch)  # add the length of this batch for the next iteration
 
                     # Submit task with progress
-                    futures.append(executor.submit(self.process_instance, batch, payload, progress, msg))
+                    futures.append(executor.submit(self.process_instance, batch, payload, progress))
 
                 for future in as_completed(futures):
                     try:
@@ -204,7 +216,7 @@ class BaseProcessor:
             }
 
             try:
-                result = self.process_instance(batch, payload, progress, msg)
+                result = self.process_instance(batch, payload, progress)
                 results.append(result)
 
             except Exception as e:
@@ -326,6 +338,36 @@ class BaseProcessor:
             self.log_error(e)
 
         return content
+    class _SSLAdapter(HTTPAdapter):
+        def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            self.poolmanager = PoolManager(
+                num_pools=connections,
+                maxsize=maxsize,
+                block=block,
+                ssl_context=context,
+                **pool_kwargs
+            )
+
+    def _create_insecure_scraper(self, headers):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+        class InsecureAdapter(HTTPAdapter):
+            def init_poolmanager(self, *args, **kwargs):
+                kwargs['ssl_context'] = context
+                self.poolmanager = PoolManager(*args, **kwargs)
+
+        session = requests.Session()
+        session.mount('https://', InsecureAdapter())
+        session.headers.update(headers)
+
+        # Cria o cloudscraper usando a sessão adaptada com o contexto SSL inseguro
+        insecure_scraper = cloudscraper.create_scraper(sess=session)
+        return insecure_scraper
 
     def _init_scraper(self, url, wait_time=None):
         """Create a cloudscraper instance with randomized headers and prime it on the homepage."""
@@ -334,7 +376,6 @@ class BaseProcessor:
         while True:
             try:
                 self.test_internet()
-    
                 headers = self.header_random()
 
                 # backup
@@ -344,7 +385,12 @@ class BaseProcessor:
                 # real one
                 scraper = cloudscraper.create_scraper()
                 scraper.headers.update(headers)
-                r = scraper.get(url)
+
+                # define o caminho do certificado
+                scraper.verify = certifi.where()
+
+                # scraper scrape
+                r = scraper.get(url, verify=certifi.where())
 
                 if r.status_code == 200:
                     break  # Success! Exit the loop
@@ -364,11 +410,21 @@ class BaseProcessor:
         tracking block times and using dynamic_sleep() between tries.
         Returns the successful Response.
         """
+        domain = urlparse(url).hostname or ""
+        insecure_domains = ['bvmf.bmfbovespa.com.br', ]
         block_start = None
+
         while True:
             try:
                 # get url
-                r = scraper.get(url)
+                if domain in insecure_domains:
+                    try:
+                        insecure_scraper = self._create_insecure_scraper(scraper.headers)
+                        r = insecure_scraper.get(url, headers=scraper.headers, verify=False)
+                    except Exception as e:
+                        r = requests.get(url, headers=scraper.headers, verify=False)
+                else:
+                    r = scraper.get(url, verify=certifi.where())  # normal para os demais
                 r.raise_for_status()
 
                 # total bytes transferred
@@ -1614,6 +1670,59 @@ class BaseProcessor:
         except Exception as e:
             self.log_error(e)
 
+    def _extract_table_names(self, sql):
+        """
+        Extrai todos os nomes de tabelas de um SQL, incluindo subqueries e joins compostos.
+        """
+        result = []
+        try:
+            table_names = set()
+            parsed = sqlparse.parse(sql)
+
+            def extract_from_tokens(tokens):
+                try:
+                    idx = 0
+                    while idx < len(tokens):
+                        token = tokens[idx]
+
+                        if token.is_group:
+                            extract_from_tokens(token.tokens)
+
+                        elif token.ttype is Keyword:
+                            value = token.value.upper()
+                            if value in ("FROM", "JOIN", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "OUTER JOIN", "UPDATE", "INTO"):
+                                # Pega o próximo token relevante
+                                idx += 1
+                                while idx < len(tokens):
+                                    next_token = tokens[idx]
+                                    if next_token.ttype in (sqlparse.tokens.Whitespace, sqlparse.tokens.Newline, sqlparse.tokens.Punctuation):
+                                        idx += 1
+                                        continue
+                                    if isinstance(next_token, IdentifierList):
+                                        for identifier in next_token.get_identifiers():
+                                            name = identifier.get_real_name()
+                                            if name:
+                                                table_names.add(name)
+                                    elif isinstance(next_token, Identifier):
+                                        name = next_token.get_real_name()
+                                        if name:
+                                            table_names.add(name)
+                                    elif next_token.ttype is Name:
+                                        table_names.add(next_token.value)
+                                    break
+                        idx += 1
+                except Exception as e:
+                    self.log_error(f"Erro interno ao percorrer tokens: {e}")
+
+            for statement in parsed:
+                extract_from_tokens(statement.tokens)
+
+            result = list(table_names)
+
+        except Exception as e:
+            self.log_error(f"Erro ao extrair nomes de tabelas: {e}")
+
+        return result
     def load_data(
         self,
         table_name: str | None = None,
@@ -1645,14 +1754,19 @@ class BaseProcessor:
                 self._initialize_database(db_filepath, database_name, table_name)
                 self._configure_db(db_filepath)
                 if table_name:
-                    with self._get_db_connection(db_filepath, read_only=False) as conn:
-                        cur = conn.cursor()
-                        cur.execute(
-                            "SELECT name FROM sqlite_master WHERE type='table' AND name=?;",
-                            (table_name,),
-                        )
-                        if cur.fetchone() is None:
-                            self._initialize_table(db_filepath, database_name, table_name)
+                    table_names = [table_name]
+                else:
+                    table_names = self._extract_table_names(query)
+                for table_name in table_names:
+                    if table_name:
+                        with self._get_db_connection(db_filepath, read_only=False) as conn:
+                            cur = conn.cursor()
+                            cur.execute(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name=?;",
+                                (table_name,),
+                            )
+                            if cur.fetchone() is None:
+                                self._initialize_table(db_filepath, database_name, table_name)
 
             # ---------- 1. Contar linhas ----------
             total_rows = 0
@@ -1661,14 +1775,15 @@ class BaseProcessor:
                 try:
                     with self._get_db_connection(db_filepath, read_only=True) as conn:
                         cur = conn.cursor()
-                        if table_name:
+                        if query:
+                            base_query = query.strip().rstrip(";")
+                            query_sub = f"SELECT COUNT(*) FROM ({base_query}) AS sub"
+                            cur.execute(query_sub, params)
+                            total_rows = cur.fetchone()[0]
+                        elif table_name:
                             cur.execute(f"SELECT MAX(rowid) FROM {table_name}")
                             max_rowid = cur.fetchone()[0]
                             total_rows = max_rowid or 0
-                        elif query:
-                            base_query = query.strip().rstrip(";")
-                            cur.execute(f"SELECT COUNT(*) FROM ({base_query}) AS sub", params)
-                            total_rows = cur.fetchone()[0]
                         break
                 except Exception as e:
                     self.log_error(e)
@@ -1697,15 +1812,7 @@ class BaseProcessor:
                 while attempt < max_retries:
                     try:
                         with self._get_db_connection(db_filepath, read_only=True) as conn:
-                            if table_name:
-                                start_id = rowid_starts[idx]
-                                end_id   = rowid_ends[idx]
-                                sql = (
-                                    f"SELECT * FROM {table_name} "
-                                    f"WHERE rowid >= {start_id} AND rowid < {end_id}"
-                                )
-                                df = pd.read_sql_query(sql, conn)
-                            else:
+                            if query:
                                 start_row = idx * batch_size + 1
                                 end_row   = min(start_row + batch_size - 1, total_rows)
                                 base_q    = query.strip().rstrip(";")
@@ -1721,6 +1828,14 @@ class BaseProcessor:
                                 WHERE rownum BETWEEN {start_row} AND {end_row};
                                 """
                                 df = pd.read_sql_query(sql, conn, params=params)
+                            elif table_name:
+                                start_id = rowid_starts[idx]
+                                end_id   = rowid_ends[idx]
+                                sql = (
+                                    f"SELECT * FROM {table_name} "
+                                    f"WHERE rowid >= {start_id} AND rowid < {end_id}"
+                                )
+                                df = pd.read_sql_query(sql, conn)
                             return df
                     except Exception as e:
                         if "database is locked" in str(e):

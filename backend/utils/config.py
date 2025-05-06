@@ -238,7 +238,10 @@ class Config:
                         processed TEXT DEFAULT NULL, 
                         PRIMARY KEY (company_name, quarter, version, type, frame, account, description)
                     );
-                    CREATE INDEX IF NOT EXISTS idx_statements_raw ON {tbl_statements_raw} (company_name, quarter, version, type, frame, account, description);
+                        CREATE INDEX IF NOT EXISTS idx_statements_raw_composite 
+                            ON {tbl_statements_raw} (company_name, quarter, version, type, frame, account, description);
+                        CREATE INDEX IF NOT EXISTS idx_statements_raw_nsd 
+                            ON {tbl_statements_raw} (nsd);
                 """,
                 tbl_statements_normalized: f"""
                     CREATE TABLE IF NOT EXISTS {tbl_statements_normalized} (
