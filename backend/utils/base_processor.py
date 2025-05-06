@@ -63,31 +63,34 @@ class BaseProcessor:
         self.db_lock = Lock()  # Initialize a threading Lock
 
     # APP FLOW LOGIC
-    def run(self, data, payload=None, thread=True, module_name="", msg=True):
+    def run(self, data, payload=None, verbose=True, thread=True, module_name=""):
         """Split data into batches and process them sequentially or with
         threads."""
         num_workers = self.config.scraping['max_workers']
         results = []
         try:
-            if "utils.intel_processor" in module_name:
-                batches, num_workers = self._split_batches_by_company(data, num_workers)
-                items_per_batch = len(batches[0])
-            else:
-                batches = self._split_batches(data, num_workers)
-                items_per_batch = len(batches[0])
+            batch_splitters = {
+                True: self._split_batches_by_company,
+                False: lambda d, n: (self._split_batches(d, n), n),
+            }
 
-            if thread:
-                if msg:
-                    print(
-                        f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {len(batches)} batches of up to {items_per_batch} items each"
-                    )
-                results = self._process_with_threads(batches, payload=payload, msg=msg)
-            else:
-                if msg:
-                    print(
-                        f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {num_workers} batches of up to {items_per_batch} items each"
-                    )
-                results = self._process_sequentially(batches, payload=payload, msg=msg)
+            splitter = "utils.intel_processor" in module_name
+            batches, num_workers = batch_splitters[splitter](data, num_workers)
+            items_per_batch = len(batches[0]) if batches else 0
+
+            processors = {
+                True: self._process_with_threads,
+                False: self._process_sequentially,
+            }
+
+            batch_count = len(batches) if thread else num_workers
+
+            if verbose:
+                print(
+                    f"From {module_name.split('.')[-1]}: processing {data.shape[0]} items in {batch_count} batches of up to {items_per_batch} items each"
+                )
+
+            results = processors[thread](batches, payload=payload, verbose=verbose)
 
         except Exception as e:
             self.log_error(e)
@@ -155,7 +158,7 @@ class BaseProcessor:
 
         return batches, num_workers
 
-    def _process_with_threads(self, batches, payload, msg):
+    def _process_with_threads(self, batches, payload, verbose):
         """Process batches with threading."""
         results = []
         try:
@@ -182,7 +185,7 @@ class BaseProcessor:
                     cumulative += len(batch)  # add the length of this batch for the next iteration
 
                     # Submit task with progress
-                    futures.append(executor.submit(self.process_instance, batch, payload, progress))
+                    futures.append(executor.submit(self.process_instance, batch, payload, verbose, progress))
 
                 for future in as_completed(futures):
                     try:
@@ -195,7 +198,7 @@ class BaseProcessor:
 
         return results
 
-    def _process_sequentially(self, batches, payload, msg):
+    def _process_sequentially(self, batches, payload, verbose):
         """"""
         results = []
         start_time = time.time()
@@ -216,7 +219,7 @@ class BaseProcessor:
             }
 
             try:
-                result = self.process_instance(batch, payload, progress)
+                result = self.process_instance(batch, payload, verbose, progress)
                 results.append(result)
 
             except Exception as e:
@@ -225,7 +228,7 @@ class BaseProcessor:
         return results
 
     @abstractmethod
-    def process_instance(self, batch, payload, progress, msg):
+    def process_instance(self, batch, payload, verbose, progress):
         """To be implemented by child classes."""
         pass
 
@@ -2339,7 +2342,7 @@ class TemplateProcessor(BaseProcessor):
         # # Initialize the WebDriver
         # self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating from abstract base_processor
         method to this class process_batch (true process info method) via this
         process_instance method (create instance method).
@@ -2352,14 +2355,14 @@ class TemplateProcessor(BaseProcessor):
             extra_info = [f"Worker {progress['thread_id']}", " ".join(sub_batch)]
             self.print_info(progress["batch_index"], progress["total_batches"], progress["start_time"], extra_info)
             # Delegate to process_batch for the actual batch processing
-            result = self.process_batch(sub_batch, progress)
+            result = self.process_batch(sub_batch, progress, verbose)
 
         except Exception:
             pass
 
         return result
 
-    def process_batch(self, sub_batch, payload, progress):
+    def process_batch(self, sub_batch, payload, verbose, progress):
         """"""
         result = ""
 

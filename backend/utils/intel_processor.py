@@ -50,7 +50,7 @@ class IntelProcessor(BaseProcessor):
             "Demonstração de Valor Adiconado": intel.section_7_criteria,
         }
 
-    def process_instance(self, sub_batch, payload, progress, msg):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """
         Process a single batch of financial data.
 
@@ -62,7 +62,7 @@ class IntelProcessor(BaseProcessor):
             sub_batch (pd.DataFrame): A slice of the full dataset to be processed in this batch.
             payload (Any): Optional extra data passed to the batch processor.
             progress (dict): Dictionary tracking the progress of the batch (index, thread ID, etc).
-            msg (bool): If True, prints progress information to stdout.
+            verbose (bool): If True, prints progress information to stdout.
 
         Returns:
             pd.DataFrame: Processed and transformed financial data. Returns an empty DataFrame on failure.
@@ -71,7 +71,7 @@ class IntelProcessor(BaseProcessor):
 
         try:
             # Print batch progress if messaging is enabled
-            if msg:
+            if verbose:
                 print(
                     f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} "
                     f"{100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
@@ -82,7 +82,7 @@ class IntelProcessor(BaseProcessor):
 
             # Process the batch and benchmark execution time
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, verbose, progress, benchmark_mode=False
             )
 
             # Optional: Saving to database can be enabled below if desired
@@ -106,7 +106,7 @@ class IntelProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, payload, progress):
+    def process_batch(self, sub_batch, payload, verbose, progress):
         """
         Process a batch of financial statement data, grouped by company,
         applying version control, standardization, cleaning, transformation,
@@ -130,7 +130,7 @@ class IntelProcessor(BaseProcessor):
                 result, df_older, df_duplicates = self._filter_newer_versions(df)
 
                 # Generate standard financial structure from raw data
-                result = self.generate_standard_financial_statements(df, progress)
+                result = self.generate_standard_financial_statements(df, progress, verbose)
 
                 # Ensure consistency in column formats, naming, types
                 result = self.adjust_columns(result)
@@ -196,7 +196,7 @@ class IntelProcessor(BaseProcessor):
 
         return final_result
     
-    def generate_standard_financial_statements(self, sub_batch, progress):
+    def generate_standard_financial_statements(self, sub_batch, progress, verbose):
         """
         Standardizes financial statement sections based on pre-defined criteria.
 
@@ -1201,7 +1201,7 @@ class IntelProcessor(BaseProcessor):
                     targets,
                     thread=thread,
                     module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__,
-                    msg=False
+                    verbose=False
                 )
 
                 # Save processed rows to the normalized table
