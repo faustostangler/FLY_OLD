@@ -130,20 +130,20 @@ class IntelProcessor(BaseProcessor):
                 result, df_older, df_duplicates = self._filter_newer_versions(df)
 
                 # Generate standard financial structure from raw data
-                result = self.generate_standard_financial_statements(df, progress, verbose)
+                result1 = self.generate_standard_financial_statements(result, progress, verbose)
 
                 # Ensure consistency in column formats, naming, types
-                result = self.adjust_columns(result)
+                result2 = self.adjust_columns(result1)
 
                 # Detect and correct data outliers or anomalies
-                result = self.detect_and_correct_outliers(result)
+                result3 = self.detect_and_correct_outliers(result2)
 
                 # Apply mathematical logic to adjust values by quarter
-                result = self._transform_quarterly_values(result)
+                result4 = self._transform_quarterly_values(result3)
 
                 # Save final cleaned and transformed data
                 self.save_to_db(
-                    dataframe=result,
+                    dataframe=result4,
                     table_name=self.tbl_statements_normalized,
                     db_filepath=self.db_filepath,
                     alert=False,
@@ -186,7 +186,7 @@ class IntelProcessor(BaseProcessor):
 
                 # Compose log metadata (sector omitted by choice)
                 extra_info = [worker_info, company_name, quarter_info]
-                # self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
+                self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
 
         except Exception as e:
             self.log_error(e)
@@ -756,28 +756,32 @@ class IntelProcessor(BaseProcessor):
                 .fillna(0)  # Fill missing quarter values with 0
             )
 
-            # Apply transformation rules based on account type
+            # Figure out which quarters really got pivoted
+            quarter_cols = [c for c in pivot.columns if isinstance(c, int)]
+
             if tipo == "year_end":
-                # Recalculate Q4: Q4 = Dec - (Q1 + Q2 + Q3)
-                pivot[4] = (
-                    pivot.get(4, 0)
-                    - pivot.get(1, 0)
-                    - pivot.get(2, 0)
-                    - pivot.get(3, 0)
-                )
+                # Only touch Q4 if Q1, Q2 and Q3 were all there
+                if 4 in quarter_cols and all(q in quarter_cols for q in (1, 2, 3)):
+                    pivot[4] = pivot[4] - pivot[1] - pivot[2] - pivot[3]
 
             elif tipo == "cumulative":
-                # Recalculate each quarter to be single-period instead of cumulative
-                pivot[2] = pivot.get(2, 0) - pivot.get(1, 0)
-                pivot[3] = pivot.get(3, 0) - (pivot.get(1, 0) + pivot.get(2, 0))
-                pivot[4] = pivot.get(4, 0) - (
-                    pivot.get(1, 0) + pivot.get(2, 0) + pivot.get(3, 0)
-                )
+                # For each quarter N = 2,3,4: only rewite pivot[N] if 1..N-1 are present
+                for q in (2, 3, 4):
+                    prev = list(range(1, q))
+                    if q in quarter_cols and all(p in quarter_cols for p in prev):
+                        pivot[q] = pivot[q] - sum(pivot[p] for p in prev)
 
-            # Melt back to long format (one row per quarter)
+            # figure out which of 1–4 actually landed in your pivot
+            value_quarters = [q for q in (1, 2, 3, 4) if q in pivot.columns]
+
+            # if nothing to melt, return empty (or handle as you wish)
+            if not value_quarters:
+                return pd.DataFrame(columns=merge_cols + index_cols + ["quarter_num", "value"])
+
+            # melt only the present quarters
             melted = pivot.melt(
                 id_vars=index_cols,
-                value_vars=[1, 2, 3, 4],
+                value_vars=value_quarters,
                 var_name="quarter_num",
                 value_name="value",
             )
@@ -1032,8 +1036,7 @@ class IntelProcessor(BaseProcessor):
         except Exception as e:
             self.log_error(e)
 
-
-    def get_targets(
+    def get_targets_old2(
         self,
         use_index: bool = True,
         process_new: bool = True,
@@ -1103,6 +1106,45 @@ class IntelProcessor(BaseProcessor):
             self.log_error(f"Error in get_targets: {e}")
             return pd.DataFrame()
 
+    def get_targets(self, targets) -> pd.DataFrame:
+        try:
+            if targets.empty:
+                return targets
+
+            batch_size = self.config.scraping.get("batch_size", 100) // 10 # fallback caso não exista
+
+            # Garante que 'year' está disponível
+            targets = targets.copy()
+            targets["quarter"] = pd.to_datetime(targets["quarter"], errors="coerce")
+            targets["year"] = targets["quarter"].dt.year
+
+            # Obtenha os pares únicos (company_name, year) do targets atual
+            pairs = targets[["company_name", "year"]].drop_duplicates().reset_index(drop=True)
+            batches = [pairs[i:i + batch_size] for i in range(0, len(pairs), batch_size)]
+
+            results = []
+
+            for batch in batches:
+                filters = " OR ".join(
+                    f"(company_name = '{row.company_name}' AND strftime('%Y', quarter) = '{row.year}')"
+                    for _, row in batch.iterrows()
+                )
+
+                sql = f"""
+                    SELECT *
+                    FROM {self.tbl_statements_raw}
+                    WHERE {filters}
+                """
+
+                df = self.load_data(query=sql, multi_thread=True)
+                results.append(df)
+
+            return pd.concat(results, ignore_index=True)
+
+        except Exception as e:
+            self.log_error(f"Erro ao estender targets por (company_name, year) com paginação: {e}")
+            return targets
+
     def iter_statements_by_company(self, db_path: str):
         """
         Iterate over grouped raw financial statement records by company.
@@ -1155,7 +1197,10 @@ class IntelProcessor(BaseProcessor):
                 # Extract column names for downstream DataFrame construction
                 columns = [desc[0] for desc in cursor2.description]
 
-                yield company_name, statements, columns
+                # Convert raw records into a DataFrame
+                pretargets = pd.DataFrame.from_records(statements, columns=columns)
+
+                yield company_name, pretargets
 
             conn.close()
 
@@ -1192,9 +1237,8 @@ class IntelProcessor(BaseProcessor):
             # Iterator over only the companies with new/unprocessed statements
             statement_iterator = self.iter_statements_by_company(self.db_filepath)
 
-            for i, (company_name, statements, columns) in enumerate(statement_iterator):
-                # Convert raw records into a DataFrame
-                targets = pd.DataFrame.from_records(statements, columns=columns)
+            for i, (company_name, pretargets) in enumerate(statement_iterator):
+                targets = self.get_targets(pretargets)
 
                 # Process the DataFrame using normalization logic (threaded if configured)
                 result = self.run(
