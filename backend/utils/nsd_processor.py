@@ -31,7 +31,6 @@ class NsdProcessor(BaseProcessor):
         self.table_name = self.config.databases["raw"]["table"]["nsd"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-    @BaseProcessor().profile_generator()
     def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()
@@ -65,6 +64,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
+    @BaseProcessor().profile_generator()
     def process_batch(self, sub_batch, payload, verbose, progress):
         """Process a batch of NSD data by scraping and extracting relevant
         information."""
@@ -261,7 +261,6 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
-    @BaseProcessor().profile_generator()
     def main(self, thread=True):
         """Main method to scrape NSD data, parse it, and save it to the
         database."""
@@ -292,10 +291,9 @@ class NsdProcessor(BaseProcessor):
                 return True
 
             # Run processing (threaded or sequential)
-            with self.profiling():
-                result = self.run(
-                    targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
-                )
+            result = self.run(
+                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
+            )
 
             # Total Transfered
             if self.shared_total_bytes:

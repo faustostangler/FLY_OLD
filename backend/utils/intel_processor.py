@@ -106,6 +106,7 @@ class IntelProcessor(BaseProcessor):
 
         return result
 
+    @BaseProcessor().profile_generator()
     def process_batch(self, sub_batch, payload, verbose, progress):
         """
         Process a batch of financial statement data, grouped by company,

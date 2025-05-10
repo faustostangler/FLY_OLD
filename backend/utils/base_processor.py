@@ -1446,10 +1446,10 @@ class BaseProcessor:
                 profiler.disable()
                 filename_prefix = "profile"
                 module_name = os.path.basename(func.__module__.replace(".", "/"))
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now().strftime("%Y-%m-%d %H%M %S")
                 filename = os.path.join(
                     self.config.paths["profiles_folder"], 
-                    f"{filename_prefix}_{module_name}_{func.__name__}_{timestamp}.prof"
+                    f"{filename_prefix} {module_name}_{func.__name__} {timestamp}.prof"
                 )
                 try:
                     profiler.create_stats()
@@ -1499,10 +1499,10 @@ class BaseProcessor:
                 func_name = "unknown"
                 module_name_clean = "unknown"
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H%M %S")
             filename = os.path.join(
                 self.config.paths["profiles_folder"], 
-                f"{filename_prefix}_{module_name_clean}_{func_name}_{timestamp}.prof"
+                f"{filename_prefix} {module_name_clean}_{func_name} {timestamp}.prof"
             )
 
             with open(filename, "w") as f:

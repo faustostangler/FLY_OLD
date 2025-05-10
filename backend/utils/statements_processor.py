@@ -41,7 +41,7 @@ class StatementsProcessor(BaseProcessor):
         # # Initialize driver and other resources
         # self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
@@ -59,7 +59,7 @@ class StatementsProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, verbose, progress, benchmark_mode=False
             )
 
             # Show subtotal download size
@@ -76,7 +76,8 @@ class StatementsProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, payload, progress):
+    @BaseProcessor().profile_generator()
+    def process_batch(self, sub_batch, payload, verbose, progress):
         """Process a batch of financial data by iterating over rows and
         scraping statements."""
         try:
@@ -374,6 +375,8 @@ class StatementsProcessor(BaseProcessor):
             targets = []
             start_time = time.time()
             for i, row in df_companies.iterrows():
+                if i >= 50:
+                    break
                 company_name = row['company_name']
                 cvm_code = row['cvm_code']
                 ticker = row['ticker']

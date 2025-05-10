@@ -74,6 +74,7 @@ class CompanyProcessor(BaseProcessor):
 
         return result
 
+    @BaseProcessor().profile_generator()
     def process_batch(self, sub_batch, payload, verbose, progress):
         """
         Process a batch of company tickers by fetching their detailed information.
@@ -385,7 +386,6 @@ class CompanyProcessor(BaseProcessor):
 
         return result
 
-    @BaseProcessor().profile_generator()
     def main(self, thread=True):
         """Main method to process data."""
         try:
