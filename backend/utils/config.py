@@ -28,6 +28,7 @@ class Config:
         bin_folder = os.path.join(backend_folder, "bin")
         utils_folder = os.path.join(backend_folder, "utils")
         temp_folder = os.path.join(base_dir, "temp")
+        profiles_folder = os.path.join(base_dir, "profiles")
 
         return {
             "base_dir": base_dir,
@@ -36,6 +37,7 @@ class Config:
             "bin_folder": bin_folder,
             "utils_folder": utils_folder,
             "temp_folder": temp_folder,
+            "profiles_folder": profiles_folder,
         }
 
     def _ensure_directories(self):
@@ -45,6 +47,7 @@ class Config:
         os.makedirs(self.paths["bin_folder"], exist_ok=True)
         os.makedirs(self.paths["utils_folder"], exist_ok=True)
         os.makedirs(self.paths["temp_folder"], exist_ok=True)
+        os.makedirs(self.paths["profiles_folder"], exist_ok=True)
 
         return True
 

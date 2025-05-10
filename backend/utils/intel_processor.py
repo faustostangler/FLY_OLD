@@ -1222,6 +1222,7 @@ class IntelProcessor(BaseProcessor):
             bool: Always returns True after execution, regardless of result count.
         """
         try:
+            start_time = time.time()
             # Get list of all known companies (for progress display)
             with sqlite3.connect(self.db_filepath) as conn:
                 cursor = conn.cursor()
@@ -1232,6 +1233,7 @@ class IntelProcessor(BaseProcessor):
                 """)
                 total_companies = cursor.fetchone()[0]
 
+            end_time = time.time()
             start_time = time.time()
 
             # Iterator over only the companies with new/unprocessed statements

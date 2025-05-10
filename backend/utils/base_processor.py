@@ -51,6 +51,10 @@ from utils.config import Config
 import ssl
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
+import cProfile
+import pstats
+import functools
+from contextlib import contextmanager
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 with warnings.catch_warnings():
@@ -1274,6 +1278,7 @@ class BaseProcessor:
         try:
             if not benchmark_mode:
                 # Just run the function normally without benchmarking
+
                 result = function(*args, **kwargs), []
 
                 return result
@@ -1424,6 +1429,87 @@ class BaseProcessor:
         """
         # winsound.Beep(frequency, duration)
         return True
+
+    def profile_generator(self):
+        """
+        Decorator para perfilar métodos da instância.
+        Salva um snapshot .prof após a execução do método.
+        """
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                profiler = cProfile.Profile()
+                profiler.enable()
+
+                result = func(*args, **kwargs)
+
+                profiler.disable()
+                filename_prefix = "profile"
+                module_name = os.path.basename(func.__module__.replace(".", "/"))
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = os.path.join(
+                    self.config.paths["profiles_folder"], 
+                    f"{filename_prefix}_{module_name}_{func.__name__}_{timestamp}.prof"
+                )
+                try:
+                    profiler.create_stats()
+                    with open(filename, "w") as f:
+                        stats = pstats.Stats(profiler, stream=f).sort_stats("cumulative")
+                        stats.dump_stats(filename)
+                except Exception as e:
+                    self.log_error(e)
+                return result
+            return wrapper
+        return decorator
+
+    @contextmanager
+    def profiling(self, label="manual"):
+        """
+        Context manager para perfilar um trecho de código e salvar snapshot automaticamente.
+        """
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            yield
+        finally:
+            profiler.disable()
+            self.dump_profiler_snapshot(profiler)
+
+    def dump_profiler_snapshot(self, profiler):
+        """
+        Salva um snapshot parcial do profiler no formato .prof.
+        Pode ser chamada de dentro de qualquer método.
+        """
+        try:
+            profiler.create_stats()
+            filename_prefix = "profile_manual"
+
+            # Procurar o primeiro frame fora de BaseProcessor e libs internas
+            for frame_info in inspect.stack():
+                module_name = frame_info.frame.f_globals.get("__name__", "")
+                if (
+                    not module_name.startswith("contextlib")
+                    and not module_name.endswith("base_processor")
+                    and "site-packages" not in frame_info.filename
+                ):
+                    func_name = frame_info.function
+                    module_name_clean = module_name.split(".")[-1]
+                    break
+            else:
+                func_name = "unknown"
+                module_name_clean = "unknown"
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(
+                self.config.paths["profiles_folder"], 
+                f"{filename_prefix}_{module_name_clean}_{func_name}_{timestamp}.prof"
+            )
+
+            with open(filename, "w") as f:
+                stats = pstats.Stats(profiler, stream=f).sort_stats("cumulative")
+                stats.dump_stats(filename)
+        except Exception as e:
+            self.log_error(e)
 
     # DATABASE METHODS
     def _initialize_database(self, db_filepath, database_name, table_name=None):

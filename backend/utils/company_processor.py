@@ -36,7 +36,7 @@ class CompanyProcessor(BaseProcessor):
         # # Initialize driver and other resources
         # self.driver, self.driver_wait = self._initialize_driver()
 
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()
 
@@ -54,7 +54,7 @@ class CompanyProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, verbose, progress, benchmark_mode=False
             )
 
             # total download
@@ -62,18 +62,19 @@ class CompanyProcessor(BaseProcessor):
                 with self.shared_lock:
                     subtotal = self.shared_total_bytes["threads"].get(progress["thread_id"], 0)
                     print(f"Worker {progress['thread_id']} download: {self._format_bytes(subtotal)}")
+
             # Save result to database
-            self.save_to_db(
-                dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False
-            )
+            if not result.empty and not result.columns.empty:
+                self.save_to_db(
+                    dataframe=result, table_name=self.table_name, db_filepath=self.db_filepath, alert=False
+                )
 
         except Exception as e:
             self.log_error(f"Error in process_instance: {e}")
-            self.close_driver()  # Ensure driver is closed even on errors
 
         return result
 
-    def process_batch(self, sub_batch, payload, progress):
+    def process_batch(self, sub_batch, payload, verbose, progress):
         """
         Process a batch of company tickers by fetching their detailed information.
 
@@ -86,7 +87,7 @@ class CompanyProcessor(BaseProcessor):
             pd.DataFrame: A concatenated DataFrame with the detailed company information.
                         If no data is found or an error occurs, returns an empty DataFrame.
         """
-        result = ''
+        result = pd.DataFrame()
 
         try:
             # Initialize an empty list to accumulate the results
@@ -384,6 +385,7 @@ class CompanyProcessor(BaseProcessor):
 
         return result
 
+    @BaseProcessor().profile_generator()
     def main(self, thread=True):
         """Main method to process data."""
         try:

@@ -31,7 +31,8 @@ class NsdProcessor(BaseProcessor):
         self.table_name = self.config.databases["raw"]["table"]["nsd"]
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-    def process_instance(self, sub_batch, payload, progress):
+    @BaseProcessor().profile_generator()
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()
 
@@ -39,7 +40,6 @@ class NsdProcessor(BaseProcessor):
             print(
                 f"Starting batch {progress['batch_index']+1}/{progress['total_batches']} {100 * (progress['batch_index']+1) / progress['total_batches']:.02f}%"
             )
-
             batch_processor = NsdProcessor()
 
             # Inject shared control
@@ -49,7 +49,7 @@ class NsdProcessor(BaseProcessor):
 
             # Delegate to process_batch for the actual batch processing
             result, benchmark_results = batch_processor.benchmark_function(
-                batch_processor.process_batch, sub_batch, payload, progress, benchmark_mode=False
+                batch_processor.process_batch, sub_batch, payload, verbose, progress, benchmark_mode=False
             )
 
             # Show subtotal download size
@@ -65,7 +65,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
-    def process_batch(self, sub_batch, payload, progress):
+    def process_batch(self, sub_batch, payload, verbose, progress):
         """Process a batch of NSD data by scraping and extracting relevant
         information."""
         try:
@@ -134,7 +134,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
-    def _generate_nsd_list(self, existing_nsd):
+    def _generate_nsd_list(self, existing_nsd, retry=False):
         """"""
         nsd_range = list(range(1, 100))  # <- default se tudo falhar (100 primeiros NSDs)
 
@@ -164,6 +164,7 @@ class NsdProcessor(BaseProcessor):
                     int(daily_submission_estimate * days_elapsed * self.config.domain["safety_factor"]) + 1
                 )
                 future_nsds = list(range(last_nsd + 1, last_nsd + 1 + estimated_new_nsds))
+
             else:
                 future_nsds = list(range(last_nsd + 1, last_nsd + 1 + self.config.scraping["batch_size"]))
         except Exception as e:
@@ -175,7 +176,7 @@ class NsdProcessor(BaseProcessor):
         missing_nsds = list(sorted(all_possible - existing_ids))
 
         # Combine missing and future
-        nsd_range = future_nsds + missing_nsds
+        nsd_range = future_nsds + missing_nsds if retry else future_nsds
 
         targets = pd.DataFrame({"nsd": list(nsd_range)})
 
@@ -260,6 +261,7 @@ class NsdProcessor(BaseProcessor):
 
         return result
 
+    @BaseProcessor().profile_generator()
     def main(self, thread=True):
         """Main method to scrape NSD data, parse it, and save it to the
         database."""
@@ -290,9 +292,10 @@ class NsdProcessor(BaseProcessor):
                 return True
 
             # Run processing (threaded or sequential)
-            result = self.run(
-                targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
-            )
+            with self.profiling():
+                result = self.run(
+                    targets, thread=thread, module_name=self.inspect.getmodule(self.inspect.currentframe()).__name__
+                )
 
             # Total Transfered
             if self.shared_total_bytes:

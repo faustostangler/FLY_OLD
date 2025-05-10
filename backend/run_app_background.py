@@ -12,7 +12,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get company information
         run_company_processor = "N"
         prompt = "Want to update company information? (YES/NO): "
-        # run_company_processor = base.timed_input(prompt)
+        run_company_processor = base.timed_input(prompt)
         if run_company_processor.strip().upper().startswith("Y"):
             company_processor = CompanyProcessor()
             company_processor.main(thread=True)
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         # Ask the user if they want to get nsd information
         run_nsd_processor = "N"
         prompt = "Want to update nsd information? (YES/NO): "
-        # run_nsd_processor = base.timed_input(prompt)
+        run_nsd_processor = base.timed_input(prompt)
         if run_nsd_processor.strip().upper().startswith("Y"):
             nsd_processor = NsdProcessor()
             nsd_processor.main(thread=True)
@@ -28,10 +28,10 @@ if __name__ == "__main__":
         # Ask the user if they want to get finantial statements
         run_statements_processor = "N"
         prompt = "Want to update statements information? (YES/NO): "
-        # run_statements_processor = base.timed_input(prompt)
+        run_statements_processor = base.timed_input(prompt)
         if run_statements_processor.strip().upper().startswith("Y"):
             statements_processor = StatementsProcessor()
-            statements_processor.main(thread=True)
+            statements_processor.main(thread=False)
 
         # Ask the user if they want to sstandardize the statements
         run_intel_processor = "N"
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         # prompt = 'Want to update stock historical data? (YES/NO): '
         # # run_stock_processor = stock_processor.timed_input(prompt)
         # if run_stock_processor.strip().upper().startswith('Y'):
-        #     stock_processor.main(thread=True)
+        #     stock_processor.main(thread=False)
         # stock_processor.close_driver()
 
     except Exception as e:
