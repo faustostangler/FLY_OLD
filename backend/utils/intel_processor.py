@@ -33,6 +33,7 @@ class IntelProcessor(BaseProcessor):
 
         # Retrieve database table and index names from the configuration
         self.tbl_statements_raw = self.config.databases["raw"]["table"]["statements_raw"]
+        self.tbl_pending_companies = self.config.databases["raw"]["table"]["pending_companies"]
         self.idx_statements_raw = self.config.databases["raw"]["index"]["statements_raw"]
         self.tbl_statements_normalized = self.config.databases["raw"]["table"]["statements_normalized"]
         self.primary_key_columns = self.config.domain["statements_sheet_columns"]
@@ -84,15 +85,6 @@ class IntelProcessor(BaseProcessor):
             result, benchmark_results = batch_processor.benchmark_function(
                 batch_processor.process_batch, sub_batch, payload, verbose, progress, benchmark_mode=False
             )
-
-            # Optional: Saving to database can be enabled below if desired
-            # self.save_to_db(
-            #     dataframe=result,
-            #     table_name=self.tbl_statements_normalized,
-            #     db_filepath=self.db_filepath,
-            #     alert=False,
-            #     update=False,
-            # )
 
             # Optional: Log processed company names and worker info for traceability
             # first = f"{sub_batch['company_name'].iloc[0]}"
@@ -167,6 +159,9 @@ class IntelProcessor(BaseProcessor):
                     sql_update_params=(company_name,),
                 )
 
+                # after you’ve built and saved result4:
+                all_results.append(result4)
+
                 # Calculate progress info
                 actual_item = progress["batch_start"] + i + 1
                 total_items = progress["scrape_size"]
@@ -187,13 +182,16 @@ class IntelProcessor(BaseProcessor):
 
                 # Compose log metadata (sector omitted by choice)
                 extra_info = [worker_info, company_name, quarter_info]
-                self.print_info(i, total_companies, start_time, extra_info, indent_level=0)
+                self.print_info(i, total_companies, start_time, extra_info, indent_level=1)
 
         except Exception as e:
             self.log_error(e)
 
         # prepare all results to return as a dataframe
-        final_result = pd.concat(all_results, ignore_index=True)
+        if all_results:
+            final_result = pd.concat(all_results, ignore_index=True)
+        else:
+            final_result = pd.DataFrame(columns=sub_batch.columns)
 
         return final_result
     
@@ -1173,33 +1171,35 @@ class IntelProcessor(BaseProcessor):
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Query 1: Get distinct companies with records needing (re)processing
-            query_companies = """
-                SELECT DISTINCT company_name
-                FROM tbl_statements_raw
-                WHERE processed IS NULL OR processed <> version
-                ORDER BY company_name
-            """
+            with self.profiling():
+                # Query 1: Get distinct companies with records needing (re)processing
+                query_companies = """
+                    SELECT DISTINCT company_name
+                    FROM tbl_statements_raw
+                    WHERE processed IS NULL OR processed <> version
+                    ORDER BY company_name
+                """
 
             for row in cursor.execute(query_companies):
                 company_name = row[0]
 
-                # Query 2: Fetch only the raw rows needing processing for that company
-                query_data = """
-                    SELECT *
-                    FROM tbl_statements_raw
-                    WHERE company_name = ?
-                    AND (processed IS NULL OR processed <> version)
-                """
-                cursor2 = conn.cursor()
-                cursor2.execute(query_data, (company_name,))
-                statements = cursor2.fetchall()
+                with self.profiling():
+                    # Query 2: Fetch only the raw rows needing processing for that company
+                    query_data = """
+                        SELECT *
+                        FROM tbl_statements_raw
+                        WHERE company_name = ?
+                        AND (processed IS NULL OR processed <> version)
+                    """
+                    cursor2 = conn.cursor()
+                    cursor2.execute(query_data, (company_name,))
+                    statements = cursor2.fetchall()
 
-                # Extract column names for downstream DataFrame construction
-                columns = [desc[0] for desc in cursor2.description]
+                    # Extract column names for downstream DataFrame construction
+                    columns = [desc[0] for desc in cursor2.description]
 
-                # Convert raw records into a DataFrame
-                pretargets = pd.DataFrame.from_records(statements, columns=columns)
+                    # Convert raw records into a DataFrame
+                    pretargets = pd.DataFrame.from_records(statements, columns=columns)
 
                 yield company_name, pretargets
 
@@ -1223,25 +1223,24 @@ class IntelProcessor(BaseProcessor):
             bool: Always returns True after execution, regardless of result count.
         """
         try:
-            start_time = time.time()
-            # Get list of all known companies (for progress display)
-            with sqlite3.connect(self.db_filepath) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT company_name)
-                    FROM tbl_statements_raw
-                    WHERE processed IS NULL OR processed <> version
-                """)
-                total_companies = cursor.fetchone()[0]
 
-            end_time = time.time()
-            start_time = time.time()
+            # dispara _initialize_table + executescript do schema pending_companies
+            df_pending = self.load_data(
+                table_name=self.tbl_pending_companies,
+                db_filepath=self.db_filepath,
+                multi_thread=False,
+                alert=False
+            )
+            # df_pending estará vazio (ou com as empresas pendentes, se já existirem)
+            total_companies = len(df_pending)
 
             # Iterator over only the companies with new/unprocessed statements
             statement_iterator = self.iter_statements_by_company(self.db_filepath)
 
+            start_time = time.time()
             for i, (company_name, pretargets) in enumerate(statement_iterator):
-                targets = self.get_targets(pretargets)
+                with self.profiling():
+                    targets = self.get_targets(pretargets)
 
                 # Process the DataFrame using normalization logic (threaded if configured)
                 result = self.run(

@@ -1152,7 +1152,7 @@ class BaseProcessor:
         else:
             return wait * random.uniform(0.1, 0.5)  # delay if CPU usage is medium low
 
-    def detect_and_correct_outliers(self, df):
+    def detect_and_correct_outliers_old(self, df):
         """
         definitions
         """
@@ -1216,6 +1216,87 @@ class BaseProcessor:
             self.log_error(e)
 
         return corrected_df
+
+    def detect_and_correct_outliers(self, df):
+        """
+        Detect and correct outliers for a specific company.
+        Retrieves raw statements for the company, applies outlier detection and correction, and saves the cleaned data.
+        """
+        try:
+            # Determine the company to process
+            company_name = df['company_name'].iloc[0]
+
+            # Load raw statements for this company from the database
+            raw_df = self.load_data(
+                query=f"SELECT * FROM {self.tbl_statements_raw} WHERE company_name = ?",
+                params=(company_name,),
+                db_filepath=self.db_filepath,
+                alert=False
+            )
+            if raw_df.empty:
+                return df
+
+            # Define outlier detection parameters
+            group_cols = ["company_name", "type", "account"]
+            value_col = "value"
+            date_col = "quarter"
+            neighbor_count = 5  # Number of neighboring periods to consider
+
+            # Sort and preserve original values
+            raw_df_sorted = raw_df.sort_values(by=group_cols + [date_col]).reset_index(drop=True)
+            raw_df_sorted["original_value"] = raw_df_sorted[value_col]
+
+            # Function to verify and correct outliers in a group
+            def process_group(group):
+                group = group.copy()
+                # Remove duplicates: keep highest non-zero
+                group = group.loc[group.groupby(self.primary_key_columns)[value_col].idxmax()].reset_index(drop=True)
+
+                for idx in range(len(group)):
+                    val = group.at[idx, value_col]
+                    # Gather previous and next neighbor values
+                    prev_vals = group.iloc[max(0, idx - neighbor_count):idx][value_col].tolist()
+                    next_vals = group.iloc[idx + 1: idx + 1 + neighbor_count][value_col].tolist()
+                    if not prev_vals or not next_vals:
+                        continue
+                    # Check progressively smaller windows
+                    for n in range(neighbor_count, 0, -1):
+                        pv = prev_vals[-n:]
+                        nv = next_vals[:n]
+                        if pv and nv:
+                            mean_prev = sum(pv) / len(pv)
+                            mean_next = sum(nv) / len(nv)
+                            # If the value is off by a factor of 1000
+                            if mean_prev != 0 and (mean_prev == val * 1000 or mean_prev == val / 1000):
+                                group.at[idx, value_col] = mean_prev
+                                break
+                            if mean_next != 0 and (mean_next == val * 1000 or mean_next == val / 1000):
+                                group.at[idx, value_col] = mean_next
+                                break
+                return group
+
+            # Apply outlier processing per group
+            corrected_df = (
+                raw_df_sorted
+                .groupby(group_cols, group_keys=False)
+                .apply(process_group)
+                .reset_index(drop=True)
+            )
+
+            # Persist corrected data to the normalized statements table
+            self.save_to_db(
+                dataframe=corrected_df,
+                table_name=self.tbl_statements_normalized,
+                db_filepath=self.db_filepath,
+                alert=False,
+                update=False
+            )
+
+            return corrected_df
+
+        except Exception as e:
+            self.log_error(e)
+            return pd.DataFrame()
 
     def base64_payload(self, payload: dict) -> str:
         """
@@ -1541,7 +1622,10 @@ class BaseProcessor:
                 if schema_table_name in table_name or schema_table_name == table_name:
                     with self._get_db_connection(db_filepath, read_only=False) as conn:
                         cursor = conn.cursor()
-                        [cursor.execute(statement.strip()) for statement in schema_sql.split(";") if statement.strip()]
+                        try:
+                            [cursor.execute(statement.strip()) for statement in schema_sql.split(";") if statement.strip()]
+                        except:
+                            cursor.executescript(schema_sql)
                         conn.commit()
                         # print(f"Table '{table_name}' initialized in '{database_name}'.")
                     return
@@ -1812,6 +1896,7 @@ class BaseProcessor:
             self.log_error(f"Erro ao extrair nomes de tabelas: {e}")
 
         return result
+
     def load_data(
         self,
         table_name: str | None = None,
@@ -2057,25 +2142,62 @@ class BaseProcessor:
 
                 while attempts < max_retries:
                     try:
+                        # Refactored sql_update branch with detailed step-by-step logic
                         if sql_update:
-                            # Executa SQL personalizado (ex: UPDATE processed = version)
-                            cursor.execute(sql_update, sql_update_params or ())
-                            conn.commit()
+                            # 1. Find everything from WHERE up to the first semicolon (or end)
+                            m = re.search(r'(WHERE\b.*?)(?:;|$)', sql_update, flags=re.IGNORECASE | re.DOTALL)
+                            if not m:
+                                raise ValueError("sql_update must contain a WHERE clause")
+                            where_clause = m.group(1).strip()
+                            pre_count_sql =  f"SELECT COUNT(*) FROM {table_name} {where_clause};"
 
-                            # Debug opcional
-                            time.sleep(self.dynamic_sleep())
-                            row_count = cursor.rowcount
-                            verify_sql = f"""
-                                SELECT COUNT(*) FROM {table_name}
-                                WHERE processed IS NOT NULL AND company_name = ?;
-                            """
-                            cursor.execute(verify_sql, sql_update_params or ())
-                            row_updated = cursor.fetchone()[0]
-                            if row_count != row_updated:
-                                print(f"DEBUG executed: {row_count}, updated: {row_updated}")
+                            # 2. Count how many rows are still unprocessed before running the update
+                            cursor.execute(pre_count_sql, sql_update_params)
+                            before_count = cursor.fetchone()[0]
+
+                            # 3. Execute the UPDATE statement (sets processed = version)
+                            cursor.execute(sql_update, sql_update_params)
+                            conn.commit()
+                            # SQLite reports the number of rows it "touched" via rowcount
+                            touched_count = cursor.rowcount
+
+                            # 4. Re-count how many rows remain unprocessed after the update
+                            cursor.execute(pre_count_sql, sql_update_params)
+                            after_count = cursor.fetchone()[0]
+
+                            # 5. Compute how many rows were actually moved from unprocessed to processed
+                            actually_updated = before_count - after_count
+
+                            # 6. Compare SQLite's reported rowcount with our computed delta
+                            if touched_count != actually_updated:
                                 print(
-                                    f"  SELECT COUNT(*) FROM {table_name} WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';"
+                                    f"DEBUG mismatch: touched_count={touched_count}, "
+                                    f"actually_updated={actually_updated}"
                                 )
+                            
+                            # Optional: honor the original `alert` flag to print success message
+                            if alert:
+                                print(f"Updated {table_name}: {actually_updated} rows processed")
+
+                        # if sql_update:
+                        #     # Executa SQL personalizado (ex: UPDATE processed = version)
+                        #     cursor.execute(sql_update, sql_update_params or ())
+                        #     conn.commit()
+
+                        #     # Debug opcional
+                        #     time.sleep(self.dynamic_sleep())
+                        #     row_count = cursor.rowcount
+                        #     verify_sql = f"""
+                        #         SELECT COUNT(*) FROM {table_name}
+                        #         WHERE processed IS NOT NULL AND company_name = ?;
+                        #     """
+                        #     cursor.execute(verify_sql, sql_update_params or ())
+                        #     row_updated = cursor.fetchone()[0]
+                        #     if row_count != row_updated:
+                        #         print(f"DEBUG executed: {row_count}, updated: {row_updated}")
+                        #         print(
+                        #             f"  SELECT COUNT(*) FROM {table_name} WHERE processed IS NOT NULL AND company_name = '{sql_update_params[0]}';"
+                        #         )
 
                         else:
                             # Verifica se há colunas faltantes e ajusta tabela

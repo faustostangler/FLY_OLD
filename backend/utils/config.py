@@ -67,6 +67,7 @@ class Config:
         tbl_nsd = "tbl_nsd"
         tbl_stock_data = "tbl_stock_data"
         tbl_statements_raw = "tbl_statements_raw"
+        tbl_pending_companies = "tbl_pending_companies"
         tbl_statements_normalized = "tbl_statements_normalized"
         tbl_statements_corp_events = "tbl_statements_corp_events"
 
@@ -102,6 +103,7 @@ class Config:
                     "nsd": tbl_nsd,
                     "stock_data": tbl_stock_data,
                     "statements_raw": tbl_statements_raw,
+                    "pending_companies": tbl_pending_companies, 
                     "statements_normalized": tbl_statements_normalized,
                     "statements_corp_events": tbl_statements_corp_events,
                     "idx_statements_ready": idx_statements_ready,
@@ -143,6 +145,8 @@ class Config:
         tbl_stock_data = db_config["raw"]["table"]["stock_data"]  # "stock_data"
 
         tbl_statements_raw = db_config["raw"]["table"]["statements_raw"]  # "statements_raw"
+        tbl_pending_companies = db_config["raw"]["table"]["pending_companies"] # pending_companies
+
         tbl_statements_normalized = db_config["raw"]["table"]["statements_normalized"]
         tbl_statements_corp_events = db_config["raw"]["table"]["statements_corp_events"]
 
@@ -246,6 +250,51 @@ class Config:
                         CREATE INDEX IF NOT EXISTS idx_statements_raw_nsd 
                             ON {tbl_statements_raw} (nsd);
                 """,
+                tbl_pending_companies: f"""
+                    CREATE TABLE IF NOT EXISTS {tbl_pending_companies} (
+                        company_name TEXT PRIMARY KEY
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_{tbl_pending_companies}
+                        ON {tbl_pending_companies}(company_name);
+
+                    -- Triggers existentes…
+                    CREATE TRIGGER IF NOT EXISTS trg_after_insert_statements
+                    AFTER INSERT ON {tbl_statements_raw}
+                    WHEN NEW.processed IS NULL OR NEW.processed <> NEW.version
+                    BEGIN
+                        INSERT OR IGNORE INTO {tbl_pending_companies}(company_name)
+                        VALUES (NEW.company_name);
+                    END;
+
+                    CREATE TRIGGER IF NOT EXISTS trg_after_update_statements_remove
+                    AFTER UPDATE OF processed,version ON {tbl_statements_raw}
+                    WHEN (OLD.processed IS NULL OR OLD.processed <> OLD.version)
+                    AND NOT (NEW.processed IS NULL OR NEW.processed <> NEW.version)
+                    BEGIN
+                        DELETE FROM {tbl_pending_companies}
+                        WHERE company_name = NEW.company_name
+                        AND NOT EXISTS (
+                            SELECT 1 FROM {tbl_statements_raw} AS t2
+                            WHERE t2.company_name = NEW.company_name
+                            AND (t2.processed IS NULL OR t2.processed <> t2.version)
+                        );
+                    END;
+
+                    CREATE TRIGGER IF NOT EXISTS trg_after_update_statements_add
+                    AFTER UPDATE OF processed,version ON {tbl_statements_raw}
+                    WHEN NOT (OLD.processed IS NULL OR OLD.processed <> OLD.version)
+                    AND  (NEW.processed IS NULL OR NEW.processed <> NEW.version)
+                    BEGIN
+                        INSERT OR IGNORE INTO {tbl_pending_companies}(company_name)
+                        VALUES (NEW.company_name);
+                    END;
+
+                    -- Popula na primeira inicialização
+                    INSERT OR IGNORE INTO {tbl_pending_companies}(company_name)
+                    SELECT DISTINCT company_name
+                    FROM {tbl_statements_raw}
+                    WHERE processed IS NULL OR processed <> version;
+                """, 
                 tbl_statements_normalized: f"""
                     CREATE TABLE IF NOT EXISTS {tbl_statements_normalized} (
                         nsd INTEGER,
