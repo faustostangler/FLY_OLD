@@ -21,9 +21,22 @@ Finance Ledger Yearly (**FLY**) is a comprehensive **financial data app** design
    - Fetches stock prices, stock splits, and dividend information.
    - Matches stock performance with financial statements.
 
-5. **Performance & Optimization**  
+5. **Performance & Optimization**
    - Uses a multi-threaded system to process data efficiently.
    - Tracks memory and execution time to keep things running smoothly.
+
+### Processing Flow
+
+```mermaid
+graph TD
+    A[CLI \`run_app\`] --> B[CompanyProcessor]
+    B --> C[NsdProcessor]
+    C --> D[StatementsProcessor]
+    D --> E[IntelProcessor]
+    E --> F[EventsStatementsProcessor]
+    F --> G[MarketProcessor / StockProcessor]
+    G --> H[(SQLite Databases)]
+```
 
 ## How to Install
 
