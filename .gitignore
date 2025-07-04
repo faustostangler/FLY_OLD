@@ -47,6 +47,7 @@ ENV/
 env/
 .envrc
 .env/
+.venv_old
 
 # VSCode specific
 .vscode/
