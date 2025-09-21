@@ -190,6 +190,21 @@ class EventsStatementsProcessor(BaseProcessor):
                 query=sql_company, params=(company_name,), db_filepath=self.db_filepath, alert=False
             )
 
+            if standart_statements.empty:
+                # Garante que o dataframe possua as colunas esperadas mesmo sem registros
+                columns = self.config.domain.get("statements_columns", [])
+                return pd.DataFrame(columns=columns)
+
+            required_columns = set(self.statements_version_delimiter + ["version", "quarter"])
+            missing_columns = required_columns.difference(standart_statements.columns)
+
+            if missing_columns:
+                self.log_error(
+                    f"Missing expected statement columns for '{company_name}': {sorted(missing_columns)}"
+                )
+                columns = self.config.domain.get("statements_columns", [])
+                return pd.DataFrame(columns=columns)
+
             final_df = standart_statements.loc[
                 standart_statements.groupby(self.statements_version_delimiter)["version"].idxmax()
             ]
@@ -203,12 +218,12 @@ class EventsStatementsProcessor(BaseProcessor):
 
     def _get_ticker_alternative(self):
         """description."""
-        ticker = ""
+        ticker_code = None
         try:
             # Query SQL para encontrar o ticker com o maior range de date
             query = """
-            SELECT ticker_code, 
-                MIN(date) AS min_date, 
+            SELECT ticker_code,
+                MIN(date) AS min_date,
                 MAX(date) AS max_date, 
                 (JULIANDAY(MAX(date)) - JULIANDAY(MIN(date))) AS date_range
             FROM tbl_stock_data
@@ -218,6 +233,8 @@ class EventsStatementsProcessor(BaseProcessor):
             """
             with sqlite3.connect(self.db_filepath) as conn:
                 df = pd.read_sql_query(query, conn)
+                if df.empty or "ticker_code" not in df.columns:
+                    return None
                 ticker_code = df["ticker_code"].iloc[0]
 
         except Exception as e:
@@ -236,7 +253,24 @@ class EventsStatementsProcessor(BaseProcessor):
             param = "ticker_code"
             sql_stock_data = f"SELECT * FROM {self.tbl_stock_data} WHERE {param} = ?"
 
+            empty_stock_columns = [
+                "date",
+                "close",
+                "dividends",
+                "high",
+                "low",
+                "open",
+                "stock_splits",
+                "volume",
+            ]
+
             tk_cd = ticker_code if ticker_code is not None else self._get_ticker_alternative()
+
+            if not tk_cd:
+                company_stock_data = pd.DataFrame(columns=empty_stock_columns)
+                splits = pd.DataFrame(columns=self.config.domain["split_columns"])
+                splits["date"] = pd.to_datetime(splits["date"])
+                return company_stock_data, splits
 
             company_stock_data = self.load_data(
                 query=sql_stock_data, params=(tk_cd,), db_filepath=self.db_filepath, alert=False
@@ -266,13 +300,19 @@ class EventsStatementsProcessor(BaseProcessor):
                     splits = pd.DataFrame(columns=["company_name", "ticker", "ticker_code", "date", "stock_splits"])
                     splits["date"] = pd.to_datetime(splits["date"])
             else:
-                company_stock_data, splits = self._get_company_stock_data(payload)
+                if ticker_code is not None:
+                    return self._get_company_stock_data(payload)
+
+                company_stock_data = pd.DataFrame(columns=empty_stock_columns)
                 splits = pd.DataFrame(columns=self.config.domain["split_columns"])
+                splits["date"] = pd.to_datetime(splits["date"])
 
         except Exception as e:
             self.log_error(e)
             company_stock_data = pd.DataFrame()
             splits = pd.DataFrame(columns=self.config.domain["split_columns"])
+            if "date" in splits:
+                splits["date"] = pd.to_datetime(splits["date"])
 
         return company_stock_data, splits
 
