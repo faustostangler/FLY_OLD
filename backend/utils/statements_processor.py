@@ -375,7 +375,8 @@ class StatementsProcessor(BaseProcessor):
             targets = []
             start_time = time.time()
             for i, row in df_companies.iterrows():
-                if i >= 50:
+                if i >= 10:
+                    print("debug break")
                     break
                 company_name = row['company_name']
                 cvm_code = row['cvm_code']
@@ -408,7 +409,12 @@ class StatementsProcessor(BaseProcessor):
                 
                 try:
                     # remove already processed nsd (existing in financial_statements df)
-                    target = df_nsd_company[~df_nsd_company["nsd"].isin(financial_statements["nsd"].unique())]
+                    processed = financial_statements["nsd"].unique()
+                    target = df_nsd_company[~df_nsd_company["nsd"].isin(processed)]
+                    fake_processed_nsd = []  # nenhum nsd processado
+                    target = df_nsd_company[~df_nsd_company["nsd"].isin(fake_processed_nsd)]
+                    print("fake processed targets")
+
                     lines = len(target)
                 except Exception as e:
                     target = df_nsd_company

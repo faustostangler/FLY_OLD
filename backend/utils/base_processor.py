@@ -70,7 +70,7 @@ class BaseProcessor:
     def run(self, data, payload=None, verbose=True, thread=True, module_name=""):
         """Split data into batches and process them sequentially or with
         threads."""
-        num_workers = self.config.scraping['max_workers']
+        num_workers = 1  # self.config.scraping['max_workers']
         results = []
         try:
             batch_splitters = {
