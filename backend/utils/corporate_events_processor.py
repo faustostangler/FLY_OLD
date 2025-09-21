@@ -35,7 +35,7 @@ class EventsStatementsProcessor(BaseProcessor):
 
         self.db_filepath = self.config.databases["raw"]["filepath"]
 
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
