@@ -42,7 +42,7 @@ class StockProcessor(BaseProcessor):
         # columns
         self.historical_stock_data_all_columns = self.config.domain['historical_stock_data_all_columns']
         self.historical_stock_data_columns = self.config.domain['historical_stock_data_columns']
-    def process_instance(self, sub_batch, payload, progress):
+    def process_instance(self, sub_batch, payload, verbose, progress):
         """Process a single batch by delegating to process_batch."""
         result = pd.DataFrame()  # Return an empty DataFrame on failure
 
